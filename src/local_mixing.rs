@@ -24,9 +24,13 @@ impl LocalMixingJob {
         }
     }
 
-    pub fn run_inflationary_step<R: RngCore>(&mut self, rng: &mut R) {
+    pub fn run_inflationary_step<R: RngCore>(
+        &mut self,
+        rng: &mut R,
+    ) -> (Option<usize>, usize, usize, usize) {
         let num_gates = self.current_circuit.gates.len();
         let num_wires = self.config.num_wires as usize;
+        let mut stopping_distance = None;
 
         let mut gate_one_idx;
         let mut candidate_second_idxs = vec![];
@@ -87,7 +91,7 @@ impl LocalMixingJob {
                 }
 
                 if eliminated_target_count == num_wires || eliminated_control_count == num_wires {
-                    dbg!("all wires hit!", i);
+                    stopping_distance = Some(i - gate_one_idx);
                     break;
                 }
             }
@@ -97,18 +101,21 @@ impl LocalMixingJob {
             }
         }
 
-        let gate_two_idx = candidate_second_idxs[rng.gen_range(0..candidate_second_idxs.len())];
+        let min_candidate_distance = candidate_second_idxs[0] - gate_one_idx;
+        let max_candidate_distance =
+            candidate_second_idxs[candidate_second_idxs.len() - 1] - gate_one_idx;
 
-        dbg!(gate_one_idx, gate_two_idx, candidate_second_idxs);
+        let gate_two_idx = candidate_second_idxs[rng.gen_range(0..candidate_second_idxs.len())];
 
         let mut to_before = vec![];
         let mut to_after = vec![];
-
+        let num_permuted;
         {
             let between = self
                 .current_circuit
                 .gates
                 .drain((gate_one_idx + 1)..gate_two_idx);
+            num_permuted = between.len();
             for (i, gate) in between.enumerate() {
                 if gate_one_successors.contains(&(gate_one_idx + 1 + i)) {
                     to_after.push(gate);
@@ -118,13 +125,24 @@ impl LocalMixingJob {
             }
         }
 
+        let new_gate_two_idx = gate_two_idx - num_permuted + 1;
+        self.current_circuit
+            .gates
+            .splice(new_gate_two_idx..new_gate_two_idx, to_after);
         self.current_circuit
             .gates
             .splice(gate_one_idx..gate_one_idx, to_before);
-        self.current_circuit
-            .gates
-            .splice(gate_two_idx..gate_two_idx, to_after);
+
+        (
+            stopping_distance,
+            min_candidate_distance,
+            max_candidate_distance,
+            candidate_second_idxs.len(),
+        )
     }
+
+    // Maintain set of target (control) wires
+    // it should store # times we've seen target/control, when we pass backwards to revert
 }
 
 #[cfg(test)]
@@ -133,21 +151,67 @@ mod tests {
 
     use super::*;
 
+    fn benchmark_inflationary_step(num_wires: u32, num_gates: usize, iterations: usize) {
+        let mut rng = thread_rng();
+
+        let mut avg_min_candidate_dist = 0;
+        let mut avg_max_candidate_dist = 0;
+        let mut avg_stopping_dist = 0;
+        let mut avg_num_gate_two_candidates = 0;
+
+        for i in 0..iterations {
+            let circuit = Circuit::random(num_wires, num_gates, &mut rng);
+            let config = LocalMixingConfig {
+                original_circuit: circuit,
+                num_wires,
+                inflationary_steps: 1,
+                kneading_steps: 1,
+            };
+            let mut local_mixing_job = LocalMixingJob::new(config);
+            let (stopping_distance, min_candidate_distance, max_candidate_distance, num_candidates) =
+                local_mixing_job.run_inflationary_step(&mut rng);
+
+            avg_min_candidate_dist += min_candidate_distance;
+            avg_max_candidate_dist += max_candidate_distance;
+            avg_num_gate_two_candidates += num_candidates;
+            if let Some(sd) = stopping_distance {
+                avg_stopping_dist += sd;
+            }
+        }
+
+        avg_min_candidate_dist /= iterations;
+        avg_max_candidate_dist /= iterations;
+        avg_stopping_dist /= iterations;
+        avg_num_gate_two_candidates /= iterations;
+
+        dbg!(
+            (num_wires, num_gates, iterations),
+            avg_num_gate_two_candidates,
+            avg_min_candidate_dist,
+            avg_max_candidate_dist,
+            avg_stopping_dist
+        );
+    }
+
     #[test]
     fn test_inflationary_step() {
-        let mut rng = thread_rng();
-        let num_wires = 100;
-        let num_gates = 10000000;
-        let circuit = Circuit::random(num_wires, num_gates, &mut rng);
-        // dbg!(circuit.clone());
-        let config = LocalMixingConfig {
-            original_circuit: circuit,
-            num_wires,
-            inflationary_steps: 1,
-            kneading_steps: 1,
-        };
-        let mut local_mixing_job = LocalMixingJob::new(config);
-        local_mixing_job.run_inflationary_step(&mut rng);
-        // dbg!(local_mixing_job.current_circuit);
+        let jobs = [
+            (100, 1000),
+            (200, 1000),
+            (500, 1000),
+            (100, 5000),
+            (200, 5000),
+            (500, 5000),
+            (100, 10000),
+            (200, 10000),
+            (500, 10000),
+            (100, 100000),
+            (200, 100000),
+            (500, 100000),
+        ];
+
+        for (num_wires, num_gates) in jobs {
+            benchmark_inflationary_step(num_wires, num_gates, 1000);
+        }
     }
 }
