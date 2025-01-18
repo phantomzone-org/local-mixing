@@ -5,10 +5,10 @@ use crate::circuit::Circuit;
 
 #[derive(Clone)]
 pub struct LocalMixingConfig {
-    original_circuit: Circuit,
-    num_wires: u32,
-    inflationary_steps: usize,
-    kneading_steps: usize,
+    pub original_circuit: Circuit,
+    pub num_wires: u32,
+    pub inflationary_steps: usize,
+    pub kneading_steps: usize,
 }
 
 pub struct LocalMixingJob {
@@ -40,57 +40,58 @@ impl LocalMixingJob {
             gate_one_idx = rng.gen_range(0..num_gates - 1);
             let gate_one = &self.current_circuit.gates[gate_one_idx];
 
-            gate_one_successors.clear();
-            candidate_second_idxs.clear();
-            let mut eliminated_target_wires = vec![false; num_wires];
-            let mut eliminated_control_wires = vec![false; num_wires];
-            let mut eliminated_target_count = 0;
-            let mut eliminated_control_count = 0;
+            let mut path_connected_target_wires = vec![false; num_wires];
+            let mut path_connected_control_wires = vec![false; num_wires];
+            let mut target_count = 0;
+            let mut control_count = 0;
 
             for i in gate_one_idx + 1..num_gates {
                 let curr_gate = &self.current_circuit.gates[i];
+                let curr_target = curr_gate.target as usize;
+                let curr_control0 = curr_gate.control[0] as usize;
+                let curr_control1 = curr_gate.control[1] as usize;
 
-                let target_idx = curr_gate.target as usize;
-                let control0_idx = curr_gate.control[0] as usize;
-                let control1_idx = curr_gate.control[1] as usize;
+                if path_connected_control_wires[curr_target]
+                    || path_connected_target_wires[curr_control0]
+                    || path_connected_target_wires[curr_control1]
+                {
+                    if !path_connected_target_wires[curr_target] {
+                        path_connected_target_wires[curr_target] = true;
+                        target_count += 1;
+                    }
 
-                let target_eliminated = eliminated_control_wires[target_idx];
-                let control0_eliminated = eliminated_target_wires[control0_idx];
-                let control1_eliminated = eliminated_target_wires[control1_idx];
+                    if !path_connected_control_wires[curr_control0] {
+                        path_connected_control_wires[curr_control0] = true;
+                        control_count += 1;
+                    }
 
-                if target_eliminated || control0_eliminated || control1_eliminated {
-                    if !target_eliminated {
-                        eliminated_control_wires[target_idx] = true;
-                        eliminated_control_count += 1;
+                    if !path_connected_control_wires[curr_control1] {
+                        path_connected_control_wires[curr_control1] = true;
+                        control_count += 1;
                     }
-                    if !control0_eliminated {
-                        eliminated_target_wires[control0_idx] = true;
-                        eliminated_target_count += 1;
-                    }
-                    if !control1_eliminated {
-                        eliminated_target_wires[control1_idx] = true;
-                        eliminated_target_count += 1;
-                    }
+
                     gate_one_successors.insert(i);
-                } else if gate_one.collides_with(&curr_gate) {
+                } else if gate_one.collides_with(curr_gate) {
                     candidate_second_idxs.push(i);
-
-                    if !eliminated_target_wires[target_idx] {
-                        eliminated_target_wires[target_idx] = true;
-                        eliminated_target_count += 1;
-                    }
-                    if !eliminated_control_wires[control0_idx] {
-                        eliminated_control_wires[control0_idx] = true;
-                        eliminated_control_count += 1;
-                    }
-                    if !eliminated_control_wires[control1_idx] {
-                        eliminated_control_wires[control1_idx] = true;
-                        eliminated_control_count += 1;
-                    }
                     gate_one_successors.insert(i);
+
+                    if !path_connected_target_wires[curr_target] {
+                        path_connected_target_wires[curr_target] = true;
+                        target_count += 1;
+                    }
+
+                    if !path_connected_control_wires[curr_control0] {
+                        path_connected_control_wires[curr_control0] = true;
+                        control_count += 1;
+                    }
+
+                    if !path_connected_control_wires[curr_control1] {
+                        path_connected_control_wires[curr_control1] = true;
+                        control_count += 1;
+                    }
                 }
 
-                if eliminated_target_count == num_wires || eliminated_control_count == num_wires {
+                if target_count == num_wires || control_count == num_wires {
                     stopping_distance = Some(i - gate_one_idx);
                     break;
                 }
@@ -98,6 +99,8 @@ impl LocalMixingJob {
 
             if !candidate_second_idxs.is_empty() {
                 break;
+            } else {
+                gate_one_successors.clear();
             }
         }
 
@@ -133,6 +136,8 @@ impl LocalMixingJob {
             .gates
             .splice(gate_one_idx..gate_one_idx, to_before);
 
+        // TODO: replacement
+
         (
             stopping_distance,
             min_candidate_distance,
@@ -141,8 +146,94 @@ impl LocalMixingJob {
         )
     }
 
-    // Maintain set of target (control) wires
-    // it should store # times we've seen target/control, when we pass backwards to revert
+    pub fn run_kneading_step<R: RngCore>(&mut self, rng: &mut R) {
+        let num_gates = self.current_circuit.gates.len();
+        let num_wires = self.config.num_wires as usize;
+
+        let mut selected_gates: Vec<usize> = vec![0; 5];
+        let mut selected_gate_ctr = 0;
+        let mut candidate_next_gates: Vec<Vec<usize>> = vec![vec![]; 5];
+        let mut candidates_computed = [false; 5];
+
+        while selected_gate_ctr < 5 {
+            if selected_gate_ctr != 0 && !candidates_computed[selected_gate_ctr] {
+                // compute candidates
+                let latest_selected_idx = selected_gates[selected_gate_ctr - 1];
+                let latest_selected_gate = &self.current_circuit.gates[latest_selected_idx];
+
+                let mut path_connected_target_wires = vec![false; num_wires];
+                let mut path_connected_control_wires = vec![false; num_wires];
+
+                // invariant: |selected_gates| >= 1, and there may be gates before the last inserted gate
+                let mut num_selected_gates_seen = 1;
+                for i in selected_gates[0] + 1..num_gates {
+                    if num_selected_gates_seen < selected_gates.len()
+                        && i == selected_gates[num_selected_gates_seen]
+                    {
+                        num_selected_gates_seen += 1;
+                    } else {
+                        let curr_gate = &self.current_circuit.gates[i];
+                        let curr_target = curr_gate.target as usize;
+                        let curr_control0 = curr_gate.control[0] as usize;
+                        let curr_control1 = curr_gate.control[1] as usize;
+
+                        let mut collides_with_prev_selected = false;
+                        for j in 0..selected_gate_ctr {
+                            // iterate over previously selected gates (not latest)
+                            // if j < i and they collide
+                            let selected_gate = &self.current_circuit.gates[selected_gates[j]];
+                            collides_with_prev_selected = collides_with_prev_selected
+                                || (j < i && selected_gate.collides_with(curr_gate));
+                        }
+
+                        // check collision with path-connected gates
+                        if path_connected_control_wires[curr_target]
+                            || path_connected_target_wires[curr_control0]
+                            || path_connected_target_wires[curr_control1]
+                        {
+                            // not a candidate, but path-connected
+                            path_connected_target_wires[curr_target] = true;
+                            path_connected_control_wires[curr_control0] = true;
+                            path_connected_control_wires[curr_control1] = true;
+                        } else {
+                            if latest_selected_gate.collides_with(curr_gate) && latest_selected_idx < i {
+                                // candidate
+                                candidate_next_gates[selected_gate_ctr].push(i);
+
+                                path_connected_target_wires[curr_target] = true;
+                                path_connected_control_wires[curr_control0] = true;
+                                path_connected_control_wires[curr_control1] = true;
+                            } else if collides_with_prev_selected {
+                                path_connected_target_wires[curr_target] = true;
+                                path_connected_control_wires[curr_control0] = true;
+                                path_connected_control_wires[curr_control1] = true;
+                            }
+                        }
+                    }
+                }
+
+                candidates_computed[selected_gate_ctr] = true;
+            }
+
+            if selected_gate_ctr == 0 {
+                // pick gate 1 at random
+                selected_gates[0] = rng.gen_range(0..num_gates - 4);
+                selected_gate_ctr += 1;
+            } else if candidate_next_gates[selected_gate_ctr].is_empty() {
+                // reset candidates for this gate, dec ctr and pick again for prev gate
+                candidates_computed[selected_gate_ctr] = false;
+                selected_gate_ctr -= 1;
+            } else {
+                // pick gate from candidates, inc ctr
+                let num_candidates = candidate_next_gates[selected_gate_ctr].len();
+                selected_gates[selected_gate_ctr] = candidate_next_gates[selected_gate_ctr]
+                    .remove(rng.gen_range(0..num_candidates));
+                selected_gate_ctr += 1;
+            }
+        }
+
+        dbg!(&selected_gates);
+    }
 }
 
 #[cfg(test)]
@@ -159,7 +250,7 @@ mod tests {
         let mut avg_stopping_dist = 0;
         let mut avg_num_gate_two_candidates = 0;
 
-        for i in 0..iterations {
+        for _ in 0..iterations {
             let circuit = Circuit::random(num_wires, num_gates, &mut rng);
             let config = LocalMixingConfig {
                 original_circuit: circuit,
@@ -211,7 +302,24 @@ mod tests {
         ];
 
         for (num_wires, num_gates) in jobs {
-            benchmark_inflationary_step(num_wires, num_gates, 1000);
+            benchmark_inflationary_step(num_wires, num_gates, 10000);
         }
+    }
+
+    #[test]
+    fn test_kneading_step() {
+        let mut rng = thread_rng();
+        let num_wires = 5;
+        let num_gates = 20;
+        let circuit = Circuit::random(num_wires, num_gates, &mut rng);
+        dbg!(circuit.clone());
+        let config = LocalMixingConfig {
+            original_circuit: circuit.clone(),
+            num_wires,
+            inflationary_steps: 1,
+            kneading_steps: 1,
+        };
+        let mut job = LocalMixingJob::new(config);
+        job.run_kneading_step(&mut rng);
     }
 }

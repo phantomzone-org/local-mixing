@@ -8,6 +8,14 @@ pub struct Gate {
 }
 
 impl Gate {
+    pub fn new(target: u32, control1: u32, control2: u32, control_func: u8) -> Self {
+        Self {
+            target,
+            control: [control1, control2],
+            control_func,
+        }
+    }
+
     pub fn collides_with(&self, other: &Self) -> bool {
         self.target == other.control[0]
             || self.target == other.control[1]
