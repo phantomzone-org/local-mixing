@@ -196,7 +196,9 @@ impl LocalMixingJob {
                             path_connected_control_wires[curr_control0] = true;
                             path_connected_control_wires[curr_control1] = true;
                         } else {
-                            if latest_selected_gate.collides_with(curr_gate) && latest_selected_idx < i {
+                            if latest_selected_gate.collides_with(curr_gate)
+                                && latest_selected_idx < i
+                            {
                                 // candidate
                                 candidate_next_gates[selected_gate_ctr].push(i);
 
@@ -233,6 +235,9 @@ impl LocalMixingJob {
         }
 
         dbg!(&selected_gates);
+
+        // TODO: permute
+        // TODO: replacement
     }
 }
 
