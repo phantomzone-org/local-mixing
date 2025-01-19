@@ -1,7 +1,6 @@
-use hashbrown::HashSet;
 use rand::{Rng, RngCore};
 
-use crate::circuit::Circuit;
+use crate::circuit::{Circuit, Gate};
 
 #[derive(Clone)]
 pub struct LocalMixingConfig {
@@ -34,7 +33,6 @@ impl LocalMixingJob {
 
         let mut gate_one_idx;
         let mut candidate_second_idxs = vec![];
-        let mut gate_one_successors = HashSet::new();
 
         loop {
             gate_one_idx = rng.gen_range(0..num_gates - 1);
@@ -69,11 +67,8 @@ impl LocalMixingJob {
                         path_connected_control_wires[curr_control1] = true;
                         control_count += 1;
                     }
-
-                    gate_one_successors.insert(i);
                 } else if gate_one.collides_with(curr_gate) {
                     candidate_second_idxs.push(i);
-                    gate_one_successors.insert(i);
 
                     if !path_connected_target_wires[curr_target] {
                         path_connected_target_wires[curr_target] = true;
@@ -99,8 +94,6 @@ impl LocalMixingJob {
 
             if !candidate_second_idxs.is_empty() {
                 break;
-            } else {
-                gate_one_successors.clear();
             }
         }
 
@@ -110,31 +103,50 @@ impl LocalMixingJob {
 
         let gate_two_idx = candidate_second_idxs[rng.gen_range(0..candidate_second_idxs.len())];
 
+        dbg!(gate_one_idx, gate_two_idx);
+
+        // permute step
         let mut to_before = vec![];
         let mut to_after = vec![];
-        let num_permuted;
-        {
-            let between = self
-                .current_circuit
-                .gates
-                .drain((gate_one_idx + 1)..gate_two_idx);
-            num_permuted = between.len();
-            for (i, gate) in between.enumerate() {
-                if gate_one_successors.contains(&(gate_one_idx + 1 + i)) {
-                    to_after.push(gate);
-                } else {
-                    to_before.push(gate);
-                }
+        let gate_one = self.current_circuit.gates[gate_one_idx];
+        let gate_two = self.current_circuit.gates[gate_two_idx];
+
+        let mut path_connected_target_wires = vec![false; num_wires];
+        let mut path_connected_control_wires = vec![false; num_wires];
+        for i in gate_one_idx + 1..gate_two_idx {
+            let curr_gate = &self.current_circuit.gates[i];
+            let curr_target = curr_gate.target as usize;
+            let curr_control0 = curr_gate.control[0] as usize;
+            let curr_control1 = curr_gate.control[1] as usize;
+
+            if gate_one.collides_with(&curr_gate)
+                || path_connected_control_wires[curr_target]
+                || path_connected_target_wires[curr_control0]
+                || path_connected_control_wires[curr_control1]
+            {
+                to_after.push(*curr_gate);
+
+                path_connected_target_wires[curr_target] = true;
+                path_connected_control_wires[curr_control0] = true;
+                path_connected_control_wires[curr_control1] = true;
+            } else {
+                to_before.push(*curr_gate);
             }
         }
 
-        let new_gate_two_idx = gate_two_idx - num_permuted + 1;
-        self.current_circuit
-            .gates
-            .splice(new_gate_two_idx..new_gate_two_idx, to_after);
-        self.current_circuit
-            .gates
-            .splice(gate_one_idx..gate_one_idx, to_before);
+        // copy gate data into circuit s.t. [gate_one, gate_two] are consecutive
+        let mut write_idx = gate_one_idx;
+        for i in 0..to_before.len() {
+            self.current_circuit.gates[write_idx] = to_before[i];
+            write_idx += 1;
+        }
+        self.current_circuit.gates[write_idx] = gate_one;
+        self.current_circuit.gates[write_idx + 1] = gate_two;
+        write_idx += 2;
+        for i in 0..to_after.len() {
+            self.current_circuit.gates[write_idx] = to_after[i];
+            write_idx += 1;
+        }
 
         // TODO: replacement
 
@@ -150,7 +162,7 @@ impl LocalMixingJob {
         let num_gates = self.current_circuit.gates.len();
         let num_wires = self.config.num_wires as usize;
 
-        let mut selected_gates: Vec<usize> = vec![0; 5];
+        let mut selected_gate_idx: Vec<usize> = vec![0; 5];
         let mut selected_gate_ctr = 0;
         let mut candidate_next_gates: Vec<Vec<usize>> = vec![vec![]; 5];
         let mut candidates_computed = [false; 5];
@@ -158,17 +170,17 @@ impl LocalMixingJob {
         while selected_gate_ctr < 5 {
             if selected_gate_ctr != 0 && !candidates_computed[selected_gate_ctr] {
                 // compute candidates
-                let latest_selected_idx = selected_gates[selected_gate_ctr - 1];
+                let latest_selected_idx = selected_gate_idx[selected_gate_ctr - 1];
                 let latest_selected_gate = &self.current_circuit.gates[latest_selected_idx];
 
                 let mut path_connected_target_wires = vec![false; num_wires];
                 let mut path_connected_control_wires = vec![false; num_wires];
 
-                // invariant: |selected_gates| >= 1, and there may be gates before the last inserted gate
+                // invariant: |selected_gate_idx| >= 1, and there may be gates before the last inserted gate
                 let mut num_selected_gates_seen = 1;
-                for i in selected_gates[0] + 1..num_gates {
-                    if num_selected_gates_seen < selected_gates.len()
-                        && i == selected_gates[num_selected_gates_seen]
+                for i in selected_gate_idx[0] + 1..num_gates {
+                    if num_selected_gates_seen < selected_gate_idx.len()
+                        && i == selected_gate_idx[num_selected_gates_seen]
                     {
                         num_selected_gates_seen += 1;
                     } else {
@@ -181,7 +193,7 @@ impl LocalMixingJob {
                         for j in 0..selected_gate_ctr {
                             // iterate over previously selected gates (not latest)
                             // if j < i and they collide
-                            let selected_gate = &self.current_circuit.gates[selected_gates[j]];
+                            let selected_gate = &self.current_circuit.gates[selected_gate_idx[j]];
                             collides_with_prev_selected = collides_with_prev_selected
                                 || (j < i && selected_gate.collides_with(curr_gate));
                         }
@@ -219,7 +231,7 @@ impl LocalMixingJob {
 
             if selected_gate_ctr == 0 {
                 // pick gate 1 at random
-                selected_gates[0] = rng.gen_range(0..num_gates - 4);
+                selected_gate_idx[0] = rng.gen_range(0..num_gates - 4);
                 selected_gate_ctr += 1;
             } else if candidate_next_gates[selected_gate_ctr].is_empty() {
                 // reset candidates for this gate, dec ctr and pick again for prev gate
@@ -228,15 +240,68 @@ impl LocalMixingJob {
             } else {
                 // pick gate from candidates, inc ctr
                 let num_candidates = candidate_next_gates[selected_gate_ctr].len();
-                selected_gates[selected_gate_ctr] = candidate_next_gates[selected_gate_ctr]
+                selected_gate_idx[selected_gate_ctr] = candidate_next_gates[selected_gate_ctr]
                     .remove(rng.gen_range(0..num_candidates));
                 selected_gate_ctr += 1;
             }
         }
 
-        dbg!(&selected_gates);
+        dbg!(&selected_gate_idx);
 
-        // TODO: permute
+        // permute step
+        let mut to_before = vec![];
+        let mut to_after = vec![];
+        let selected_gates: Vec<Gate> = selected_gate_idx
+            .iter()
+            .map(|&idx| self.current_circuit.gates[idx])
+            .collect();
+
+        let mut path_connected_target_wires = vec![false; num_wires];
+        let mut path_connected_control_wires = vec![false; num_wires];
+
+        for j in 0..selected_gate_idx.len() - 1 {
+            for i in selected_gate_idx[j] + 1..selected_gate_idx[j + 1] {
+                let curr_gate = &self.current_circuit.gates[i];
+                let curr_target = curr_gate.target as usize;
+                let curr_control0 = curr_gate.control[0] as usize;
+                let curr_control1 = curr_gate.control[1] as usize;
+
+                let mut collides_with_prev_selected = false;
+                for k in 0..=j {
+                    collides_with_prev_selected =
+                        collides_with_prev_selected || selected_gates[k].collides_with(curr_gate);
+                }
+
+                if collides_with_prev_selected
+                    || path_connected_control_wires[curr_target]
+                    || path_connected_target_wires[curr_control0]
+                    || path_connected_control_wires[curr_control1]
+                {
+                    to_after.push(*curr_gate);
+
+                    path_connected_target_wires[curr_target] = true;
+                    path_connected_control_wires[curr_control0] = true;
+                    path_connected_control_wires[curr_control1] = true;
+                } else {
+                    to_before.push(*curr_gate);
+                }
+            }
+        }
+
+        let mut write_idx = selected_gate_idx[0];
+        for i in 0..to_before.len() {
+            self.current_circuit.gates[write_idx] = to_before[i];
+            write_idx += 1;
+        }
+        for i in 0..selected_gates.len() {
+            self.current_circuit.gates[write_idx] = selected_gates[i];
+            write_idx += 1;
+        }
+        for i in 0..to_after.len() {
+            self.current_circuit.gates[write_idx] = to_after[i];
+            write_idx += 1;
+        }
+
         // TODO: replacement
     }
 }
@@ -291,6 +356,42 @@ mod tests {
 
     #[test]
     fn test_inflationary_step() {
+        let mut rng = thread_rng();
+        let num_wires = 16;
+        let num_gates = 100;
+        let circuit = Circuit::random(num_wires, num_gates, &mut rng);
+        dbg!(circuit.clone());
+        let config = LocalMixingConfig {
+            original_circuit: circuit.clone(),
+            num_wires,
+            inflationary_steps: 1,
+            kneading_steps: 1,
+        };
+        let mut job = LocalMixingJob::new(config);
+        job.run_inflationary_step(&mut rng);
+        dbg!(job.current_circuit);
+    }
+
+    #[test]
+    fn test_kneading_step() {
+        let mut rng = thread_rng();
+        let num_wires = 10;
+        let num_gates = 20;
+        let circuit = Circuit::random(num_wires, num_gates, &mut rng);
+        dbg!(circuit.clone());
+        let config = LocalMixingConfig {
+            original_circuit: circuit.clone(),
+            num_wires,
+            inflationary_steps: 1,
+            kneading_steps: 1,
+        };
+        let mut job = LocalMixingJob::new(config);
+        job.run_kneading_step(&mut rng);
+        dbg!(job.current_circuit);
+    }
+
+    #[test]
+    fn test_benchmark_inflationary_step() {
         let jobs = [
             (100, 1000),
             (200, 1000),
@@ -309,22 +410,5 @@ mod tests {
         for (num_wires, num_gates) in jobs {
             benchmark_inflationary_step(num_wires, num_gates, 10000);
         }
-    }
-
-    #[test]
-    fn test_kneading_step() {
-        let mut rng = thread_rng();
-        let num_wires = 5;
-        let num_gates = 20;
-        let circuit = Circuit::random(num_wires, num_gates, &mut rng);
-        dbg!(circuit.clone());
-        let config = LocalMixingConfig {
-            original_circuit: circuit.clone(),
-            num_wires,
-            inflationary_steps: 1,
-            kneading_steps: 1,
-        };
-        let mut job = LocalMixingJob::new(config);
-        job.run_kneading_step(&mut rng);
     }
 }
