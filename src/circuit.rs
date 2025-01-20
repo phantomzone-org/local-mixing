@@ -1,10 +1,10 @@
-use rand::{Rng, RngCore};
+use rand::Rng;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Gate {
     pub target: u32,
     pub control: [u32; 2],
-    control_func: u8,
+    pub control_func: u8,
 }
 
 impl Gate {
@@ -30,7 +30,7 @@ pub struct Circuit {
 }
 
 impl Circuit {
-    pub fn random<R: RngCore>(num_wires: u32, num_gates: usize, rng: &mut R) -> Self {
+    pub fn random<R: Rng>(num_wires: u32, num_gates: usize, rng: &mut R) -> Self {
         let mut gates = vec![];
         for _ in 0..num_gates {
             loop {

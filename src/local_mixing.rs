@@ -1,4 +1,4 @@
-use rand::{Rng, RngCore};
+use rand::Rng;
 
 use crate::circuit::{Circuit, Gate};
 
@@ -23,7 +23,7 @@ impl LocalMixingJob {
         }
     }
 
-    pub fn run_inflationary_step<R: RngCore>(
+    pub fn run_inflationary_step<R: Rng>(
         &mut self,
         rng: &mut R,
     ) -> (Option<usize>, usize, usize, usize) {
@@ -158,7 +158,7 @@ impl LocalMixingJob {
         )
     }
 
-    pub fn run_kneading_step<R: RngCore>(&mut self, rng: &mut R) {
+    pub fn run_kneading_step<R: Rng>(&mut self, rng: &mut R) {
         let num_gates = self.current_circuit.gates.len();
         let num_wires = self.config.num_wires as usize;
 
