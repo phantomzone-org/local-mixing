@@ -13,7 +13,7 @@ pub fn find_replacement_circuit<R: Rng, const N: usize, const N2: usize>(
         let candidate_ckt: [Gate; N2] = sample_random_circuit(num_wires, rng);
 
         if is_weakly_connected(&candidate_ckt)
-            && is_func_equivalent(gates, &candidate_ckt, num_wires as usize)
+            && is_func_equivalent(gates, &candidate_ckt)
         {
             Some(candidate_ckt);
         }
@@ -70,8 +70,37 @@ pub fn is_weakly_connected<const N2: usize>(gates: &[Gate; N2]) -> bool {
 pub fn is_func_equivalent<const N: usize, const N2: usize>(
     gates_one: &[Gate; N],
     gates_two: &[Gate; N2],
-    num_wires: usize,
 ) -> bool {
+    let mut wire_to_idx_map = vec![None; 15];
+    let mut n_wires = 0;
+    for g in gates_one.iter().chain(gates_two) {
+        for w in [g.target, g.control[0], g.control[1]] {
+            let mut wire_already_placed = false;
+            for i in 0..n_wires {
+                if let Some(wire_entry) = wire_to_idx_map[i] {
+                    if w == wire_entry {
+                        wire_already_placed = true;
+                        break;
+                    }
+                }
+            }
+            if !wire_already_placed {
+                wire_to_idx_map[n_wires] = Some(w);
+                n_wires += 1;
+            }
+        }
+    }
+
+    for i in 0..(1 << n_wires) {
+        let mut bit_string = vec![false; n_wires];
+        for j in 0..n_wires {
+            bit_string[j] = (i & (1 << j)) != 0;
+        }
+
+        // eval on bit_string
+        dbg!(&bit_string);
+    }
+
     false
 }
 
@@ -81,6 +110,19 @@ mod tests {
 
     use super::*;
     use crate::circuit::Gate;
+
+    #[test]
+    fn test_random() {
+        let n_wires = 5;
+        for i in 0..(1 << n_wires) {
+            let mut bit_string = vec![false; n_wires];
+            for j in 0..n_wires {
+                bit_string[j] = (i & (1 << j)) != 0;
+            }
+            // Here you can evaluate the bit_string with the circuits
+            dbg!(&bit_string);
+        }
+    }
 
     #[test]
     fn test_random_gates() {
