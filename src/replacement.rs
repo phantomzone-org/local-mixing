@@ -12,9 +12,7 @@ pub fn find_replacement_circuit<R: Rng, const N: usize, const N2: usize>(
         // gen random circuit
         let candidate_ckt: [Gate; N2] = sample_random_circuit(num_wires, rng);
 
-        if is_weakly_connected(&candidate_ckt)
-            && is_func_equivalent(gates, &candidate_ckt)
-        {
+        if is_weakly_connected(&candidate_ckt) && is_func_equivalent(gates, &candidate_ckt) {
             Some(candidate_ckt);
         }
     }
@@ -73,7 +71,8 @@ pub fn is_func_equivalent<const N: usize, const N2: usize>(
 ) -> bool {
     let mut wire_to_idx_map = vec![None; 15];
     let mut n_wires = 0;
-    for g in gates_one.iter().chain(gates_two) {
+    let eval_ckt: Vec<&Gate> = gates_one.iter().chain(gates_two.iter().rev()).collect();
+    for g in &eval_ckt {
         for w in [g.target, g.control[0], g.control[1]] {
             let mut wire_already_placed = false;
             for i in 0..n_wires {
@@ -96,9 +95,10 @@ pub fn is_func_equivalent<const N: usize, const N2: usize>(
         for j in 0..n_wires {
             bit_string[j] = (i & (1 << j)) != 0;
         }
-
-        // eval on bit_string
-        dbg!(&bit_string);
+        let mut input = bit_string.clone();
+        for g in &eval_ckt {
+            // TODO: impl control function behavior
+        }
     }
 
     false
