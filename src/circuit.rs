@@ -1,26 +1,90 @@
 use rand::Rng;
 
-#[derive(Clone, Copy, Debug)]
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Base2GateControlFunc {
+    F = 0,     // false,
+    AND = 1,   // a & b,
+    ANDNB = 2, // a & (!b),
+    A = 3,     // a,
+    ANDNA = 4, // (!a) & b,
+    B = 5,     // b,
+    XOR = 6,   // a ^ b,
+    OR = 7,    // a | b,
+    NOR = 8,   // !(a | b),
+    EQUIV = 9, // (a & b) | ((!a) & (!b)),
+    NB = 10,   // !b,
+    ORNB = 11, // (!b) | a,
+    NA = 12,   // !a,
+    ORNA = 13, // (!a) | b,
+    NAND = 14, // !(a & b),
+    T = 15,    // true,
+}
+
+impl Base2GateControlFunc {
+    pub const fn from_u8(v: u8) -> Self {
+        match v {
+            0 => Self::F,
+            1 => Self::AND,
+            2 => Self::ANDNB,
+            3 => Self::A,
+            4 => Self::ANDNA,
+            5 => Self::B,
+            6 => Self::XOR,
+            7 => Self::OR,
+            8 => Self::NOR,
+            9 => Self::EQUIV,
+            10 => Self::NB,
+            11 => Self::ORNB,
+            12 => Self::NA,
+            13 => Self::ORNA,
+            14 => Self::NAND,
+            15 => Self::T,
+            _ => unreachable!(),
+        }
+    }
+
+    pub const fn evaluate(&self, a: bool, b: bool) -> bool {
+        match self {
+            Self::F => false,
+            Self::AND => a & b,
+            Self::ANDNB => a & (!b),
+            Self::A => a,
+            Self::ANDNA => (!a) & b,
+            Self::B => b,
+            Self::XOR => a ^ b,
+            Self::OR => a | b,
+            Self::NOR => !(a | b),
+            Self::EQUIV => (a & b) | ((!a) & (!b)),
+            Self::NB => !b,
+            Self::ORNB => (!b) | a,
+            Self::NA => !a,
+            Self::ORNA => (!a) | b,
+            Self::NAND => !(a & b),
+            Self::T => true,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Gate {
-    pub target: u32,
-    pub control: [u32; 2],
+    pub wires: [u32; 3],
     pub control_func: u8,
 }
 
 impl Gate {
     pub fn new(target: u32, control1: u32, control2: u32, control_func: u8) -> Self {
         Self {
-            target,
-            control: [control1, control2],
+            wires: [target, control1, control2],
             control_func,
         }
     }
 
     pub fn collides_with(&self, other: &Self) -> bool {
-        self.target == other.control[0]
-            || self.target == other.control[1]
-            || other.target == self.control[0]
-            || other.target == self.control[1]
+        self.wires[0] == other.wires[1]
+            || self.wires[0] == other.wires[2]
+            || other.wires[0] == self.wires[1]
+            || other.wires[0] == self.wires[2]
     }
 }
 
@@ -40,8 +104,7 @@ impl Circuit {
 
                 if target != control_one && target != control_two && control_one != control_two {
                     gates.push(Gate {
-                        target,
-                        control: [control_one, control_two],
+                        wires: [target, control_one, control_two],
                         control_func: rng.gen_range(0..16),
                     });
                     break;
