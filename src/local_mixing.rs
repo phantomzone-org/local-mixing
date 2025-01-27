@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
@@ -48,6 +50,7 @@ impl LocalMixingJob {
         let mut num_replacement_failed = 0;
 
         for iter in 1..=self.config.num_inflationary_to_fail {
+            let s_sample = Instant::now();
             gate_one_idx = rng.gen_range(0..num_gates - 1);
             let gate_one = &self.curr_circuit.gates[gate_one_idx];
 
@@ -104,8 +107,14 @@ impl LocalMixingJob {
                 }
             }
 
+            log::info!("sample time = {:?}", Instant::now() - s_sample);
+
             if candidate_second_idxs.is_empty() {
-                log::error!("c_out search failed, gate_one_pos = {:?}, gate_one = {:?}", gate_one_idx, self.curr_circuit.gates[gate_one_idx]);
+                log::error!(
+                    "c_out search failed, gate_one_pos = {:?}, gate_one = {:?}",
+                    gate_one_idx,
+                    self.curr_circuit.gates[gate_one_idx]
+                );
                 num_search_failed += 1;
                 continue;
             }
@@ -113,6 +122,7 @@ impl LocalMixingJob {
             let mut gate_two_idx =
                 candidate_second_idxs[rng.gen_range(0..candidate_second_idxs.len())];
 
+            let s_permute = Instant::now();
             // permute step
             let mut to_before = vec![];
             let mut to_after = vec![];
@@ -141,7 +151,6 @@ impl LocalMixingJob {
                     to_before.push(*curr_gate);
                 }
             }
-
             // copy gate data into circuit s.t. [gate_one, gate_two] are consecutive
             let mut write_idx = gate_one_idx;
             for i in 0..to_before.len() {
@@ -159,7 +168,9 @@ impl LocalMixingJob {
                 self.curr_circuit.gates[write_idx] = to_after[i];
                 write_idx += 1;
             }
+            log::info!("permute time = {:?}", Instant::now() - s_permute);
 
+            let s_replace = Instant::now();
             // replacement
             let c_out = [gate_one, gate_two];
             let replacement_res = find_replacement_circuit::<_, 2, 5, 11, { 1 << 11 }>(
@@ -168,10 +179,13 @@ impl LocalMixingJob {
                 self.config.num_replacement_attempts,
                 rng,
             );
+            log::info!("c_in search time = {:?}", Instant::now() - s_replace);
             if let Some((c_in, replacement_attempts)) = replacement_res {
+                let s_splice = Instant::now();
                 self.curr_circuit
                     .gates
                     .splice(gate_one_idx..=gate_two_idx, c_in);
+                log::info!("insert time = {:?}", Instant::now() - s_splice);
 
                 log::info!(
                     "stage = inflationary, step = {:?}, status = SUCCESS, n_gates = {:?}, c_out_ids = {:?}, candidate_gate_two_set = {:?}, c_out = {:?}, max_candidate_two_dist = {:?}, n_circuits_sampled = {:?}, n_iter = {:?}, n_search_failed: {:?}, n_replacement_failed: {:?}",

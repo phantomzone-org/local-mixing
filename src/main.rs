@@ -14,7 +14,11 @@ pub fn run_strategy(job: &mut LocalMixingJob) {
     log4rs::init_config(log_confg).unwrap();
 
     let orignal_job_path = args().nth(2).expect("Missing original circuit path");
-    std::fs::write(orignal_job_path, serde_json::to_string(&job.config).unwrap()).unwrap();
+    std::fs::write(
+        orignal_job_path,
+        serde_json::to_string(&job.config).unwrap(),
+    )
+    .unwrap();
 
     let mut rng = ChaCha8Rng::from_entropy();
 
@@ -31,7 +35,7 @@ pub fn run_strategy(job: &mut LocalMixingJob) {
 
 fn main() {
     let num_wires = 64;
-    let num_gates = 1000;
+    let num_gates = 1000000;
     let mut rng = ChaCha8Rng::from_entropy();
 
     let random_circuit = Circuit::random(num_wires, num_gates, &mut rng);
@@ -40,7 +44,7 @@ fn main() {
         num_wires,
         num_inflationary_steps: 300000,
         num_kneading_steps: 300000,
-        num_replacement_attempts: 100000000,
+        num_replacement_attempts: 10000000,
         num_inflationary_to_fail: 10000,
         num_kneading_to_fail: 10000,
     };
