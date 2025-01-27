@@ -13,7 +13,7 @@ pub fn find_replacement_circuit<
     num_wires: usize,
     num_attempts: usize,
     rng: &mut R,
-) -> Option<[Gate; N_IN]> {
+) -> Option<([Gate; N_IN], usize)> {
     let mut proj_circuit = [Gate::default(); N_OUT];
     let mut proj_map = [None; N_PROJ_WIRES];
     let mut proj_ctr = 0;
@@ -78,11 +78,7 @@ pub fn find_replacement_circuit<
 
     let mut replacement_circuit = [Gate::default(); N_IN];
     let mut placed_wire_in_gate = [[false; 3]; N_IN];
-    for i in 0..num_attempts {
-        if i % 1000000 == 0 {
-            println!("{:?}", i);
-        }
-
+    for iter in 1..=num_attempts {
         sample_random_circuit(
             &mut replacement_circuit,
             &active_wires,
@@ -154,8 +150,10 @@ pub fn find_replacement_circuit<
                 })
         });
 
-        return Some(replacement_circuit);
+        return Some((replacement_circuit, iter));
     }
+
+    log::error!("replacement failed, C_OUT = {:?}", circuit);
 
     None
 }
