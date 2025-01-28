@@ -44,7 +44,7 @@ fn main() {
         num_wires,
         num_inflationary_steps: 300000,
         num_kneading_steps: 300000,
-        num_replacement_attempts: 10000000,
+        num_replacement_attempts: 100000000,
         num_inflationary_to_fail: 10000,
         num_kneading_to_fail: 10000,
     };

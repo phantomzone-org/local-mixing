@@ -1,6 +1,4 @@
-use std::time::Instant;
-
-use rand::Rng;
+use rand::{Rng, RngCore, SeedableRng};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -38,10 +36,9 @@ impl LocalMixingJob {
         }
     }
 
-    pub fn run_inflationary_step<R: Rng>(&mut self, rng: &mut R) {
+    pub fn run_inflationary_step<R: Send + Sync + RngCore + SeedableRng>(&mut self, rng: &mut R) {
         let num_gates = self.curr_circuit.gates.len();
         let num_wires = self.config.num_wires as usize;
-        let mut success = false;
 
         let mut gate_one_idx;
         let mut candidate_second_idxs = vec![];
@@ -50,7 +47,6 @@ impl LocalMixingJob {
         let mut num_replacement_failed = 0;
 
         for iter in 1..=self.config.num_inflationary_to_fail {
-            let s_sample = Instant::now();
             gate_one_idx = rng.gen_range(0..num_gates - 1);
             let gate_one = &self.curr_circuit.gates[gate_one_idx];
 
@@ -103,17 +99,23 @@ impl LocalMixingJob {
                 }
 
                 if target_count == num_wires || control_count == num_wires {
+                    // log::info!(
+                    //     "all wires hit: target_count = {:?}, control_count = {:?}, curr_dist = {:?}",
+                    //     target_count,
+                    //     control_count,
+                    //     i - gate_one_idx,
+                    // );
                     break;
                 }
             }
 
-            log::info!("sample time = {:?}", Instant::now() - s_sample);
-
             if candidate_second_idxs.is_empty() {
                 log::error!(
-                    "c_out search failed, gate_one_pos = {:?}, gate_one = {:?}",
+                    "c_out search failed, gate_one_pos = {:?}, gate_one = {:?}, target_count = {:?}, control_count = {:?}",
                     gate_one_idx,
-                    self.curr_circuit.gates[gate_one_idx]
+                    self.curr_circuit.gates[gate_one_idx],
+                    target_count,
+                    control_count,
                 );
                 num_search_failed += 1;
                 continue;
@@ -122,7 +124,6 @@ impl LocalMixingJob {
             let mut gate_two_idx =
                 candidate_second_idxs[rng.gen_range(0..candidate_second_idxs.len())];
 
-            let s_permute = Instant::now();
             // permute step
             let mut to_before = vec![];
             let mut to_after = vec![];
@@ -168,9 +169,7 @@ impl LocalMixingJob {
                 self.curr_circuit.gates[write_idx] = to_after[i];
                 write_idx += 1;
             }
-            log::info!("permute time = {:?}", Instant::now() - s_permute);
 
-            let s_replace = Instant::now();
             // replacement
             let c_out = [gate_one, gate_two];
             let replacement_res = find_replacement_circuit::<_, 2, 5, 11, { 1 << 11 }>(
@@ -179,13 +178,10 @@ impl LocalMixingJob {
                 self.config.num_replacement_attempts,
                 rng,
             );
-            log::info!("c_in search time = {:?}", Instant::now() - s_replace);
             if let Some((c_in, replacement_attempts)) = replacement_res {
-                let s_splice = Instant::now();
                 self.curr_circuit
                     .gates
                     .splice(gate_one_idx..=gate_two_idx, c_in);
-                log::info!("insert time = {:?}", Instant::now() - s_splice);
 
                 log::info!(
                     "stage = inflationary, step = {:?}, status = SUCCESS, n_gates = {:?}, c_out_ids = {:?}, candidate_gate_two_set = {:?}, c_out = {:?}, max_candidate_two_dist = {:?}, n_circuits_sampled = {:?}, n_iter = {:?}, n_search_failed: {:?}, n_replacement_failed: {:?}",
@@ -217,7 +213,7 @@ impl LocalMixingJob {
         );
     }
 
-    pub fn run_kneading_step<R: Rng>(&mut self, rng: &mut R) {
+    pub fn run_kneading_step<R: Send + Sync + RngCore + SeedableRng>(&mut self, rng: &mut R) {
         let num_gates = self.curr_circuit.gates.len();
         let num_wires = self.config.num_wires as usize;
 
@@ -422,12 +418,12 @@ impl LocalMixingJob {
 
 #[cfg(test)]
 mod tests {
-    use rand::thread_rng;
+    use rand_chacha::ChaCha8Rng;
 
     use super::*;
 
     fn benchmark_inflationary_step(num_wires: u32, num_gates: usize, iterations: usize) {
-        let mut rng = thread_rng();
+        let mut rng = ChaCha8Rng::from_entropy();
 
         for _ in 0..iterations {
             let circuit = Circuit::random(num_wires, num_gates, &mut rng);
@@ -447,7 +443,7 @@ mod tests {
 
     #[test]
     fn test_inflationary_step() {
-        let mut rng = thread_rng();
+        let mut rng = ChaCha8Rng::from_entropy();
         let num_wires = 16;
         let num_gates = 10;
         let circuit = Circuit::random(num_wires, num_gates, &mut rng);
@@ -466,7 +462,7 @@ mod tests {
 
     #[test]
     fn test_kneading_step() {
-        let mut rng = thread_rng();
+        let mut rng = ChaCha8Rng::from_entropy();
         let num_wires = 10;
         let num_gates = 20;
         let circuit = Circuit::random(num_wires, num_gates, &mut rng);
