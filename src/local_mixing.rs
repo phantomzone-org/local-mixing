@@ -15,6 +15,7 @@ pub struct LocalMixingConfig {
     pub num_replacement_attempts: usize,
     pub num_inflationary_to_fail: usize,
     pub num_kneading_to_fail: usize,
+    pub epoch_size: usize,
 }
 
 pub struct LocalMixingJob {
@@ -435,6 +436,7 @@ mod tests {
                 num_replacement_attempts: 1000000000,
                 num_inflationary_to_fail: 10000,
                 num_kneading_to_fail: 10000,
+                epoch_size: 0,
             };
             let mut local_mixing_job = LocalMixingJob::new(config);
             local_mixing_job.run_inflationary_step(&mut rng);
@@ -455,6 +457,7 @@ mod tests {
             num_replacement_attempts: 1000000000,
             num_inflationary_to_fail: 10000,
             num_kneading_to_fail: 10000,
+            epoch_size: 0,
         };
         let mut job = LocalMixingJob::new(config);
         job.run_inflationary_step(&mut rng);
@@ -474,6 +477,7 @@ mod tests {
             num_replacement_attempts: 1000000000,
             num_inflationary_to_fail: 10000,
             num_kneading_to_fail: 10000,
+            epoch_size: 0,
         };
         let mut job = LocalMixingJob::new(config);
         job.run_kneading_step(&mut rng);

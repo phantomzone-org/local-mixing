@@ -13,23 +13,41 @@ pub fn run_strategy(job: &mut LocalMixingJob) {
     let log_confg = create_log4rs_config(&log_path).unwrap();
     log4rs::init_config(log_confg).unwrap();
 
-    let orignal_job_path = args().nth(2).expect("Missing original circuit path");
+    let orignal_job_path = args().nth(2).expect("Missing original job path");
     std::fs::write(
         orignal_job_path,
         serde_json::to_string(&job.config).unwrap(),
     )
     .unwrap();
 
+    let latest_job_path = args().nth(3).expect("Missing latest job path");
+
     let mut rng = ChaCha8Rng::from_entropy();
 
     while job.curr_inflationary_step <= job.config.num_inflationary_steps {
         job.run_inflationary_step(&mut rng);
+
+        if job.curr_inflationary_step % job.config.epoch_size == 0 {
+            std::fs::write(
+                &latest_job_path,
+                serde_json::to_string(&job.config).unwrap(),
+            )
+            .unwrap();
+        }
     }
 
     while job.curr_kneading_step <= job.config.num_kneading_steps
         && job.curr_kneading_fail <= job.config.num_kneading_to_fail
     {
         job.run_kneading_step(&mut rng);
+
+        if job.curr_kneading_step % job.config.epoch_size == 0 {
+            std::fs::write(
+                &latest_job_path,
+                serde_json::to_string(&job.config).unwrap(),
+            )
+            .unwrap();
+        }
     }
 }
 
@@ -44,9 +62,10 @@ fn main() {
         num_wires,
         num_inflationary_steps: 300000,
         num_kneading_steps: 300000,
-        num_replacement_attempts: 100000000,
+        num_replacement_attempts: 50000000,
         num_inflationary_to_fail: 10000,
         num_kneading_to_fail: 10000,
+        epoch_size: 1000,
     };
     let mut job = LocalMixingJob::new(config);
 
