@@ -1,4 +1,8 @@
-use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
+use std::{
+    array::from_fn,
+    iter::repeat_with,
+    sync::atomic::{AtomicBool, Ordering::Relaxed},
+};
 
 use rand::{Rng, RngCore, SeedableRng};
 use rayon::{
@@ -7,6 +11,8 @@ use rayon::{
 };
 
 use crate::circuit::{Base2GateControlFunc, Gate};
+
+const RPL_GUIDED: bool = true;
 
 pub fn find_replacement_circuit<
     R: Send + Sync + RngCore + SeedableRng,
@@ -91,21 +97,28 @@ pub fn find_replacement_circuit<
         .find_map_any(|mut rng| {
             let epoch_size = rng.gen_range(10..20);
             let mut replacement_circuit;
-            let mut placed_wire_in_gate;
+            // let mut placed_wire_in_gate;
             for iter in 1..=max_iterations {
                 if iter % epoch_size == 0 && found.load(Relaxed) {
                     return None;
                 }
 
                 replacement_circuit = [Gate::default(); N_IN];
-                placed_wire_in_gate = [[false; 3]; N_IN];
+                // placed_wire_in_gate = [[false; 3]; N_IN];
 
-                sample_random_circuit(
-                    &mut replacement_circuit,
-                    &active_wires,
-                    &mut placed_wire_in_gate,
-                    &mut rng,
-                );
+                if RPL_GUIDED {
+                    sample_random_circuit(
+                        &mut replacement_circuit,
+                        &active_wires,
+                        // &mut placed_wire_in_gate,
+                        &mut rng,
+                    );
+                } else {
+                    sample_random_circuit_unguided::<_, N_IN, N_PROJ_WIRES>(
+                        &mut replacement_circuit,
+                        &mut rng,
+                    );
+                }
 
                 // functional equivalence
                 let mut func_equiv = true;
@@ -182,7 +195,6 @@ pub fn find_replacement_circuit<
         return Some((replacement_circuit, iter));
     }
 
-    log::error!("replacement failed, C_OUT = {:?}", circuit);
     None
 }
 
@@ -193,10 +205,10 @@ fn sample_random_circuit<
 >(
     circuit: &mut [Gate; N_IN],
     active_wires: &[[bool; N_PROJ_WIRES]; 2],
-    placed_wire_in_gate: &mut [[bool; 3]; N_IN],
+    // placed_wire_in_gate: &mut [[bool; 3]; N_IN],
     rng: &mut R,
 ) {
-    *placed_wire_in_gate = [[false; 3]; N_IN];
+    let mut placed_wire_in_gate = [[false; 3]; N_IN];
 
     for i in 0..N_PROJ_WIRES {
         if !active_wires[0][i] {
@@ -258,13 +270,36 @@ fn sample_random_circuit<
             }
             if t != c1 && t != c2 && c1 != c2 {
                 circuit[gate_idx].wires = [t, c1, c2];
-                circuit[gate_idx].control_func = rng.gen_range(0..16);
+                circuit[gate_idx].control_func = rng.gen_range(0..15);
                 break;
             }
         }
     }
 }
 
+pub fn sample_random_circuit_unguided<R: Rng, const N_IN: usize, const N_PROJ_WIRES: usize>(
+    circuit: &mut [Gate; N_IN],
+    rng: &mut R,
+) {
+    let mut rng0 = repeat_with(|| rng.gen_range(0..N_PROJ_WIRES));
+
+    circuit.iter_mut().for_each(|gate| {
+        let mut set: [bool; N_PROJ_WIRES] = [false; N_PROJ_WIRES];
+        let [t, c0, c1] = from_fn(|_| loop {
+            let v = rng0.next().unwrap();
+            if !set[v] {
+                set[v] = true;
+                break v;
+            }
+        });
+
+        gate.wires = [t as u32, c0 as u32, c1 as u32];
+    });
+
+    circuit.iter_mut().for_each(|gate| {
+        gate.control_func = rng.gen_range(0..15);
+    });
+}
 #[cfg(test)]
 mod tests {
     use rand::RngCore;
@@ -276,22 +311,23 @@ mod tests {
     fn test_replacement() {
         const WIRES: usize = 20;
         let mut rng = ChaCha8Rng::from_entropy();
-        for _ in 0..1000 {
-            rng.next_u32();
-        }
+
         let mut ckt = [Gate::default(); 2];
-        loop {
-            sample_random_circuit(&mut ckt, &[[false; 20]; 2], &mut [[false; 3]; 2], &mut rng);
-            if (ckt[0].wires[0] == ckt[1].wires[1]
-                || ckt[0].wires[0] == ckt[1].wires[2]
-                || ckt[1].wires[0] == ckt[0].wires[1]
-                || ckt[1].wires[0] == ckt[0].wires[2])
-                && ckt[0].control_func != 0
-                && ckt[1].control_func != 0
-            {
-                break;
-            }
-        }
+
+        sample_random_circuit_unguided::<_, 2, 5>(&mut ckt, &mut rng);
+        // loop {
+        //     sample_random_circuit(&mut ckt, &[[false; 20]; 2], &mut rng);
+        //     if (ckt[0].wires[0] == ckt[1].wires[1]
+        //         || ckt[0].wires[0] == ckt[1].wires[2]
+        //         || ckt[1].wires[0] == ckt[0].wires[1]
+        //         || ckt[1].wires[0] == ckt[0].wires[2])
+        //         && ckt[0].control_func != 0
+        //         && ckt[1].control_func != 0
+        //     {
+        //         break;
+        //     }
+        // }
+        dbg!(&ckt);
 
         let res =
             find_replacement_circuit::<_, 2, 5, 11, { 1 << 11 }>(&ckt, WIRES, 1000000000, &mut rng);

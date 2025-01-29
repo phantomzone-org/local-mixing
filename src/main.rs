@@ -4,72 +4,62 @@ use local_mixing::{
     circuit::Circuit,
     local_mixing::{LocalMixingConfig, LocalMixingJob},
 };
-use rand::SeedableRng;
+use rand::{thread_rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
 pub fn run_strategy(job: &mut LocalMixingJob) {
-    // setup logs
-    let log_path = args().nth(1).expect("Missing log path");
-    let log_confg = create_log4rs_config(&log_path).unwrap();
-    log4rs::init_config(log_confg).unwrap();
-
-    let orignal_job_path = args().nth(2).expect("Missing original job path");
-    std::fs::write(
-        orignal_job_path,
-        serde_json::to_string(&job.config).unwrap(),
-    )
-    .unwrap();
-
-    let latest_job_path = args().nth(3).expect("Missing latest job path");
-
     let mut rng = ChaCha8Rng::from_entropy();
+
+    let job_path = args().nth(2).expect("Missing job path");
 
     while job.curr_inflationary_step <= job.config.num_inflationary_steps {
         job.run_inflationary_step(&mut rng);
 
         if job.curr_inflationary_step % job.config.epoch_size == 0 {
-            std::fs::write(
-                &latest_job_path,
-                serde_json::to_string(&job.config).unwrap(),
-            )
-            .unwrap();
+            std::fs::write(&job_path, bincode::serialize(&job).unwrap()).unwrap();
         }
     }
 
-    while job.curr_kneading_step <= job.config.num_kneading_steps
-        && job.curr_kneading_fail <= job.config.num_kneading_to_fail
-    {
-        job.run_kneading_step(&mut rng);
+    // while job.curr_kneading_step <= job.config.num_kneading_steps
+    // // && job.curr_kneading_fail <= job.config.num_kneading_to_fail
+    // {
+    //     job.run_kneading_step(&mut rng);
 
-        if job.curr_kneading_step % job.config.epoch_size == 0 {
-            std::fs::write(
-                &latest_job_path,
-                serde_json::to_string(&job.config).unwrap(),
-            )
-            .unwrap();
-        }
-    }
+    //     if job.curr_kneading_step % job.config.epoch_size == 0 {
+    //         std::fs::write(&job_path, serde_json::to_string(&job).unwrap()).unwrap();
+    //     }
+    // }
 }
 
 fn main() {
-    let num_wires = 64;
-    let num_gates = 1000000;
-    let mut rng = ChaCha8Rng::from_entropy();
+    // setup logs
+    let log_path = args().nth(1).expect("Missing log path");
+    let log_confg = create_log4rs_config(&log_path).unwrap();
+    log4rs::init_config(log_confg).unwrap();
 
-    let random_circuit = Circuit::random(num_wires, num_gates, &mut rng);
-    let config = LocalMixingConfig {
-        original_circuit: random_circuit,
-        num_wires,
-        num_inflationary_steps: 300000,
-        num_kneading_steps: 300000,
-        num_replacement_attempts: 50000000,
-        num_inflationary_to_fail: 10000,
-        num_kneading_to_fail: 10000,
-        epoch_size: 1000,
-    };
-    let mut job = LocalMixingJob::new(config);
+    let job_path = args().nth(2).expect("Missing job path");
+    if std::path::Path::new(&job_path).exists() {
+        // continue the job
+        todo!()
+    } else {
+        // start a new job
+        let num_wires = 64;
+        let num_gates = 1000;
+        let random_circuit = Circuit::random(num_wires, num_gates, &mut thread_rng());
+        let config = LocalMixingConfig {
+            original_circuit: random_circuit,
+            num_wires,
+            num_inflationary_steps: 300000,
+            num_kneading_steps: 300000,
+            num_replacement_attempts: 1000000000,
+            num_inflationary_to_fail: 1,
+            num_kneading_to_fail: 10000,
+            epoch_size: 1000,
+        };
+        let mut job = LocalMixingJob::from_config(config);
 
-    run_strategy(&mut job);
+        run_strategy(&mut job);
+    }
 }
 
 fn create_log4rs_config(log_path: &str) -> Result<log4rs::Config, Box<dyn Error>> {

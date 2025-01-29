@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Base2GateControlFunc {
-    F = 0,     // false,
+    T = 0,     // true,
     AND = 1,   // a & b,
     ANDNB = 2, // a & (!b),
     A = 3,     // a,
@@ -19,13 +19,13 @@ pub enum Base2GateControlFunc {
     NA = 12,   // !a,
     ORNA = 13, // (!a) | b,
     NAND = 14, // !(a & b),
-    T = 15,    // true,
+               // F = 15,    // false,
 }
 
 impl Base2GateControlFunc {
     pub const fn from_u8(v: u8) -> Self {
         match v {
-            0 => Self::F,
+            0 => Self::T,
             1 => Self::AND,
             2 => Self::ANDNB,
             3 => Self::A,
@@ -40,14 +40,14 @@ impl Base2GateControlFunc {
             12 => Self::NA,
             13 => Self::ORNA,
             14 => Self::NAND,
-            15 => Self::T,
+            // 15 => Self::T,
             _ => unreachable!(),
         }
     }
 
     pub const fn evaluate(&self, a: bool, b: bool) -> bool {
         match self {
-            Self::F => false,
+            // Self::F => false,
             Self::AND => a & b,
             Self::ANDNB => a & (!b),
             Self::A => a,
@@ -106,7 +106,7 @@ impl Circuit {
                 if target != control_one && target != control_two && control_one != control_two {
                     gates.push(Gate {
                         wires: [target, control_one, control_two],
-                        control_func: rng.gen_range(0..16),
+                        control_func: rng.gen_range(0..15),
                     });
                     break;
                 }

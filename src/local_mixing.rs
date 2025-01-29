@@ -18,8 +18,12 @@ pub struct LocalMixingConfig {
     pub epoch_size: usize,
 }
 
+#[derive(Clone, Serialize, Deserialize)]
 pub struct LocalMixingJob {
     pub config: LocalMixingConfig,
+    /// Original circuit
+    original_circuit: Circuit,
+    /// Current obfuscated circuit
     curr_circuit: Circuit,
     pub curr_inflationary_step: usize,
     pub curr_kneading_step: usize,
@@ -27,9 +31,10 @@ pub struct LocalMixingJob {
 }
 
 impl LocalMixingJob {
-    pub fn new(config: LocalMixingConfig) -> Self {
+    pub fn from_config(config: LocalMixingConfig) -> Self {
         Self {
             config: config.clone(),
+            original_circuit: config.original_circuit.clone(),
             curr_circuit: config.original_circuit,
             curr_inflationary_step: 1,
             curr_kneading_step: 1,
@@ -47,7 +52,7 @@ impl LocalMixingJob {
         let mut num_search_failed = 0;
         let mut num_replacement_failed = 0;
 
-        for iter in 1..=self.config.num_inflationary_to_fail {
+        for iter in 0..self.config.num_inflationary_to_fail {
             gate_one_idx = rng.gen_range(0..num_gates - 1);
             let gate_one = &self.curr_circuit.gates[gate_one_idx];
 
@@ -180,12 +185,19 @@ impl LocalMixingJob {
                 rng,
             );
             if let Some((c_in, replacement_attempts)) = replacement_res {
-                self.curr_circuit
-                    .gates
-                    .splice(gate_one_idx..=gate_two_idx, c_in);
-
                 log::info!(
-                    "stage = inflationary, step = {:?}, status = SUCCESS, n_gates = {:?}, c_out_ids = {:?}, candidate_gate_two_set = {:?}, c_out = {:?}, max_candidate_two_dist = {:?}, n_circuits_sampled = {:?}, n_iter = {:?}, n_search_failed: {:?}, n_replacement_failed: {:?}",
+                    "stage = inflationary, \
+                     step = {:?}, \
+                     status = SUCCESS, \
+                     n_gates = {:?}, \
+                     c_out_ids = {:?}, \
+                     candidate_gate_two_set = {:?}, \
+                     c_out = {:?}, \
+                     max_candidate_two_dist = {:?}, \
+                     n_circuits_sampled = {:?}, \
+                     n_iter = {:?}, \
+                     n_search_failed = {:?}, \
+                     n_replacement_failed = {:?}",
                     self.curr_inflationary_step,
                     self.curr_circuit.gates.len(),
                     [orig_gate_one_idx, orig_gate_two_idx],
@@ -197,11 +209,27 @@ impl LocalMixingJob {
                     num_search_failed,
                     num_replacement_failed,
                 );
+                log::info!(
+                    "[TEMP]
+                        cout = {:?} \
+                        cin = {:?}
+                    ",
+                    c_out,
+                    c_in
+                );
+
+                self.curr_circuit
+                    .gates
+                    .splice(gate_one_idx..=gate_two_idx, c_in);
 
                 // done with inflationary step
                 self.curr_inflationary_step += 1;
                 return;
             } else {
+                // log::error!(
+                //     "replacement failed, stage = inflationary, C_OUT = {:?}",
+                //     c_out
+                // );
                 num_replacement_failed += 1;
             }
         }
@@ -412,6 +440,7 @@ impl LocalMixingJob {
 
             self.curr_kneading_step += 1;
         } else {
+            // log::error!("replacement failed, stage = kneading, C_OUT = {:?}", c_out);
             self.curr_kneading_fail += 1;
         }
     }
@@ -438,7 +467,7 @@ mod tests {
                 num_kneading_to_fail: 10000,
                 epoch_size: 0,
             };
-            let mut local_mixing_job = LocalMixingJob::new(config);
+            let mut local_mixing_job = LocalMixingJob::from_config(config);
             local_mixing_job.run_inflationary_step(&mut rng);
         }
     }
@@ -459,7 +488,7 @@ mod tests {
             num_kneading_to_fail: 10000,
             epoch_size: 0,
         };
-        let mut job = LocalMixingJob::new(config);
+        let mut job = LocalMixingJob::from_config(config);
         job.run_inflationary_step(&mut rng);
     }
 
@@ -479,7 +508,7 @@ mod tests {
             num_kneading_to_fail: 10000,
             epoch_size: 0,
         };
-        let mut job = LocalMixingJob::new(config);
+        let mut job = LocalMixingJob::from_config(config);
         job.run_kneading_step(&mut rng);
     }
 
