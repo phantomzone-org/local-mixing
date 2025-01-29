@@ -23,6 +23,7 @@ pub enum Base2GateControlFunc {
 }
 
 impl Base2GateControlFunc {
+    pub const COUNT: u8 = 15;
     pub const fn from_u8(v: u8) -> Self {
         match v {
             0 => Self::T,
@@ -40,7 +41,7 @@ impl Base2GateControlFunc {
             12 => Self::NA,
             13 => Self::ORNA,
             14 => Self::NAND,
-            // 15 => Self::T,
+            // 15 => Self::F,
             _ => unreachable!(),
         }
     }
@@ -106,7 +107,7 @@ impl Circuit {
                 if target != control_one && target != control_two && control_one != control_two {
                     gates.push(Gate {
                         wires: [target, control_one, control_two],
-                        control_func: rng.gen_range(0..15),
+                        control_func: rng.gen_range(0..Base2GateControlFunc::COUNT),
                     });
                     break;
                 }

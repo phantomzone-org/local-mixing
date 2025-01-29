@@ -270,7 +270,7 @@ fn sample_random_circuit<
             }
             if t != c1 && t != c2 && c1 != c2 {
                 circuit[gate_idx].wires = [t, c1, c2];
-                circuit[gate_idx].control_func = rng.gen_range(0..15);
+                circuit[gate_idx].control_func = rng.gen_range(0..Base2GateControlFunc::COUNT);
                 break;
             }
         }
@@ -297,7 +297,7 @@ pub fn sample_random_circuit_unguided<R: Rng, const N_IN: usize, const N_PROJ_WI
     });
 
     circuit.iter_mut().for_each(|gate| {
-        gate.control_func = rng.gen_range(0..15);
+        gate.control_func = rng.gen_range(0..Base2GateControlFunc::COUNT);
     });
 }
 #[cfg(test)]
