@@ -389,7 +389,7 @@ mod tests {
             }
         }
 
-        println!("average sample count: {:?}", avg_sampled);
+        println!("average sample count: {:?}", avg_sampled / success_count);
     }
 
     #[test]
