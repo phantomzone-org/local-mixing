@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     circuit::{Circuit, Gate},
-    replacement::find_replacement_circuit,
+    replacement::{find_replacement_circuit, ReplacementStrategy},
 };
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -182,6 +182,7 @@ impl LocalMixingJob {
                 &c_out,
                 num_wires,
                 self.config.num_replacement_attempts,
+                ReplacementStrategy::NoID,
                 rng,
             );
             if let Some((c_in, replacement_attempts)) = replacement_res {
@@ -431,6 +432,7 @@ impl LocalMixingJob {
             &c_out,
             num_wires,
             self.config.num_replacement_attempts,
+            ReplacementStrategy::NoID,
             rng,
         );
         if let Some((c_in, replacement_attempts)) = replacement_res {
