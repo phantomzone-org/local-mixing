@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     circuit::{Circuit, Gate},
-    replacement::{find_replacement_circuit, ReplacementStrategy},
+    replacement::find_replacement_circuit,
 };
 
 use super::config::LocalMixingConfig;
@@ -174,7 +174,6 @@ impl LocalMixingJob {
                 &c_out,
                 num_wires,
                 self.config.num_replacement_attempts,
-                ReplacementStrategy::NoID,
                 rng,
             );
             if let Some((c_in, replacement_attempts)) = replacement_res {
@@ -424,7 +423,6 @@ impl LocalMixingJob {
             &c_out,
             num_wires,
             self.config.num_replacement_attempts,
-            ReplacementStrategy::NoID,
             rng,
         );
         if let Some((c_in, replacement_attempts)) = replacement_res {
@@ -446,25 +444,6 @@ mod tests {
 
     use super::*;
 
-    fn benchmark_inflationary_step(num_wires: u32, num_gates: usize, iterations: usize) {
-        let mut rng = ChaCha8Rng::from_entropy();
-
-        for _ in 0..iterations {
-            let circuit = Circuit::random(num_wires, num_gates, &mut rng);
-            let config = LocalMixingConfig {
-                num_wires,
-                num_inflationary_steps: 1,
-                num_kneading_steps: 1,
-                num_replacement_attempts: 1000000000,
-                num_inflationary_to_fail: 10000,
-                num_kneading_to_fail: 10000,
-                epoch_size: 0,
-            };
-            let mut local_mixing_job = LocalMixingJob::build(circuit, config, None);
-            local_mixing_job.run_inflationary_step(&mut rng);
-        }
-    }
-
     #[test]
     fn test_inflationary_step() {
         let mut rng = ChaCha8Rng::from_entropy();
@@ -475,9 +454,9 @@ mod tests {
             num_wires,
             num_inflationary_steps: 1,
             num_kneading_steps: 1,
-            num_replacement_attempts: 1000000000,
-            num_inflationary_to_fail: 10000,
-            num_kneading_to_fail: 10000,
+            num_replacement_attempts: 1_000_000_000,
+            num_inflationary_to_fail: 10_000,
+            num_kneading_to_fail: 10_000,
             epoch_size: 0,
         };
         let mut job = LocalMixingJob::build(circuit, config, None);
@@ -494,34 +473,12 @@ mod tests {
             num_wires,
             num_inflationary_steps: 1,
             num_kneading_steps: 1,
-            num_replacement_attempts: 1000000000,
-            num_inflationary_to_fail: 10000,
-            num_kneading_to_fail: 10000,
+            num_replacement_attempts: 1_000_000_000,
+            num_inflationary_to_fail: 10_000,
+            num_kneading_to_fail: 10_000,
             epoch_size: 0,
         };
         let mut job = LocalMixingJob::build(circuit, config, None);
         job.run_kneading_step(&mut rng);
-    }
-
-    #[test]
-    fn test_benchmark_inflationary_step() {
-        let jobs = [
-            (100, 1000),
-            (200, 1000),
-            (500, 1000),
-            (100, 5000),
-            (200, 5000),
-            (500, 5000),
-            (100, 10000),
-            (200, 10000),
-            (500, 10000),
-            (100, 100000),
-            (200, 100000),
-            (500, 100000),
-        ];
-
-        for (num_wires, num_gates) in jobs {
-            benchmark_inflationary_step(num_wires, num_gates, 10000);
-        }
     }
 }

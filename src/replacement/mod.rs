@@ -14,12 +14,6 @@ use crate::circuit::{cf::Base2GateControlFunc, Gate};
 
 const RPL_GUIDED: bool = true;
 
-#[derive(Clone, Copy)]
-pub enum ReplacementStrategy {
-    NoID,
-    UniqueCF,
-}
-
 pub fn find_replacement_circuit<
     R: Send + Sync + RngCore + SeedableRng,
     const N_OUT: usize,
@@ -30,7 +24,6 @@ pub fn find_replacement_circuit<
     circuit: &[Gate; N_OUT],
     num_wires: usize,
     num_attempts: usize,
-    strategy: ReplacementStrategy,
     rng: &mut R,
 ) -> Option<([Gate; N_IN], usize)> {
     let mut proj_circuit = [Gate::default(); N_OUT];
@@ -114,12 +107,7 @@ pub fn find_replacement_circuit<
                 // placed_wire_in_gate = [[false; 3]; N_IN];
 
                 if RPL_GUIDED {
-                    sample_random_circuit(
-                        &mut replacement_circuit,
-                        &active_wires,
-                        strategy,
-                        &mut rng,
-                    );
+                    sample_random_circuit(&mut replacement_circuit, &active_wires, &mut rng);
                 } else {
                     sample_random_circuit_unguided::<_, N_IN, N_PROJ_WIRES>(
                         &mut replacement_circuit,
@@ -212,15 +200,11 @@ fn sample_random_circuit<
 >(
     circuit: &mut [Gate; N_IN],
     active_wires: &[[bool; N_PROJ_WIRES]; 2],
-    strategy: ReplacementStrategy,
     rng: &mut R,
 ) {
     let mut placed_wire_in_gate = [[false; 3]; N_IN];
 
-    let cf_range = match strategy {
-        ReplacementStrategy::NoID => vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
-        ReplacementStrategy::UniqueCF => vec![0, 3, 12, 1, 4, 7, 13, 6, 9, 14, 8],
-    };
+    let cf_range = [0, 3, 12, 1, 4, 7, 13, 6, 9, 14, 8];
 
     for i in 0..N_PROJ_WIRES {
         if !active_wires[0][i] {
@@ -312,93 +296,54 @@ pub fn sample_random_circuit_unguided<R: Rng, const N_IN: usize, const N_PROJ_WI
         gate.control_func = rng.gen_range(0..Base2GateControlFunc::COUNT);
     });
 }
+
 #[cfg(test)]
 mod tests {
-    use rand_chacha::ChaCha8Rng;
+    use std::time::Instant;
 
     use super::*;
 
-    #[test]
-    fn test_replacement() {
-        const WIRES: usize = 20;
-        let mut rng = ChaCha8Rng::from_entropy();
+    use rand_chacha::ChaCha8Rng;
 
-        let mut ckt = [Gate::default(); 2];
-
-        sample_random_circuit_unguided::<_, 2, 5>(&mut ckt, &mut rng);
-        // loop {
-        //     sample_random_circuit(&mut ckt, &[[false; 20]; 2], &mut rng);
-        //     if (ckt[0].wires[0] == ckt[1].wires[1]
-        //         || ckt[0].wires[0] == ckt[1].wires[2]
-        //         || ckt[1].wires[0] == ckt[0].wires[1]
-        //         || ckt[1].wires[0] == ckt[0].wires[2])
-        //         && ckt[0].control_func != 0
-        //         && ckt[1].control_func != 0
-        //     {
-        //         break;
-        //     }
-        // }
-        dbg!(&ckt);
-
-        let res = find_replacement_circuit::<_, 2, 5, 11, { 1 << 11 }>(
-            &ckt,
-            WIRES,
-            1000000000,
-            ReplacementStrategy::NoID,
-            &mut rng,
-        );
-        dbg!(res);
-    }
-
-    fn replacement_strategy_benchmark(strategy: ReplacementStrategy, num_iterations: usize) {
+    fn benchmark_replacement(n: usize) {
         let input_circuit = [
             Gate {
                 wires: [0, 1, 2],
-                control_func: 7,
+                control_func: 4,
             },
             Gate {
                 wires: [3, 0, 4],
-                control_func: 3,
+                control_func: 9,
             },
         ];
         let mut rng = ChaCha8Rng::from_entropy();
-        let mut avg_sampled = 0;
-        let mut success_count = 0;
 
-        println!("Input circuit {:?}", input_circuit);
-
-        for i in 1..=num_iterations {
-            match find_replacement_circuit::<_, 2, 5, 11, { 1 << 11 }>(
+        for _ in 0..n {
+            let s_replacement = Instant::now();
+            let res = find_replacement_circuit::<_, 2, 5, 11, { 1 << 11 }>(
                 &input_circuit,
                 20,
-                1000000000,
-                strategy,
+                1_000_000_000,
                 &mut rng,
-            ) {
+            );
+            let d_replacement = Instant::now() - s_replacement;
+            match res {
                 Some((replacement, num_sampled)) => {
                     println!(
-                        "iteration {:?}, status: SUCCESS, replacement: {:?}, num_sampled: {:?}",
-                        i, replacement, num_sampled
+                        "status: SUCCESS, runtime: {:?}, circuits sampled: {:?}, replacement: {:?}",
+                        d_replacement, num_sampled, replacement
                     );
-                    avg_sampled += num_sampled;
-                    success_count += 1;
                 }
                 None => {
-                    println!("iteration {:?}, status: FAIL", i);
+                    println!("status: FAIL, runtime: {:?}", d_replacement);
                 }
             }
         }
-
-        println!("average sample count: {:?}", avg_sampled / success_count);
     }
 
     #[test]
-    fn test_replacement_no_identity() {
-        replacement_strategy_benchmark(ReplacementStrategy::NoID, 100);
-    }
-
-    #[test]
-    fn test_replacement_unique_cfs() {
-        replacement_strategy_benchmark(ReplacementStrategy::UniqueCF, 100);
+    fn test_replacement() {
+        let n = 1;
+        benchmark_replacement(n);
     }
 }
