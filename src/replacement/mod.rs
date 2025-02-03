@@ -10,7 +10,7 @@ use rayon::{
     iter::{ParallelBridge, ParallelIterator},
 };
 
-use crate::circuit::{Base2GateControlFunc, Gate};
+use crate::circuit::{cf::Base2GateControlFunc, Gate};
 
 const RPL_GUIDED: bool = true;
 
@@ -62,7 +62,7 @@ pub fn find_replacement_circuit<
         proj_circuit.iter().for_each(|g| {
             let a = (input & (1 << g.wires[1])) != 0;
             let b = (input & (1 << g.wires[2])) != 0;
-            let x = Base2GateControlFunc::from_u8(g.control_func).evaluate(a, b);
+            let x = g.evaluate_cf(a, b);
             input ^= (x as usize) << g.wires[0];
         });
         eval_table[i as usize] = input;
@@ -134,7 +134,7 @@ pub fn find_replacement_circuit<
                     replacement_circuit.iter().for_each(|g| {
                         let a = (input & (1 << g.wires[1])) != 0;
                         let b = (input & (1 << g.wires[2])) != 0;
-                        let x = Base2GateControlFunc::from_u8(g.control_func).evaluate(a, b);
+                        let x = g.evaluate_cf(a, b);
                         input ^= (x as usize) << g.wires[0];
                     });
                     if input != eval_table[i as usize] {

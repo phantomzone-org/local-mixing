@@ -6,17 +6,7 @@ use crate::{
     replacement::{find_replacement_circuit, ReplacementStrategy},
 };
 
-#[derive(Clone, Serialize, Deserialize)]
-pub struct LocalMixingConfig {
-    pub original_circuit: Circuit,
-    pub num_wires: u32,
-    pub num_inflationary_steps: usize,
-    pub num_kneading_steps: usize,
-    pub num_replacement_attempts: usize,
-    pub num_inflationary_to_fail: usize,
-    pub num_kneading_to_fail: usize,
-    pub epoch_size: usize,
-}
+use super::config::LocalMixingConfig;
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct LocalMixingJob {
@@ -28,17 +18,19 @@ pub struct LocalMixingJob {
     pub curr_inflationary_step: usize,
     pub curr_kneading_step: usize,
     pub curr_kneading_fail: usize,
+    pub save_path: Option<String>,
 }
 
 impl LocalMixingJob {
-    pub fn from_config(config: LocalMixingConfig) -> Self {
+    pub fn build(circuit: Circuit, config: LocalMixingConfig, save_path: Option<String>) -> Self {
         Self {
             config: config.clone(),
-            original_circuit: config.original_circuit.clone(),
-            curr_circuit: config.original_circuit,
+            original_circuit: circuit.clone(),
+            curr_circuit: circuit,
             curr_inflationary_step: 1,
             curr_kneading_step: 1,
             curr_kneading_fail: 0,
+            save_path,
         }
     }
 
@@ -460,7 +452,6 @@ mod tests {
         for _ in 0..iterations {
             let circuit = Circuit::random(num_wires, num_gates, &mut rng);
             let config = LocalMixingConfig {
-                original_circuit: circuit,
                 num_wires,
                 num_inflationary_steps: 1,
                 num_kneading_steps: 1,
@@ -469,7 +460,7 @@ mod tests {
                 num_kneading_to_fail: 10000,
                 epoch_size: 0,
             };
-            let mut local_mixing_job = LocalMixingJob::from_config(config);
+            let mut local_mixing_job = LocalMixingJob::build(circuit, config, None);
             local_mixing_job.run_inflationary_step(&mut rng);
         }
     }
@@ -481,7 +472,6 @@ mod tests {
         let num_gates = 10;
         let circuit = Circuit::random(num_wires, num_gates, &mut rng);
         let config = LocalMixingConfig {
-            original_circuit: circuit.clone(),
             num_wires,
             num_inflationary_steps: 1,
             num_kneading_steps: 1,
@@ -490,7 +480,7 @@ mod tests {
             num_kneading_to_fail: 10000,
             epoch_size: 0,
         };
-        let mut job = LocalMixingJob::from_config(config);
+        let mut job = LocalMixingJob::build(circuit, config, None);
         job.run_inflationary_step(&mut rng);
     }
 
@@ -501,7 +491,6 @@ mod tests {
         let num_gates = 20;
         let circuit = Circuit::random(num_wires, num_gates, &mut rng);
         let config = LocalMixingConfig {
-            original_circuit: circuit.clone(),
             num_wires,
             num_inflationary_steps: 1,
             num_kneading_steps: 1,
@@ -510,7 +499,7 @@ mod tests {
             num_kneading_to_fail: 10000,
             epoch_size: 0,
         };
-        let mut job = LocalMixingJob::from_config(config);
+        let mut job = LocalMixingJob::build(circuit, config, None);
         job.run_kneading_step(&mut rng);
     }
 
