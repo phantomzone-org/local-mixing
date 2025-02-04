@@ -1,16 +1,14 @@
-use std::{
-    array::from_fn,
-    iter::repeat_with,
-    sync::atomic::{AtomicBool, Ordering::Relaxed},
-};
-
+use crate::circuit::{cf::Base2GateControlFunc, Gate};
 use rand::{seq::SliceRandom, Rng, RngCore, SeedableRng};
 use rayon::{
     current_num_threads,
     iter::{ParallelBridge, ParallelIterator},
 };
-
-use crate::circuit::{cf::Base2GateControlFunc, Gate};
+use std::{
+    array::from_fn,
+    iter::repeat_with,
+    sync::atomic::{AtomicBool, Ordering::Relaxed},
+};
 
 const RPL_GUIDED: bool = true;
 
@@ -202,6 +200,10 @@ fn sample_random_circuit<
     active_wires: &[[bool; N_PROJ_WIRES]; 2],
     rng: &mut R,
 ) {
+    // Lookup table for 11 P 3, 11 P 2, 11 P 1,
+    // should be indexible by active wires
+    // todo: figure out how to place active wires first
+    // important: no conditionals!
     let mut placed_wire_in_gate = [[false; 3]; N_IN];
 
     let cf_range = [0, 3, 12, 1, 4, 7, 13, 6, 9, 14, 8];
@@ -304,6 +306,8 @@ mod tests {
     use super::*;
 
     use rand_chacha::ChaCha8Rng;
+
+    // TODO: setup criterion
 
     fn benchmark_replacement(n: usize) {
         let input_circuit = [

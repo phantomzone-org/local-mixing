@@ -1,48 +1,57 @@
-use std::{env::args, error::Error};
-
-use local_mixing::{
-    circuit::Circuit,
-    local_mixing::{LocalMixingConfig, LocalMixingJob},
-};
+use local_mixing::{circuit::Circuit, local_mixing::LocalMixingJob};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
-
-const DEFAULT_NUM_GATES: usize = 1000;
+use std::{env::args, error::Error};
 
 fn main() {
-    // Setup logs
-    let log_path = args().nth(1).expect("Missing log path");
-    init_logs(&log_path).expect("Error initializing logs");
+    let mut args = args();
+    let _ = args.next();
+    let cmd = args.next().expect("Missing command");
 
-    // Load job config
-    let config_path = args().nth(2).expect("Missing config path");
-    let local_mixing_config =
-        LocalMixingConfig::load_from_file(&config_path).expect("Error loading config file");
+    match cmd.as_str() {
+        "random-circuit" => {
+            let save_path = args.next().expect("Missing circuit path");
+            let num_wires: u32 = args
+                .next()
+                .expect("Missing number of wires")
+                .parse()
+                .expect("Invalid number of wires");
+            let num_gates: usize = args
+                .next()
+                .expect("Missing number of gates")
+                .parse()
+                .expect("Invalid number of gates");
 
-    // Store job destination path
-    let job_destination_path = args().nth(3).expect("Missing destination path");
-
-    // Rng
-    let mut rng = ChaCha8Rng::from_entropy();
-
-    // Load input circuit
-    let input_circuit = match args().nth(4) {
-        Some(path) => Circuit::load_from_file(&path).expect("Error loading config file"),
-        None => {
-            let ckt = Circuit::random(local_mixing_config.num_wires, DEFAULT_NUM_GATES, &mut rng);
-            ckt.save_to_file("circuit.bin");
-            log::info!("Randomly generated circuit saved to circuit.bin");
-            ckt
+            Circuit::random(num_wires, num_gates, &mut ChaCha8Rng::from_entropy())
+                .save_as_binary(&save_path);
+            println!("Random circuit generated and saved to {}", save_path);
         }
-    };
+        "json" => {
+            let circuit_path = args.next().expect("Missing circuit path");
 
-    let mut obfuscation_job = LocalMixingJob::build(
-        input_circuit,
-        local_mixing_config,
-        Some(job_destination_path),
-    );
-    
-    run_strategy(&mut obfuscation_job);
+            let circuit = Circuit::load_from_binary(&circuit_path);
+
+            if let Some(json_path) = args.next() {
+                circuit.save_as_json(&json_path);
+                println!("Circuit JSON saved to {}", json_path);
+            } else {
+                println!("{:#?}", circuit);
+            }
+        }
+        "local-mixing" => {
+            let log_path = args.next().expect("Missing log path");
+            let config_path = args.next().expect("Missing config path");
+
+            init_logs(&log_path).expect("Error initializing logs");
+
+            let success = LocalMixingJob::load(config_path).execute();
+            let status = if success { "SUCCESS" } else { "FAIL" };
+            log::info!("Local mixing finished, status = {}", status);
+        }
+        _ => {
+            eprintln!("Unknown command: {}", cmd);
+        }
+    }
 }
 
 fn init_logs(log_path: &str) -> Result<(), Box<dyn Error>> {
@@ -65,28 +74,4 @@ fn init_logs(log_path: &str) -> Result<(), Box<dyn Error>> {
     log4rs::init_config(config)?;
 
     Ok(())
-}
-
-pub fn run_strategy(job: &mut LocalMixingJob) {
-    let mut rng = ChaCha8Rng::from_entropy();
-
-    let job_path = args().nth(2).expect("Missing job path");
-
-    while job.curr_inflationary_step <= job.config.num_inflationary_steps {
-        job.run_inflationary_step(&mut rng);
-
-        if job.curr_inflationary_step % job.config.epoch_size == 0 {
-            std::fs::write(&job_path, bincode::serialize(&job).unwrap()).unwrap();
-        }
-    }
-
-    // while job.curr_kneading_step <= job.config.num_kneading_steps
-    // // && job.curr_kneading_fail <= job.config.num_kneading_to_fail
-    // {
-    //     job.run_kneading_step(&mut rng);
-
-    //     if job.curr_kneading_step % job.config.epoch_size == 0 {
-    //         std::fs::write(&job_path, serde_json::to_string(&job).unwrap()).unwrap();
-    //     }
-    // }
 }

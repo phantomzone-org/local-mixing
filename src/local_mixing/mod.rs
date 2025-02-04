@@ -1,5 +1,4 @@
-pub mod config;
 pub mod job;
+pub mod search;
 
-pub use config::LocalMixingConfig;
 pub use job::LocalMixingJob;

@@ -1,9 +1,7 @@
-use std::error::Error;
-
 use crate::circuit::cf::Base2GateControlFunc;
-
 use rand::Rng;
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Gate {
@@ -31,7 +29,7 @@ impl Gate {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct Circuit {
     pub gates: Vec<Gate>,
 }
@@ -58,11 +56,19 @@ impl Circuit {
         Self { gates }
     }
 
-    pub fn load_from_file(path: &str) -> Result<Self, Box<dyn Error>> {
-        Ok(bincode::deserialize(&std::fs::read(path)?)?)
+    pub fn load_from_binary(path: impl AsRef<Path>) -> Self {
+        bincode::deserialize(&std::fs::read(path).unwrap()).unwrap()
     }
 
-    pub fn save_to_file(&self, path: &str) {
+    pub fn save_as_binary(&self, path: impl AsRef<Path>) {
         std::fs::write(path, bincode::serialize(&self).unwrap()).unwrap();
+    }
+
+    pub fn load_from_json(path: impl AsRef<Path>) -> Self {
+        serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+    }
+
+    pub fn save_as_json(&self, path: impl AsRef<Path>) {
+        std::fs::write(path, serde_json::to_vec(&self).unwrap()).unwrap();
     }
 }

@@ -1,3 +1,5 @@
+// TODO: bring back F = 15, strategy to choose
+
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Base2GateControlFunc {
