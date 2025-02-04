@@ -23,6 +23,8 @@ impl LocalMixingJob {
         let mut candidate_next_gates = vec![vec![]; N_OUT];
         let mut candidates_computed = [false; N_OUT];
 
+        let mut search_restart_ctr = 0;
+
         while selected_gate_ctr < N_OUT {
             if selected_gate_ctr != 0 && !candidates_computed[selected_gate_ctr] {
                 // compute candidates
@@ -119,6 +121,13 @@ impl LocalMixingJob {
             }
 
             if selected_gate_ctr == 0 {
+                if search_restart_ctr >= 1000 {
+                    log::warn!("Search has failed 1000 times in a row");
+                    search_restart_ctr = 0;
+                } else {
+                    search_restart_ctr += 1;
+                }
+
                 // pick gate 1 at random
                 selected_gate_idx[0] = rng.gen_range(0..num_gates - N_OUT + 1);
                 selected_gate_ctr += 1;
