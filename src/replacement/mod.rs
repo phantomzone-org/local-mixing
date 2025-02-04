@@ -191,7 +191,7 @@ pub fn find_replacement_circuit<
     None
 }
 
-fn sample_random_circuit<
+pub fn sample_random_circuit<
     R: Send + Sync + RngCore + SeedableRng,
     const N_IN: usize,
     const N_PROJ_WIRES: usize,
