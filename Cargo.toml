@@ -28,3 +28,7 @@ criterion = "0.3"
 [[bench]]
 name = "sample_circuit_benchmark"
 harness = false
+
+[[bench]]
+name = "sample_unguided_benchmark"
+harness = false
