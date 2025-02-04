@@ -29,7 +29,7 @@ fn main() {
         "json" => {
             let circuit_path = args.next().expect("Missing circuit path");
 
-            let circuit = Circuit::load_from_binary(&circuit_path);
+            let circuit = Circuit::load_from_binary(&circuit_path).expect("Failed to load circuit binary");
 
             if let Some(json_path) = args.next() {
                 circuit.save_as_json(&json_path);

@@ -24,15 +24,15 @@ pub struct LocalMixingJob {
     pub destination_circuit_path: String,
     /// Path for storing intermediary steps
     pub save_circuit_path: String,
+    /// Whether job is in-progress on loading, determines source for circuit
+    #[serde(default)]
+    in_progress: bool,
     /// Current inflationary step
     #[serde(default)]
     pub curr_inflationary_step: usize,
     /// Current kneading step
     #[serde(default)]
     pub curr_kneading_step: usize,
-    /// Input circuit
-    #[serde(default, skip_serializing)]
-    pub original_circuit: Circuit,
     /// Current circuit
     #[serde(default, skip_serializing)]
     pub circuit: Circuit,
@@ -46,8 +46,16 @@ impl LocalMixingJob {
         let file = File::open(&path).unwrap();
         let reader = BufReader::new(file);
         let mut job: LocalMixingJob = serde_json::from_reader(reader).unwrap();
-        job.original_circuit = Circuit::load_from_binary(&job.input_circuit_path);
-        job.circuit = job.original_circuit.clone();
+
+        let circuit_path = if job.in_progress {
+            job.save_circuit_path.clone()
+        } else {
+            job.input_circuit_path.clone()
+        };
+        job.circuit = Circuit::load_from_binary(&circuit_path).expect(&format!(
+            "Failed to load circuit from path {}",
+            circuit_path
+        ));
         job.config_path = path;
         job
     }
@@ -62,6 +70,8 @@ impl LocalMixingJob {
         let mut iter = 1;
         let mut fail_ctr = 0;
         let mut rng = ChaCha8Rng::from_entropy();
+
+        self.in_progress = true;
 
         while self.in_inflationary_stage() {
             log::info!("Inflationary stage step {}", self.curr_inflationary_step);

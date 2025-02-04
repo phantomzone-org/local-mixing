@@ -1,7 +1,7 @@
 use crate::circuit::cf::Base2GateControlFunc;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::{error::Error, path::Path};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Gate {
@@ -56,8 +56,8 @@ impl Circuit {
         Self { gates }
     }
 
-    pub fn load_from_binary(path: impl AsRef<Path>) -> Self {
-        bincode::deserialize(&std::fs::read(path).unwrap()).unwrap()
+    pub fn load_from_binary(path: impl AsRef<Path>) -> Result<Self, Box<dyn Error>> {
+        Ok(bincode::deserialize(&std::fs::read(path)?)?)
     }
 
     pub fn save_as_binary(&self, path: impl AsRef<Path>) {
