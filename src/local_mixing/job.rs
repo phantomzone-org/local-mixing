@@ -65,7 +65,7 @@ impl LocalMixingJob {
 
         while self.in_inflationary_stage() {
             log::info!("Inflationary stage step {}", self.curr_inflationary_step);
-            let success = self.execute_step::<_, 2, 4, 11, { 1 << 11 }>(&mut rng);
+            let success = self.execute_step::<_, 2, 4, 9, { 1 << 9 }>(&mut rng);
             if success {
                 self.curr_inflationary_step += 1;
 
@@ -88,7 +88,7 @@ impl LocalMixingJob {
 
         while self.in_kneading_stage() {
             log::info!("Kneading stage step {}", self.curr_inflationary_step);
-            let success = self.execute_step::<_, 4, 4, 11, { 1 << 11 }>(&mut rng);
+            let success = self.execute_step::<_, 4, 4, 9, { 1 << 9 }>(&mut rng);
             if success {
                 self.curr_kneading_step += 1;
 
