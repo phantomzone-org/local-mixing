@@ -1,3 +1,4 @@
 /target
-logs.log
-circuit.json
+*.log
+*.json
+*.bin
