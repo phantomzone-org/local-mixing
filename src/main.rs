@@ -1,4 +1,8 @@
-use local_mixing::{circuit::Circuit, local_mixing::LocalMixingJob};
+use local_mixing::{
+    circuit::Circuit,
+    local_mixing::LocalMixingJob,
+    replacement::{strategy::ReplacementStrategy, test::test_num_samples},
+};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use std::{env::args, error::Error};
@@ -29,7 +33,8 @@ fn main() {
         "json" => {
             let circuit_path = args.next().expect("Missing circuit path");
 
-            let circuit = Circuit::load_from_binary(&circuit_path).expect("Failed to load circuit binary");
+            let circuit =
+                Circuit::load_from_binary(&circuit_path).expect("Failed to load circuit binary");
 
             if let Some(json_path) = args.next() {
                 circuit.save_as_json(&json_path);
@@ -47,6 +52,25 @@ fn main() {
             let success = LocalMixingJob::load(config_path).execute();
             let status = if success { "SUCCESS" } else { "FAIL" };
             log::info!("Local mixing finished, status = {}", status);
+        }
+        "replace" => {
+            let log_path = args.next().expect("Missing log path");
+            let strategy_u8 = args
+                .next()
+                .expect("Missing strategy")
+                .parse()
+                .expect("Invalid strategy input");
+            let n_iter = args
+                .next()
+                .expect("Missing n_iter")
+                .parse()
+                .expect("Invalid value for n_iter");
+
+            init_logs(&log_path).expect("Error initializing logs");
+            let strategy =
+                ReplacementStrategy::from_u8(strategy_u8).expect("Strategy does not exist");
+
+            test_num_samples(strategy, n_iter);
         }
         _ => {
             eprintln!("Unknown command: {}", cmd);

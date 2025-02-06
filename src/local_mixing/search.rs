@@ -210,6 +210,7 @@ impl LocalMixingJob {
             &c_out,
             num_wires,
             self.max_replacement_samples,
+            self.replacement_strategy,
             rng,
         );
         if let Some((c_in, num_sampled)) = replacement_res {

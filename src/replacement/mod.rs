@@ -1,3 +1,6 @@
+pub mod strategy;
+pub mod test;
+
 use crate::circuit::{cf::Base2GateControlFunc, Gate};
 use rand::{seq::SliceRandom, Rng, RngCore, SeedableRng};
 use rayon::{
@@ -9,8 +12,7 @@ use std::{
     iter::repeat_with,
     sync::atomic::{AtomicBool, Ordering::Relaxed},
 };
-
-const RPL_GUIDED: bool = true;
+use strategy::ReplacementStrategy;
 
 pub fn find_replacement_circuit<
     R: Send + Sync + RngCore + SeedableRng,
@@ -22,6 +24,7 @@ pub fn find_replacement_circuit<
     circuit: &[Gate; N_OUT],
     num_wires: usize,
     num_attempts: usize,
+    strategy: ReplacementStrategy,
     rng: &mut R,
 ) -> Option<([Gate; N_IN], usize)> {
     let mut proj_circuit = [Gate::default(); N_OUT];
@@ -104,13 +107,17 @@ pub fn find_replacement_circuit<
                 replacement_circuit = [Gate::default(); N_IN];
                 // placed_wire_in_gate = [[false; 3]; N_IN];
 
-                if RPL_GUIDED {
-                    sample_random_circuit(&mut replacement_circuit, &active_wires, &mut rng);
-                } else {
-                    sample_random_circuit_unguided::<_, N_IN, N_PROJ_WIRES>(
-                        &mut replacement_circuit,
-                        &mut rng,
-                    );
+                match strategy {
+                    ReplacementStrategy::SampleUnguided => {
+                        sample_random_circuit_unguided::<_, N_IN, N_PROJ_WIRES>(
+                            &mut replacement_circuit,
+                            &mut rng,
+                        )
+                    }
+                    ReplacementStrategy::SampleActive0 => {
+                        sample_random_circuit(&mut replacement_circuit, &active_wires, &mut rng)
+                    }
+                    _ => todo!(),
                 }
 
                 // functional equivalence
@@ -200,10 +207,6 @@ pub fn sample_random_circuit<
     active_wires: &[[bool; N_PROJ_WIRES]; 2],
     rng: &mut R,
 ) {
-    // Lookup table for 11 P 3, 11 P 2, 11 P 1,
-    // should be indexible by active wires
-    // todo: figure out how to place active wires first
-    // important: no conditionals!
     let mut placed_wire_in_gate = [[false; 3]; N_IN];
 
     let cf_range = [0, 3, 12, 1, 4, 7, 13, 6, 9, 14, 8];
@@ -307,8 +310,6 @@ mod tests {
 
     use rand_chacha::ChaCha8Rng;
 
-    // TODO: setup criterion
-
     fn benchmark_replacement(n: usize) {
         let input_circuit = [
             Gate {
@@ -328,6 +329,7 @@ mod tests {
                 &input_circuit,
                 20,
                 1_000_000_000,
+                ReplacementStrategy::SampleUnguided,
                 &mut rng,
             );
             let d_replacement = Instant::now() - s_replacement;
