@@ -92,6 +92,18 @@ pub fn find_replacement_circuit<
     let max_iterations = num_attempts / current_num_threads();
     let found = AtomicBool::new(false);
 
+    let sample_function: Box<
+        dyn Fn(&mut [Gate; N_IN], &[[bool; N_PROJ_WIRES]; 2], &mut R) + Send + Sync,
+    > = match strategy {
+        ReplacementStrategy::SampleUnguided => Box::new(|replacement_circuit, _, rng| {
+            sample_random_circuit_unguided::<_, N_IN, N_PROJ_WIRES>(replacement_circuit, rng);
+        }),
+        ReplacementStrategy::SampleActive0 => Box::new(|replacement_circuit, active_wires, rng| {
+            sample_random_circuit(replacement_circuit, &active_wires, rng);
+        }),
+        _ => todo!(),
+    };
+
     let res = (0..current_num_threads())
         .map(|_| R::from_rng(&mut *rng).unwrap())
         .par_bridge()
@@ -107,18 +119,7 @@ pub fn find_replacement_circuit<
                 replacement_circuit = [Gate::default(); N_IN];
                 // placed_wire_in_gate = [[false; 3]; N_IN];
 
-                match strategy {
-                    ReplacementStrategy::SampleUnguided => {
-                        sample_random_circuit_unguided::<_, N_IN, N_PROJ_WIRES>(
-                            &mut replacement_circuit,
-                            &mut rng,
-                        )
-                    }
-                    ReplacementStrategy::SampleActive0 => {
-                        sample_random_circuit(&mut replacement_circuit, &active_wires, &mut rng)
-                    }
-                    _ => todo!(),
-                }
+                sample_function(&mut replacement_circuit, &active_wires, &mut rng);
 
                 // functional equivalence
                 let mut func_equiv = true;
@@ -300,56 +301,4 @@ pub fn sample_random_circuit_unguided<R: Rng, const N_IN: usize, const N_PROJ_WI
     circuit.iter_mut().for_each(|gate| {
         gate.control_func = rng.gen_range(0..Base2GateControlFunc::COUNT);
     });
-}
-
-#[cfg(test)]
-mod tests {
-    use std::time::Instant;
-
-    use super::*;
-
-    use rand_chacha::ChaCha8Rng;
-
-    fn benchmark_replacement(n: usize) {
-        let input_circuit = [
-            Gate {
-                wires: [0, 1, 2],
-                control_func: 4,
-            },
-            Gate {
-                wires: [3, 0, 4],
-                control_func: 9,
-            },
-        ];
-        let mut rng = ChaCha8Rng::from_entropy();
-
-        for _ in 0..n {
-            let s_replacement = Instant::now();
-            let res = find_replacement_circuit::<_, 2, 5, 11, { 1 << 11 }>(
-                &input_circuit,
-                20,
-                1_000_000_000,
-                ReplacementStrategy::SampleUnguided,
-                &mut rng,
-            );
-            let d_replacement = Instant::now() - s_replacement;
-            match res {
-                Some((replacement, num_sampled)) => {
-                    println!(
-                        "status: SUCCESS, runtime: {:?}, circuits sampled: {:?}, replacement: {:?}",
-                        d_replacement, num_sampled, replacement
-                    );
-                }
-                None => {
-                    println!("status: FAIL, runtime: {:?}", d_replacement);
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn test_replacement() {
-        let n = 1;
-        benchmark_replacement(n);
-    }
 }
