@@ -3,13 +3,7 @@ use crate::replacement::find_replacement_circuit;
 use rand::{Rng, RngCore, SeedableRng};
 
 impl LocalMixingJob {
-    pub fn execute_step<
-        R: Send + Sync + RngCore + SeedableRng,
-        const N_OUT: usize,
-        const N_IN: usize,
-        const N_PROJ_WIRES: usize,
-        const N_PROJ_INPUTS: usize,
-    >(
+    pub fn execute_step<R: Send + Sync + RngCore + SeedableRng, const N_OUT: usize>(
         &mut self,
         rng: &mut R,
     ) -> bool {
@@ -129,7 +123,7 @@ impl LocalMixingJob {
                 }
 
                 // pick gate 1 at random
-                selected_gate_idx[0] = rng.gen_range(0..num_gates - N_OUT + 1);
+                selected_gate_idx[0] = rng.random_range(0..num_gates - N_OUT + 1);
                 selected_gate_ctr += 1;
             } else if candidate_next_gates[selected_gate_ctr].is_empty() {
                 // reset candidates for this gate, dec ctr and pick again for prev gate
@@ -145,7 +139,7 @@ impl LocalMixingJob {
                 // pick gate from candidates, inc ctr
                 let num_candidates = candidate_next_gates[selected_gate_ctr].len();
                 selected_gate_idx[selected_gate_ctr] = candidate_next_gates[selected_gate_ctr]
-                    .remove(rng.gen_range(0..num_candidates));
+                    .remove(rng.random_range(0..num_candidates));
                 selected_gate_ctr += 1;
             }
         }
@@ -206,7 +200,7 @@ impl LocalMixingJob {
         // replacement
         let c_out = selected_gates;
 
-        let replacement_res = find_replacement_circuit::<_, N_OUT, N_IN, N_PROJ_WIRES, N_PROJ_INPUTS>(
+        let replacement_res = find_replacement_circuit::<_, N_OUT>(
             &c_out,
             num_wires,
             self.max_replacement_samples,

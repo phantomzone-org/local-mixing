@@ -26,7 +26,7 @@ fn main() {
                 .parse()
                 .expect("Invalid number of gates");
 
-            Circuit::random(num_wires, num_gates, &mut ChaCha8Rng::from_entropy())
+            Circuit::random(num_wires, num_gates, &mut ChaCha8Rng::from_os_rng())
                 .save_as_binary(&save_path);
             println!("Random circuit generated and saved to {}", save_path);
         }

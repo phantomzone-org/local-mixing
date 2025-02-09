@@ -1,4 +1,8 @@
-use crate::{circuit::Circuit, replacement::strategy::ReplacementStrategy};
+use crate::{
+    circuit::Circuit,
+    local_mixing::consts::{N_OUT_INF, N_OUT_KND},
+    replacement::strategy::ReplacementStrategy,
+};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
@@ -72,13 +76,13 @@ impl LocalMixingJob {
     pub fn execute(&mut self) -> bool {
         let mut iter = 1;
         let mut fail_ctr = 0;
-        let mut rng = ChaCha8Rng::from_entropy();
+        let mut rng = ChaCha8Rng::from_os_rng();
 
         self.in_progress = true;
 
         while self.in_inflationary_stage() {
             log::info!("Inflationary stage step {}", self.curr_inflationary_step);
-            let success = self.execute_step::<_, 2, 4, 9, { 1 << 9 }>(&mut rng);
+            let success = self.execute_step::<_, N_OUT_INF>(&mut rng);
             if success {
                 self.curr_inflationary_step += 1;
 
@@ -101,7 +105,7 @@ impl LocalMixingJob {
 
         while self.in_kneading_stage() {
             log::info!("Kneading stage step {}", self.curr_inflationary_step);
-            let success = self.execute_step::<_, 4, 4, 9, { 1 << 9 }>(&mut rng);
+            let success = self.execute_step::<_, N_OUT_KND>(&mut rng);
             if success {
                 self.curr_kneading_step += 1;
 

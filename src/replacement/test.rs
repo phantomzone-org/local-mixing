@@ -1,7 +1,7 @@
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 
-use crate::circuit::Gate;
+use crate::{circuit::Gate, local_mixing::consts::N_OUT_INF};
 
 use super::{find_replacement_circuit, strategy::ReplacementStrategy};
 
@@ -17,10 +17,10 @@ pub fn test_num_samples(strategy: ReplacementStrategy, n_iter: usize) {
             control_func: 9,
         },
     ];
-    let mut rng = ChaCha8Rng::from_entropy();
+    let mut rng = ChaCha8Rng::from_os_rng();
     let mut avg = 0;
-    for i in 0..n_iter {
-        let res = find_replacement_circuit::<_, 2, 4, 9, { 1 << 9 }>(
+    for _ in 0..n_iter {
+        let res = find_replacement_circuit::<_, N_OUT_INF>(
             &circuit,
             num_wires,
             1_000_000_000,
@@ -28,15 +28,10 @@ pub fn test_num_samples(strategy: ReplacementStrategy, n_iter: usize) {
             &mut rng,
         );
         match res {
-            None => log::error!("Iteration {}, replacement failed", i),
+            None => log::error!("replacement failed"),
             Some((replacement, n_sampled)) => {
                 avg += n_sampled;
-                log::info!(
-                    "Iteration {}, n_sampled = {}, replacement = {:?}",
-                    i,
-                    n_sampled,
-                    replacement
-                );
+                log::info!("n_sampled = {}, replacement = {:?}", n_sampled, replacement);
             }
         }
     }
