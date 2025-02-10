@@ -8,7 +8,7 @@ use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use std::{fs::File, io::BufReader};
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct LocalMixingJob {
     /// Number of wires in circuit
     pub wires: u32,
@@ -19,7 +19,9 @@ pub struct LocalMixingJob {
     /// Max number of attempts to sample func equiv circuit
     pub max_replacement_samples: usize,
     /// Max number of failed replacements before quitting
-    max_attempts_without_success: usize,
+    pub max_attempts_without_success: usize,
+    /// Whether to save to file, logs
+    pub save: bool,
     /// How often circuit is saved to file
     pub epoch_size: usize,
     /// Path of input circuit
@@ -49,6 +51,35 @@ pub struct LocalMixingJob {
 }
 
 impl LocalMixingJob {
+    pub fn new(
+        wires: u32,
+        inflationary_stage_steps: usize,
+        kneading_stage_steps: usize,
+        max_replacement_samples: usize,
+        max_attempts_without_success: usize,
+        replacement_strategy: ReplacementStrategy,
+        circuit: Circuit,
+    ) -> Self {
+        Self {
+            wires,
+            inflationary_stage_steps,
+            kneading_stage_steps,
+            max_replacement_samples,
+            max_attempts_without_success,
+            replacement_strategy,
+            circuit,
+            save: false,
+            epoch_size: 0,
+            input_circuit_path: "".to_owned(),
+            destination_circuit_path: "".to_owned(),
+            save_circuit_path: "".to_owned(),
+            in_progress: false,
+            curr_inflationary_step: 0,
+            curr_kneading_step: 0,
+            config_path: "".to_owned(),
+        }
+    }
+
     pub fn load(path: String) -> Self {
         let file = File::open(&path).unwrap();
         let reader = BufReader::new(file);
@@ -87,7 +118,7 @@ impl LocalMixingJob {
                 self.curr_inflationary_step += 1;
 
                 // Save snapshot every epoch
-                if iter % self.epoch_size == 0 {
+                if self.save && iter % self.epoch_size == 0 {
                     self.save();
                 }
 
@@ -109,7 +140,7 @@ impl LocalMixingJob {
             if success {
                 self.curr_kneading_step += 1;
 
-                if iter % self.epoch_size == 0 {
+                if self.save && iter % self.epoch_size == 0 {
                     self.save();
                 }
 
@@ -126,8 +157,11 @@ impl LocalMixingJob {
         }
 
         // Local mixing successful
-        self.save();
-        self.circuit.save_as_binary(&self.destination_circuit_path);
+        if self.save {
+            self.save();
+            self.circuit.save_as_binary(&self.destination_circuit_path);
+        }
+
         return true;
     }
 
