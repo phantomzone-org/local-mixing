@@ -13,7 +13,7 @@ use rayon::{
 use std::{
     array::from_fn,
     iter::repeat_with,
-    sync::atomic::{AtomicBool, Ordering::Relaxed}, time::Instant,
+    sync::atomic::{AtomicBool, Ordering::Relaxed},
 };
 use strategy::ReplacementStrategy;
 
