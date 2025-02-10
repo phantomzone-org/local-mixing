@@ -29,5 +29,9 @@ criterion = "0.5.1"
 name = "benchmark_sample"
 harness = false
 
+[[bench]]
+name = "benchmark_search_degredation"
+harness = false
+
 [profile.release]
 codegen-units = 1
