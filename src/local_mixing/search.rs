@@ -1,5 +1,8 @@
-use super::LocalMixingJob;
-use crate::replacement::find_replacement_circuit;
+use super::{consts::N_IN, LocalMixingJob};
+use crate::{
+    circuit::Gate,
+    replacement::{find_replacement_circuit, strategy::ReplacementStrategy},
+};
 use rand::{Rng, RngCore, SeedableRng};
 
 impl LocalMixingJob {
@@ -200,13 +203,17 @@ impl LocalMixingJob {
         // replacement
         let c_out = selected_gates;
 
-        let replacement_res = find_replacement_circuit::<_, N_OUT>(
-            &c_out,
-            num_wires,
-            self.max_replacement_samples,
-            self.replacement_strategy,
-            rng,
-        );
+        let replacement_res = match self.replacement_strategy == ReplacementStrategy::Dummy {
+            true => Some(([Gate::default(); N_IN], 1)),
+            false => find_replacement_circuit::<_, N_OUT>(
+                &c_out,
+                num_wires,
+                self.max_replacement_samples,
+                self.replacement_strategy,
+                rng,
+            ),
+        };
+
         if let Some((c_in, num_sampled)) = replacement_res {
             self.circuit.gates.splice(c_out_start..c_out_end, c_in);
 
@@ -221,9 +228,6 @@ impl LocalMixingJob {
             );
 
             return true;
-        } else {
-            // log::error!("replacement failed, stage = kneading, C_OUT = {:?}", c_out);
-            // self.curr_kneading_fail += 1;
         }
 
         false
