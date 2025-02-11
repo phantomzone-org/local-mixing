@@ -9,7 +9,7 @@ use rand_chacha::ChaCha8Rng;
 
 pub fn criterion_benchmark(c: &mut Criterion) {
     let mut rng = ChaCha8Rng::from_os_rng();
-    let circuit = Circuit::load_from_binary("degredation.bin").unwrap();
+    let circuit = Circuit::load_from_binary("bin/degredation/circuit.bin").unwrap();
     let job = LocalMixingJob::new(100, 0, 100, 1, 10, ReplacementStrategy::Dummy, ControlFnChoice::All, circuit);
 
     c.bench_function("search degredation", |b| {
