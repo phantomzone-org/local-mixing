@@ -30,6 +30,10 @@ name = "benchmark_sample"
 harness = false
 
 [[bench]]
+name = "benchmark_replacement"
+harness = false
+
+[[bench]]
 name = "benchmark_search_degredation"
 harness = false
 

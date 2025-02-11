@@ -1,7 +1,7 @@
 use local_mixing::{
     circuit::Circuit,
     local_mixing::LocalMixingJob,
-    replacement::{strategy::ReplacementStrategy, test::test_num_samples},
+    replacement::{strategy::{ControlFnChoice, ReplacementStrategy}, test::test_num_samples},
 };
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -60,6 +60,11 @@ fn main() {
                 .expect("Missing strategy")
                 .parse()
                 .expect("Invalid strategy input");
+            let cf_choice_u8 = args
+                .next()
+                .expect("Missing control func choice")
+                .parse()
+                .expect("Invalid cf input");
             let n_iter = args
                 .next()
                 .expect("Missing n_iter")
@@ -69,8 +74,9 @@ fn main() {
             init_logs(&log_path).expect("Error initializing logs");
             let strategy =
                 ReplacementStrategy::from_u8(strategy_u8).expect("Strategy does not exist");
+            let cf_choice = ControlFnChoice::from_u8(cf_choice_u8).expect("ControlFnChoice does not exist");
 
-            test_num_samples(strategy, n_iter);
+            test_num_samples(strategy, cf_choice, n_iter);
         }
         _ => {
             eprintln!("Unknown command: {}", cmd);

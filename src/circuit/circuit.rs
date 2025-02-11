@@ -46,7 +46,7 @@ impl Circuit {
                 if target != control_one && target != control_two && control_one != control_two {
                     gates.push(Gate {
                         wires: [target, control_one, control_two],
-                        control_func: rng.random_range(0..Base2GateControlFunc::COUNT),
+                        control_func: rng.random_range(0..Base2GateControlFunc::COUNT - 1),
                     });
                     break;
                 }

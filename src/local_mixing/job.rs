@@ -1,7 +1,7 @@
 use crate::{
     circuit::Circuit,
     local_mixing::consts::{N_OUT_INF, N_OUT_KND},
-    replacement::strategy::ReplacementStrategy,
+    replacement::strategy::{ControlFnChoice, ReplacementStrategy},
 };
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -33,6 +33,9 @@ pub struct LocalMixingJob {
     /// Replacement strategy: default is SampleActive0
     #[serde(default)]
     pub replacement_strategy: ReplacementStrategy,
+    /// Control function choice in replacement
+    #[serde(default)]
+    pub cf_choice: ControlFnChoice,
     /// Whether job is in-progress on loading, determines source for circuit
     #[serde(default)]
     in_progress: bool,
@@ -58,6 +61,7 @@ impl LocalMixingJob {
         max_replacement_samples: usize,
         max_attempts_without_success: usize,
         replacement_strategy: ReplacementStrategy,
+        cf_choice: ControlFnChoice,
         circuit: Circuit,
     ) -> Self {
         Self {
@@ -67,6 +71,7 @@ impl LocalMixingJob {
             max_replacement_samples,
             max_attempts_without_success,
             replacement_strategy,
+            cf_choice,
             circuit,
             save: false,
             epoch_size: 0,
@@ -112,7 +117,6 @@ impl LocalMixingJob {
         self.in_progress = true;
 
         while self.in_inflationary_stage() {
-            log::info!("Inflationary stage step {}", self.curr_inflationary_step);
             let success = self.execute_step::<_, N_OUT_INF>(&mut rng);
             if success {
                 self.curr_inflationary_step += 1;
@@ -135,7 +139,6 @@ impl LocalMixingJob {
         }
 
         while self.in_kneading_stage() {
-            log::info!("Kneading stage step {}", self.curr_inflationary_step);
             let success = self.execute_step::<_, N_OUT_KND>(&mut rng);
             if success {
                 self.curr_kneading_step += 1;

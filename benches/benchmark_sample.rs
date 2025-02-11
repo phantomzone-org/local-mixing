@@ -1,7 +1,7 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use local_mixing::{
     circuit::Gate,
-    replacement::{sample_circuit_lookup, sample_random_circuit},
+    replacement::{sample_circuit_lookup, sample_random_circuit, strategy::ControlFnChoice},
 };
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -13,13 +13,28 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         [true, false, false, true, false, false, false, false, false],
         [false, true, false, false, true, false, false, false, false],
     ];
+    let cf_choice = ControlFnChoice::OnlyUnique;
 
     c.bench_function("sample circuit guided", |b| {
-        b.iter(|| black_box(sample_random_circuit(&mut circuit, &active_wires, &mut rng)))
+        b.iter(|| {
+            black_box(sample_random_circuit(
+                &mut circuit,
+                &active_wires,
+                cf_choice,
+                &mut rng,
+            ))
+        })
     });
 
     c.bench_function("sample circuit lookup", |b| {
-        b.iter(|| black_box(sample_circuit_lookup(&mut circuit, &active_wires, &mut rng)))
+        b.iter(|| {
+            black_box(sample_circuit_lookup(
+                &mut circuit,
+                &active_wires,
+                cf_choice,
+                &mut rng,
+            ))
+        })
     });
 }
 
