@@ -5,9 +5,12 @@ use rand_chacha::ChaCha8Rng;
 
 use crate::{circuit::Gate, local_mixing::consts::N_OUT_INF};
 
-use super::{find_replacement_circuit, strategy::ReplacementStrategy};
+use super::{
+    find_replacement_circuit,
+    strategy::{ControlFnChoice, ReplacementStrategy},
+};
 
-pub fn test_num_samples(strategy: ReplacementStrategy, n_iter: usize) {
+pub fn test_num_samples(strategy: ReplacementStrategy, cf_choice: ControlFnChoice, n_iter: usize) {
     let num_wires = 11;
     let circuit = [
         Gate {
@@ -29,6 +32,7 @@ pub fn test_num_samples(strategy: ReplacementStrategy, n_iter: usize) {
             num_wires,
             1_000_000_000,
             strategy,
+            cf_choice,
             &mut rng,
         );
         let d = Instant::now() - s;
@@ -36,7 +40,12 @@ pub fn test_num_samples(strategy: ReplacementStrategy, n_iter: usize) {
             None => log::error!("replacement failed, n_sampled = 1000000000, time = {:?}", d),
             Some((replacement, n_sampled)) => {
                 avg += n_sampled;
-                log::info!("n_sampled = {}, replacement = {:?}, time = {:?}", n_sampled, replacement, d);
+                log::info!(
+                    "n_sampled = {}, replacement = {:?}, time = {:?}",
+                    n_sampled,
+                    replacement,
+                    d
+                );
             }
         }
     }

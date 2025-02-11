@@ -2,7 +2,7 @@ pub mod strategy;
 pub mod test;
 
 use crate::{
-    circuit::{cf::Base2GateControlFunc, Gate},
+    circuit::Gate,
     local_mixing::consts::{N_IN, N_PROJ_INPUTS, N_PROJ_WIRES, PROJ_GATE_CANDIDATES},
 };
 use rand::{seq::IndexedRandom, Rng, RngCore, SeedableRng};
@@ -15,13 +15,14 @@ use std::{
     iter::repeat_with,
     sync::atomic::{AtomicBool, Ordering::Relaxed},
 };
-use strategy::ReplacementStrategy;
+use strategy::{ControlFnChoice, ReplacementStrategy};
 
 pub fn find_replacement_circuit<R: Send + Sync + RngCore + SeedableRng, const N_OUT: usize>(
     circuit: &[Gate; N_OUT],
     num_wires: usize,
     num_attempts: usize,
     strategy: ReplacementStrategy,
+    cf_choice: ControlFnChoice,
     rng: &mut R,
 ) -> Option<([Gate; N_IN], usize)> {
     let mut proj_circuit = [Gate::default(); N_OUT];
@@ -93,13 +94,13 @@ pub fn find_replacement_circuit<R: Send + Sync + RngCore + SeedableRng, const N_
         dyn Fn(&mut [Gate; N_IN], &[[bool; N_PROJ_WIRES]; 2], &mut R) + Send + Sync,
     > = match strategy {
         ReplacementStrategy::SampleUnguided => Box::new(|replacement_circuit, _, rng| {
-            sample_random_circuit_unguided(replacement_circuit, rng);
+            sample_random_circuit_unguided(replacement_circuit, cf_choice, rng);
         }),
         ReplacementStrategy::SampleActive0 => Box::new(|replacement_circuit, active_wires, rng| {
-            sample_random_circuit(replacement_circuit, &active_wires, rng);
+            sample_random_circuit(replacement_circuit, &active_wires, cf_choice, rng);
         }),
         ReplacementStrategy::SampleActive1 => Box::new(|replacement_circuit, active_wires, rng| {
-            sample_circuit_lookup(replacement_circuit, &active_wires, rng);
+            sample_circuit_lookup(replacement_circuit, &active_wires, cf_choice, rng);
         }),
         _ => todo!(),
     };
@@ -199,11 +200,10 @@ pub fn find_replacement_circuit<R: Send + Sync + RngCore + SeedableRng, const N_
 pub fn sample_random_circuit<R: Send + Sync + RngCore + SeedableRng>(
     circuit: &mut [Gate; N_IN],
     active_wires: &[[bool; N_PROJ_WIRES]; 2],
+    cf_choice: ControlFnChoice,
     rng: &mut R,
 ) {
     let mut placed_wire_in_gate = [[false; 3]; N_IN];
-
-    let cf_range = [0, 3, 12, 1, 4, 7, 13, 6, 9, 14, 8];
 
     for i in 0..N_PROJ_WIRES {
         if !active_wires[0][i] {
@@ -265,14 +265,18 @@ pub fn sample_random_circuit<R: Send + Sync + RngCore + SeedableRng>(
             }
             if t != c1 && t != c2 && c1 != c2 {
                 circuit[gate_idx].wires = [t, c1, c2];
-                circuit[gate_idx].control_func = *cf_range.choose(rng).unwrap();
+                circuit[gate_idx].control_func = cf_choice.random_cf(rng);
                 break;
             }
         }
     }
 }
 
-pub fn sample_random_circuit_unguided<R: Rng>(circuit: &mut [Gate; N_IN], rng: &mut R) {
+pub fn sample_random_circuit_unguided<R: Rng>(
+    circuit: &mut [Gate; N_IN],
+    cf_choice: ControlFnChoice,
+    rng: &mut R,
+) {
     let mut rng0 = repeat_with(|| rng.random_range(0..N_PROJ_WIRES));
 
     circuit.iter_mut().for_each(|gate| {
@@ -289,16 +293,16 @@ pub fn sample_random_circuit_unguided<R: Rng>(circuit: &mut [Gate; N_IN], rng: &
     });
 
     circuit.iter_mut().for_each(|gate| {
-        gate.control_func = rng.random_range(0..Base2GateControlFunc::COUNT);
+        gate.control_func = cf_choice.random_cf(rng);
     });
 }
 
 pub fn sample_circuit_lookup<R: Rng>(
     circuit: &mut [Gate; N_IN],
     active_wires: &[[bool; N_PROJ_WIRES]; 2],
+    cf_choice: ControlFnChoice,
     rng: &mut R,
 ) {
-    let cf_range = [0, 3, 12, 1, 4, 7, 13, 6, 9, 14, 8];
     let mut success = false;
     while !success {
         let mut circuit_contains_wire = [[false; N_PROJ_WIRES]; 2];
@@ -323,6 +327,6 @@ pub fn sample_circuit_lookup<R: Rng>(
 
         circuit
             .iter_mut()
-            .for_each(|g| g.control_func = *cf_range.choose(rng).unwrap());
+            .for_each(|g| g.control_func = cf_choice.random_cf(rng));
     }
 }

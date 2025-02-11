@@ -1,5 +1,3 @@
-// TODO: bring back F = 15, strategy to choose
-
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Base2GateControlFunc {
@@ -18,11 +16,11 @@ pub enum Base2GateControlFunc {
     NA = 12,   // !a,
     ORNA = 13, // (!a) | b,
     NAND = 14, // !(a & b),
-               // F = 15,    // false,
+    F = 15,    // false,
 }
 
 impl Base2GateControlFunc {
-    pub const COUNT: u8 = 15;
+    pub const COUNT: u8 = 16;
     pub const fn from_u8(v: u8) -> Self {
         match v {
             0 => Self::T,
@@ -40,14 +38,14 @@ impl Base2GateControlFunc {
             12 => Self::NA,
             13 => Self::ORNA,
             14 => Self::NAND,
-            // 15 => Self::F,
+            15 => Self::F,
             _ => unreachable!(),
         }
     }
 
     pub const fn evaluate(&self, a: bool, b: bool) -> bool {
         match self {
-            // Self::F => false,
+            Self::F => false,
             Self::AND => a & b,
             Self::ANDNB => a & (!b),
             Self::A => a,

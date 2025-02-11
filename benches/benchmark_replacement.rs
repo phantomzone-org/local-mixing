@@ -1,7 +1,10 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use local_mixing::{
     circuit::Gate,
-    replacement::{find_replacement_circuit, strategy::ReplacementStrategy},
+    replacement::{
+        find_replacement_circuit,
+        strategy::{ControlFnChoice, ReplacementStrategy},
+    },
 };
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -26,6 +29,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
                 20,
                 1_000_000_000,
                 ReplacementStrategy::SampleActive0,
+                ControlFnChoice::OnlyUnique,
                 &mut rng,
             ))
         });

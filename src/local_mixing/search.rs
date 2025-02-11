@@ -210,6 +210,7 @@ impl LocalMixingJob {
                 num_wires,
                 self.max_replacement_samples,
                 self.replacement_strategy,
+                self.cf_choice,
                 rng,
             ),
         };
