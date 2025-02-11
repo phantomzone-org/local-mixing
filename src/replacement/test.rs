@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 
@@ -21,6 +23,7 @@ pub fn test_num_samples(strategy: ReplacementStrategy, n_iter: usize) {
     let mut rng = ChaCha8Rng::from_os_rng();
     let mut avg = 0;
     for _ in 0..n_iter {
+        let s = Instant::now();
         let res = find_replacement_circuit::<_, N_OUT_INF>(
             &circuit,
             num_wires,
@@ -28,11 +31,12 @@ pub fn test_num_samples(strategy: ReplacementStrategy, n_iter: usize) {
             strategy,
             &mut rng,
         );
+        let d = Instant::now() - s;
         match res {
-            None => log::error!("replacement failed"),
+            None => log::error!("replacement failed, n_sampled = 1000000000, time = {:?}", d),
             Some((replacement, n_sampled)) => {
                 avg += n_sampled;
-                log::info!("n_sampled = {}, replacement = {:?}", n_sampled, replacement);
+                log::info!("n_sampled = {}, replacement = {:?}, time = {:?}", n_sampled, replacement, d);
             }
         }
     }
