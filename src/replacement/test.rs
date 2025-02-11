@@ -17,6 +17,7 @@ pub fn test_num_samples(strategy: ReplacementStrategy, n_iter: usize) {
             control_func: 9,
         },
     ];
+    log::info!("input circuit = {:?}", circuit);
     let mut rng = ChaCha8Rng::from_os_rng();
     let mut avg = 0;
     for _ in 0..n_iter {
