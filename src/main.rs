@@ -53,7 +53,7 @@ fn run() {
         "local-mixing" => {
             let config_path = args.next().expect("Missing config path");
             let mut job = LocalMixingJob::load(config_path).expect("Failed to load job");
-            #[cfg(feature = "trace")]
+            #[cfg(any(feature = "trace", feature = "time"))]
             {
                 let log_path = args.next().expect("Missing log path");
                 init_logs(&log_path).expect("Error initializing logs");

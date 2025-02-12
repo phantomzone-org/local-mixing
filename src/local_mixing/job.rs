@@ -11,6 +11,9 @@ use std::{error::Error, fs::File, io::BufReader};
 #[cfg(feature = "correctness")]
 use crate::circuit::circuit::is_func_equiv;
 
+#[cfg(feature = "time")]
+use super::replacement_stats::ReplacementStats;
+
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct LocalMixingJob {
     /// Number of wires in circuit
@@ -55,6 +58,9 @@ pub struct LocalMixingJob {
     /// Path of config sourced
     #[serde(default, skip_serializing)]
     config_path: String,
+    #[cfg(feature = "time")]
+    #[serde(default, skip_serializing)]
+    pub replacement_stats: ReplacementStats<1000>,
 }
 
 impl LocalMixingJob {
@@ -86,6 +92,8 @@ impl LocalMixingJob {
             curr_inflationary_step: 0,
             curr_kneading_step: 0,
             config_path: "".to_owned(),
+            #[cfg(feature = "time")]
+            replacement_stats: ReplacementStats::new(),
         }
     }
 

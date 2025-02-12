@@ -1,3 +1,6 @@
+#[cfg(feature = "time")]
+use std::time::Instant;
+
 use super::{consts::N_IN, LocalMixingJob};
 use crate::{
     circuit::Gate,
@@ -152,14 +155,31 @@ impl LocalMixingJob {
         let selected_gates = std::array::from_fn(|i| self.circuit.gates[selected_gate_idx[i]]);
         let replacement_res = match self.replacement_strategy == ReplacementStrategy::Dummy {
             true => Some(([Gate::default(); N_IN], 1)),
-            false => find_replacement_circuit::<_, N_OUT>(
-                &selected_gates,
-                num_wires,
-                self.max_replacement_samples,
-                self.replacement_strategy,
-                self.cf_choice,
-                rng,
-            ),
+            false => {
+                #[cfg(feature = "time")]
+                let repl_start = Instant::now();
+
+                let res = find_replacement_circuit::<_, N_OUT>(
+                    &selected_gates,
+                    num_wires,
+                    self.max_replacement_samples,
+                    self.replacement_strategy,
+                    self.cf_choice,
+                    rng,
+                );
+
+                #[cfg(feature = "time")]
+                {
+                    self.replacement_stats
+                        .add_entry(Instant::now() - repl_start);
+                    if self.replacement_stats.at_capacity() {
+                        log::info!("Replacement times: {:?}", self.replacement_stats.times);
+                        self.replacement_stats.clear();
+                    }
+                }
+
+                res
+            }
         };
         if let Some((c_in, _num_sampled)) = replacement_res {
             // permute step
