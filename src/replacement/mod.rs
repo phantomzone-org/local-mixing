@@ -330,3 +330,47 @@ pub fn sample_circuit_lookup<R: Rng>(
             .for_each(|g| g.control_func = cf_choice.random_cf(rng));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha8Rng;
+
+    use crate::circuit::{circuit::is_func_equiv, Circuit};
+
+    use super::{
+        find_replacement_circuit,
+        strategy::{ControlFnChoice, ReplacementStrategy},
+    };
+
+    #[test]
+    fn test_find_replacement() {
+        let wires = 100u32;
+        let mut rng = ChaCha8Rng::from_os_rng();
+        for _ in 0..1000 {
+            let ckt_one = Circuit::random(wires, 2, &mut rng);
+            let replacement = match find_replacement_circuit(
+                &[ckt_one.gates[0], ckt_one.gates[1]],
+                wires as usize,
+                1_000_000_000,
+                ReplacementStrategy::SampleActive0,
+                ControlFnChoice::OnlyUnique,
+                &mut rng,
+            ) {
+                Some((r, _)) => r,
+                None => panic!(),
+            };
+            let ckt_two = Circuit {
+                wires,
+                gates: Vec::from(replacement),
+            };
+            match is_func_equiv(&ckt_one, &ckt_two) {
+                Ok(()) => continue,
+                _ => {
+                    dbg!(ckt_one);
+                    dbg!(ckt_two);
+                }
+            }
+        }
+    }
+}
