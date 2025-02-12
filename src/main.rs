@@ -1,13 +1,20 @@
 use local_mixing::{
     circuit::Circuit,
     local_mixing::LocalMixingJob,
-    replacement::{strategy::{ControlFnChoice, ReplacementStrategy}, test::test_num_samples},
+    replacement::{
+        strategy::{ControlFnChoice, ReplacementStrategy},
+        test::test_num_samples,
+    },
 };
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use std::{env::args, error::Error};
 
 fn main() {
+    run();
+}
+
+fn run() {
     let mut args = args();
     let _ = args.next();
     let cmd = args.next().expect("Missing command");
@@ -74,7 +81,8 @@ fn main() {
             init_logs(&log_path).expect("Error initializing logs");
             let strategy =
                 ReplacementStrategy::from_u8(strategy_u8).expect("Strategy does not exist");
-            let cf_choice = ControlFnChoice::from_u8(cf_choice_u8).expect("ControlFnChoice does not exist");
+            let cf_choice =
+                ControlFnChoice::from_u8(cf_choice_u8).expect("ControlFnChoice does not exist");
 
             test_num_samples(strategy, cf_choice, n_iter);
         }
