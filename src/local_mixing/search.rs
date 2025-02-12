@@ -1,4 +1,4 @@
-#[cfg(feature = "time")]
+#[cfg(any(feature = "time", feature = "trace"))]
 use std::time::Instant;
 
 use super::{consts::N_IN, LocalMixingJob};
@@ -13,6 +13,9 @@ impl LocalMixingJob {
         &mut self,
         rng: &mut R,
     ) -> bool {
+        #[cfg(feature = "trace")]
+        let start_time = Instant::now();
+
         let num_gates = self.circuit.gates.len();
         let num_wires = self.wires as usize;
 
@@ -241,10 +244,12 @@ impl LocalMixingJob {
                 "SUCCESS, \
                  n_gates = {:?}, \
                  n_circuits_sampled = {:?}, \
-                 max_candidate_dist = {:?}",
+                 max_candidate_dist = {:?} \
+                 time = {:?}",
                 self.circuit.gates.len(),
                 _num_sampled,
-                _max_candidate_dist
+                _max_candidate_dist,
+                Instant::now() - start_time
             );
 
             return true;
