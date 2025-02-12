@@ -1,5 +1,5 @@
 use local_mixing::{
-    circuit::Circuit,
+    circuit::circuit::{is_func_equiv, Circuit},
     local_mixing::LocalMixingJob,
     replacement::{
         strategy::{ControlFnChoice, ReplacementStrategy},
@@ -52,16 +52,18 @@ fn run() {
         }
         "local-mixing" => {
             let config_path = args.next().expect("Missing config path");
-            let mut job = LocalMixingJob::load(config_path).expect("Failed to load job.");
-            #[cfg(feature = "trace")]
+            let mut job = LocalMixingJob::load(config_path).expect("Failed to load job");
+            #[cfg(any(feature = "trace", feature = "time"))]
             {
                 let log_path = args.next().expect("Missing log path");
                 init_logs(&log_path).expect("Error initializing logs");
             }
             let _success = job.execute();
-
             #[cfg(feature = "trace")]
-            log::info!("Local mixing finished, status = {}", _success { "SUCCESS" } else { "FAIL" });
+            {
+                let status = if _success { "SUCCESS" } else { "FAIL" };
+                log::info!("Local mixing finished, status = {}", status);
+            }
         }
         "replace" => {
             let log_path = args.next().expect("Missing log path");
@@ -88,6 +90,26 @@ fn run() {
             init_logs(&log_path).expect("Error initializing logs");
 
             test_num_samples(strategy, cf_choice, n_iter);
+        }
+        "equiv" => {
+            let circuit_one_path = args.next().expect("Missing circuit 1");
+            let circuit_two_path = args.next().expect("Missing circuit 2 path");
+            let num_iter = args
+                .next()
+                .expect("Missing number of sample inputs")
+                .parse()
+                .expect("Invalid input");
+            let circuit_one =
+                Circuit::load_from_binary(circuit_one_path).expect("Failed to load circuit 1");
+            let circuit_two =
+                Circuit::load_from_binary(circuit_two_path).expect("Failed to load circuit 2");
+            let mut rng = ChaCha8Rng::from_os_rng();
+
+            let res = is_func_equiv(&circuit_one, &circuit_two, num_iter, &mut rng);
+            match res {
+                Ok(()) => println!("func equiv check passes"),
+                Err(e) => println!("func equiv check fails: {}", e),
+            }
         }
         _ => {
             eprintln!("Unknown command: {}", cmd);

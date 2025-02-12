@@ -8,6 +8,12 @@ use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use std::{error::Error, fs::File, io::BufReader};
 
+#[cfg(feature = "correctness")]
+use crate::circuit::circuit::is_func_equiv;
+
+#[cfg(feature = "time")]
+use super::replacement_stats::ReplacementStats;
+
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct LocalMixingJob {
     /// Number of wires in circuit
@@ -22,8 +28,6 @@ pub struct LocalMixingJob {
     pub max_attempts_without_success: usize,
     /// Whether to save to file, logs
     pub save: bool,
-    /// How often circuit is saved to file
-    pub epoch_size: usize,
     /// Path of input circuit
     pub input_circuit_path: String,
     /// Path for storing obfuscated circuit
@@ -39,6 +43,9 @@ pub struct LocalMixingJob {
     /// Whether job is in-progress on loading, determines source for circuit
     #[serde(default)]
     in_progress: bool,
+    /// How often circuit is saved to file
+    #[serde(default)]
+    pub epoch_size: usize,
     /// Current inflationary step
     #[serde(default)]
     pub curr_inflationary_step: usize,
@@ -51,6 +58,9 @@ pub struct LocalMixingJob {
     /// Path of config sourced
     #[serde(default, skip_serializing)]
     config_path: String,
+    #[cfg(feature = "time")]
+    #[serde(default, skip_serializing)]
+    pub replacement_stats: ReplacementStats<1000>,
 }
 
 impl LocalMixingJob {
@@ -82,6 +92,8 @@ impl LocalMixingJob {
             curr_inflationary_step: 0,
             curr_kneading_step: 0,
             config_path: "".to_owned(),
+            #[cfg(feature = "time")]
+            replacement_stats: ReplacementStats::new(),
         }
     }
 
@@ -114,8 +126,13 @@ impl LocalMixingJob {
         self.in_progress = true;
 
         while self.in_inflationary_stage() {
+            #[cfg(feature = "correctness")]
+            let old = self.circuit.clone();
             let success = self.execute_step::<_, N_OUT_INF>(&mut rng);
             if success {
+                #[cfg(feature = "correctness")]
+                assert!(is_func_equiv(&old, &self.circuit, 1000, &mut rng) == Ok(()));
+
                 self.curr_inflationary_step += 1;
 
                 // Save snapshot every epoch
@@ -150,7 +167,7 @@ impl LocalMixingJob {
             } else {
                 #[cfg(feature = "trace")]
                 log::warn!("FAILED");
-                
+
                 fail_ctr += 1;
                 if fail_ctr == self.max_attempts_without_success {
                     return false;
@@ -159,9 +176,9 @@ impl LocalMixingJob {
         }
 
         // Local mixing successful
+        self.circuit.save_as_binary(&self.destination_circuit_path);
         if self.save {
             self.save();
-            self.circuit.save_as_binary(&self.destination_circuit_path);
         }
 
         return true;

@@ -361,10 +361,10 @@ mod tests {
                 None => panic!(),
             };
             let ckt_two = Circuit {
-                wires,
+                num_wires: wires,
                 gates: Vec::from(replacement),
             };
-            match is_func_equiv(&ckt_one, &ckt_two) {
+            match is_func_equiv(&ckt_one, &ckt_two, 1000, &mut rng) {
                 Ok(()) => continue,
                 _ => {
                     dbg!(ckt_one);
