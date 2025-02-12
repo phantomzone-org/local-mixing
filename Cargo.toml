@@ -39,3 +39,7 @@ harness = false
 
 [profile.release]
 codegen-units = 1
+
+[features]
+trace = []
+time = []

@@ -51,14 +51,17 @@ fn run() {
             }
         }
         "local-mixing" => {
-            let log_path = args.next().expect("Missing log path");
             let config_path = args.next().expect("Missing config path");
+            let mut job = LocalMixingJob::load(config_path).expect("Failed to load job.");
+            #[cfg(feature = "trace")]
+            {
+                let log_path = args.next().expect("Missing log path");
+                init_logs(&log_path).expect("Error initializing logs");
+            }
+            let _success = job.execute();
 
-            init_logs(&log_path).expect("Error initializing logs");
-
-            let success = LocalMixingJob::load(config_path).execute();
-            let status = if success { "SUCCESS" } else { "FAIL" };
-            log::info!("Local mixing finished, status = {}", status);
+            #[cfg(feature = "trace")]
+            log::info!("Local mixing finished, status = {}", _success { "SUCCESS" } else { "FAIL" });
         }
         "replace" => {
             let log_path = args.next().expect("Missing log path");
@@ -77,12 +80,12 @@ fn run() {
                 .expect("Missing n_iter")
                 .parse()
                 .expect("Invalid value for n_iter");
-
-            init_logs(&log_path).expect("Error initializing logs");
             let strategy =
                 ReplacementStrategy::from_u8(strategy_u8).expect("Strategy does not exist");
             let cf_choice =
                 ControlFnChoice::from_u8(cf_choice_u8).expect("ControlFnChoice does not exist");
+
+            init_logs(&log_path).expect("Error initializing logs");
 
             test_num_samples(strategy, cf_choice, n_iter);
         }

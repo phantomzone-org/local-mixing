@@ -13,7 +13,7 @@ impl LocalMixingJob {
         let num_gates = self.circuit.gates.len();
         let num_wires = self.wires as usize;
 
-        let mut max_candidate_dist = 0;
+        let mut _max_candidate_dist = 0;
 
         let mut selected_gate_idx = [0; N_OUT];
         let mut selected_gate_ctr = 0;
@@ -119,6 +119,7 @@ impl LocalMixingJob {
 
             if selected_gate_ctr == 0 {
                 if search_restart_ctr >= 1000 {
+                    #[cfg(feature = "trace")]
                     log::warn!("Search has failed 1000 times in a row");
                     search_restart_ctr = 0;
                 } else {
@@ -135,7 +136,7 @@ impl LocalMixingJob {
             } else {
                 // Save max_candidate_dist
                 if selected_gate_ctr == N_OUT - 1 {
-                    max_candidate_dist = candidate_next_gates[selected_gate_ctr].last().unwrap()
+                    _max_candidate_dist = candidate_next_gates[selected_gate_ctr].last().unwrap()
                         - selected_gate_idx[0];
                 }
 
@@ -215,17 +216,18 @@ impl LocalMixingJob {
             ),
         };
 
-        if let Some((c_in, num_sampled)) = replacement_res {
+        if let Some((c_in, _num_sampled)) = replacement_res {
             self.circuit.gates.splice(c_out_start..c_out_end, c_in);
 
+            #[cfg(feature = "trace")]
             log::info!(
                 "SUCCESS, \
                  n_gates = {:?}, \
                  n_circuits_sampled = {:?}, \
                  max_candidate_dist = {:?}",
                 self.circuit.gates.len(),
-                num_sampled,
-                max_candidate_dist
+                _num_sampled,
+                _max_candidate_dist
             );
 
             return true;
