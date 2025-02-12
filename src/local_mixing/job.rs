@@ -6,7 +6,7 @@ use crate::{
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
-use std::{fs::File, io::BufReader};
+use std::{error::Error, fs::File, io::BufReader};
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct LocalMixingJob {
@@ -85,22 +85,19 @@ impl LocalMixingJob {
         }
     }
 
-    pub fn load(path: String) -> Self {
-        let file = File::open(&path).unwrap();
+    pub fn load(path: String) -> Result<Self, Box<dyn Error>> {
+        let file = File::open(&path)?;
         let reader = BufReader::new(file);
-        let mut job: LocalMixingJob = serde_json::from_reader(reader).unwrap();
+        let mut job: LocalMixingJob = serde_json::from_reader(reader)?;
 
         let circuit_path = if job.in_progress {
             job.save_circuit_path.clone()
         } else {
             job.input_circuit_path.clone()
         };
-        job.circuit = Circuit::load_from_binary(&circuit_path).expect(&format!(
-            "Failed to load circuit from path {}",
-            circuit_path
-        ));
+        job.circuit = Circuit::load_from_binary(&circuit_path)?;
         job.config_path = path;
-        job
+        Ok(job)
     }
 
     pub fn save(&self) {
@@ -129,9 +126,10 @@ impl LocalMixingJob {
                 iter += 1;
                 fail_ctr = 0;
             } else {
+                #[cfg(feature = "trace")]
                 log::warn!("FAILED");
-                fail_ctr += 1;
 
+                fail_ctr += 1;
                 if fail_ctr == self.max_attempts_without_success {
                     return false;
                 }
@@ -150,9 +148,10 @@ impl LocalMixingJob {
                 iter += 1;
                 fail_ctr = 0;
             } else {
+                #[cfg(feature = "trace")]
                 log::warn!("FAILED");
+                
                 fail_ctr += 1;
-
                 if fail_ctr == self.max_attempts_without_success {
                     return false;
                 }
