@@ -171,7 +171,7 @@ impl LocalMixingJob {
                 if collides_with_prev_selected
                     || path_connected_control_wires[curr_target]
                     || path_connected_target_wires[curr_control0]
-                    || path_connected_control_wires[curr_control1]
+                    || path_connected_target_wires[curr_control1]
                 {
                     to_after.push(*curr_gate);
 
