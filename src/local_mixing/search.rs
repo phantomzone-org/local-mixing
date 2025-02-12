@@ -148,66 +148,12 @@ impl LocalMixingJob {
             }
         }
 
-        // permute step
-        let mut to_before = vec![];
-        let mut to_after = vec![];
+        // replacement step
         let selected_gates = std::array::from_fn(|i| self.circuit.gates[selected_gate_idx[i]]);
-
-        let mut path_connected_target_wires = vec![false; num_wires];
-        let mut path_connected_control_wires = vec![false; num_wires];
-
-        for j in 0..selected_gate_idx.len() - 1 {
-            for i in selected_gate_idx[j] + 1..selected_gate_idx[j + 1] {
-                let curr_gate = &self.circuit.gates[i];
-                let curr_target = curr_gate.wires[0] as usize;
-                let curr_control0 = curr_gate.wires[1] as usize;
-                let curr_control1 = curr_gate.wires[2] as usize;
-
-                let mut collides_with_prev_selected = false;
-                for k in 0..=j {
-                    collides_with_prev_selected =
-                        collides_with_prev_selected || selected_gates[k].collides_with(curr_gate);
-                }
-
-                if collides_with_prev_selected
-                    || path_connected_control_wires[curr_target]
-                    || path_connected_target_wires[curr_control0]
-                    || path_connected_target_wires[curr_control1]
-                {
-                    to_after.push(*curr_gate);
-
-                    path_connected_target_wires[curr_target] = true;
-                    path_connected_control_wires[curr_control0] = true;
-                    path_connected_control_wires[curr_control1] = true;
-                } else {
-                    to_before.push(*curr_gate);
-                }
-            }
-        }
-
-        let mut write_idx = selected_gate_idx[0];
-        for i in 0..to_before.len() {
-            self.circuit.gates[write_idx] = to_before[i];
-            write_idx += 1;
-        }
-        let c_out_start = write_idx;
-        for i in 0..N_OUT {
-            self.circuit.gates[write_idx] = selected_gates[i];
-            write_idx += 1;
-        }
-        let c_out_end = write_idx;
-        for i in 0..to_after.len() {
-            self.circuit.gates[write_idx] = to_after[i];
-            write_idx += 1;
-        }
-
-        // replacement
-        let c_out = selected_gates;
-
         let replacement_res = match self.replacement_strategy == ReplacementStrategy::Dummy {
             true => Some(([Gate::default(); N_IN], 1)),
             false => find_replacement_circuit::<_, N_OUT>(
-                &c_out,
+                &selected_gates,
                 num_wires,
                 self.max_replacement_samples,
                 self.replacement_strategy,
@@ -215,8 +161,59 @@ impl LocalMixingJob {
                 rng,
             ),
         };
-
         if let Some((c_in, _num_sampled)) = replacement_res {
+            // permute step
+            let mut to_before = vec![];
+            let mut to_after = vec![];
+            let mut path_connected_target_wires = vec![false; num_wires];
+            let mut path_connected_control_wires = vec![false; num_wires];
+
+            for j in 0..selected_gate_idx.len() - 1 {
+                for i in selected_gate_idx[j] + 1..selected_gate_idx[j + 1] {
+                    let curr_gate = &self.circuit.gates[i];
+                    let curr_target = curr_gate.wires[0] as usize;
+                    let curr_control0 = curr_gate.wires[1] as usize;
+                    let curr_control1 = curr_gate.wires[2] as usize;
+
+                    let mut collides_with_prev_selected = false;
+                    for k in 0..=j {
+                        collides_with_prev_selected = collides_with_prev_selected
+                            || selected_gates[k].collides_with(curr_gate);
+                    }
+
+                    if collides_with_prev_selected
+                        || path_connected_control_wires[curr_target]
+                        || path_connected_target_wires[curr_control0]
+                        || path_connected_target_wires[curr_control1]
+                    {
+                        to_after.push(*curr_gate);
+
+                        path_connected_target_wires[curr_target] = true;
+                        path_connected_control_wires[curr_control0] = true;
+                        path_connected_control_wires[curr_control1] = true;
+                    } else {
+                        to_before.push(*curr_gate);
+                    }
+                }
+            }
+
+            let mut write_idx = selected_gate_idx[0];
+            for i in 0..to_before.len() {
+                self.circuit.gates[write_idx] = to_before[i];
+                write_idx += 1;
+            }
+            let c_out_start = write_idx;
+            for i in 0..N_OUT {
+                self.circuit.gates[write_idx] = selected_gates[i];
+                write_idx += 1;
+            }
+            let c_out_end = write_idx;
+            for i in 0..to_after.len() {
+                self.circuit.gates[write_idx] = to_after[i];
+                write_idx += 1;
+            }
+
+            // replace c_out with c_in
             self.circuit.gates.splice(c_out_start..c_out_end, c_in);
 
             #[cfg(feature = "trace")]
