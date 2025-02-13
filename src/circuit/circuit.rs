@@ -75,7 +75,7 @@ impl Circuit {
     }
 
     pub fn save_as_json(&self, path: impl AsRef<Path>) {
-        std::fs::write(path, serde_json::to_vec(&self).unwrap()).unwrap();
+        std::fs::write(path, serde_json::to_vec_pretty(&self).unwrap()).unwrap();
     }
 
     pub fn evaluate(&self, input: &Vec<bool>) -> Vec<bool> {

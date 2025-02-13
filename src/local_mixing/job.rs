@@ -28,13 +28,6 @@ pub struct LocalMixingJob {
     pub max_attempts_without_success: usize,
     /// Whether to save to file, logs
     pub save: bool,
-    /// Path of input circuit
-    pub input_circuit_path: String,
-    /// Path for storing obfuscated circuit
-    pub destination_circuit_path: String,
-    /// Path for storing intermediary steps
-    pub save_circuit_path: String,
-    /// Replacement strategy: default is SampleActive0
     #[serde(default)]
     pub replacement_strategy: ReplacementStrategy,
     /// Control function choice in replacement
@@ -55,9 +48,6 @@ pub struct LocalMixingJob {
     /// Current circuit
     #[serde(default, skip_serializing)]
     pub circuit: Circuit,
-    /// Path of config sourced
-    #[serde(default, skip_serializing)]
-    config_path: String,
     #[cfg(feature = "time")]
     #[serde(default, skip_serializing)]
     pub replacement_stats: ReplacementStats<1000>,
@@ -88,13 +78,9 @@ impl LocalMixingJob {
             circuit: circuit.clone(),
             save: false,
             epoch_size: 0,
-            input_circuit_path: "".to_owned(),
-            destination_circuit_path: "".to_owned(),
-            save_circuit_path: "".to_owned(),
             in_progress: false,
             curr_inflationary_step: 0,
             curr_kneading_step: 0,
-            config_path: "".to_owned(),
             #[cfg(feature = "time")]
             replacement_stats: ReplacementStats::new(),
             #[cfg(feature = "correctness")]
@@ -102,34 +88,35 @@ impl LocalMixingJob {
         }
     }
 
-    pub fn load(path: String) -> Result<Self, Box<dyn Error>> {
-        let file = File::open(&path)?;
+    pub fn load(dir_path: &String) -> Result<Self, Box<dyn Error>> {
+        let config_path = format!("{}/config.json", dir_path);
+        let file = File::open(&config_path)?;
         let reader = BufReader::new(file);
-        let mut job: LocalMixingJob = serde_json::from_reader(reader)?;
+        let mut job: Self = serde_json::from_reader(reader)?;
 
-        let circuit_path = if job.in_progress {
-            job.save_circuit_path.clone()
+        let circuit_file_name = if job.in_progress {
+            "save.bin"
         } else {
-            job.input_circuit_path.clone()
+            "input.bin"
         };
-        job.circuit = Circuit::load_from_binary(&circuit_path)?;
-        job.config_path = path;
+        job.circuit = Circuit::load_from_binary(format!("{}/{}", dir_path, circuit_file_name))?;
 
         #[cfg(feature = "correctness")]
         {
-            job.original_circuit = Circuit::load_from_binary(&job.input_circuit_path)?;
+            job.original_circuit = Circuit::load_from_binary(format!("{}/input.bin", dir_path))?;
         }
 
         Ok(job)
     }
 
-    pub fn save(&self) {
-        self.circuit.save_as_binary(&self.save_circuit_path);
-        let file = File::create(self.config_path.clone()).unwrap();
-        serde_json::to_writer(file, &self).unwrap();
+    pub fn save(&self, dir_path: &String) {
+        self.circuit
+            .save_as_binary(format!("{}/save.bin", dir_path));
+        let file = File::create(format!("{}/config.json", dir_path)).unwrap();
+        serde_json::to_writer_pretty(file, &self).unwrap();
     }
 
-    pub fn execute(&mut self) -> bool {
+    pub fn execute(&mut self, dir_path: &String) -> bool {
         let mut iter = 1;
         let mut fail_ctr = 0;
         let mut rng = ChaCha8Rng::from_os_rng();
@@ -148,7 +135,7 @@ impl LocalMixingJob {
 
                 // Save snapshot every epoch
                 if self.save && iter % self.epoch_size == 0 {
-                    self.save();
+                    self.save(dir_path);
                 }
 
                 iter += 1;
@@ -170,7 +157,7 @@ impl LocalMixingJob {
                 self.curr_kneading_step += 1;
 
                 if self.save && iter % self.epoch_size == 0 {
-                    self.save();
+                    self.save(&dir_path);
                 }
 
                 iter += 1;
@@ -187,9 +174,10 @@ impl LocalMixingJob {
         }
 
         // Local mixing successful
-        self.circuit.save_as_binary(&self.destination_circuit_path);
+        self.circuit
+            .save_as_binary(format!("{}/target.bin", dir_path));
         if self.save {
-            self.save();
+            self.save(dir_path);
         }
 
         return true;

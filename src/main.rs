@@ -38,19 +38,14 @@ fn run() {
             println!("Random circuit generated and saved to {}", save_path);
         }
         "local-mixing" => {
-            let config_path = args.next().expect("Missing config path");
-            let mut job = LocalMixingJob::load(config_path).expect("Failed to load job");
+            let job_dir = args.next().expect("Missing job directory");
+            let mut job = LocalMixingJob::load(&job_dir).expect("Failed to load job");
             #[cfg(any(feature = "trace", feature = "time"))]
             {
-                let log_path_op = args.next();
-                match log_path_op {
-                    Some(log_path) => {
-                        init_logs(&log_path).expect("Error initializing logs in file")
-                    }
-                    None => init_stdout_logs().expect("Error initializing stdout logs"),
-                };
+                let log_path = format!("{}/logs.log", job_dir);
+                init_logs(&log_path).expect("Error initializing logs");
             }
-            let _success = job.execute();
+            let _success = job.execute(&job_dir);
             #[cfg(feature = "trace")]
             {
                 let status = if _success { "SUCCESS" } else { "FAIL" };
@@ -136,28 +131,6 @@ fn init_logs(log_path: &str) -> Result<(), Box<dyn Error>> {
         .build(
             log4rs::config::Root::builder()
                 .appender("file")
-                .build(log::LevelFilter::Trace),
-        )?;
-
-    log4rs::init_config(config)?;
-
-    Ok(())
-}
-
-#[cfg(any(feature = "trace", feature = "time"))]
-fn init_stdout_logs() -> Result<(), Box<dyn Error>> {
-    let stdout_appender = log4rs::append::console::ConsoleAppender::builder()
-        .encoder(Box::new(log4rs::encode::pattern::PatternEncoder::new(
-            "{d} - {l} - {m}{n}",
-        )))
-        .build();
-
-    // Build the configuration
-    let config = log4rs::Config::builder()
-        .appender(log4rs::config::Appender::builder().build("stdout", Box::new(stdout_appender)))
-        .build(
-            log4rs::config::Root::builder()
-                .appender("stdout")
                 .build(log::LevelFilter::Trace),
         )?;
 
