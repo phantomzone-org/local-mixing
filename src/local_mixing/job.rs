@@ -61,6 +61,9 @@ pub struct LocalMixingJob {
     #[cfg(feature = "time")]
     #[serde(default, skip_serializing)]
     pub replacement_stats: ReplacementStats<1000>,
+    #[cfg(feature = "correctness")]
+    #[serde(default, skip_serializing)]
+    original_circuit: Circuit,
 }
 
 impl LocalMixingJob {
@@ -82,7 +85,7 @@ impl LocalMixingJob {
             max_attempts_without_success,
             replacement_strategy,
             cf_choice,
-            circuit,
+            circuit: circuit.clone(),
             save: false,
             epoch_size: 0,
             input_circuit_path: "".to_owned(),
@@ -94,6 +97,8 @@ impl LocalMixingJob {
             config_path: "".to_owned(),
             #[cfg(feature = "time")]
             replacement_stats: ReplacementStats::new(),
+            #[cfg(feature = "correctness")]
+            original_circuit: circuit,
         }
     }
 
@@ -109,6 +114,12 @@ impl LocalMixingJob {
         };
         job.circuit = Circuit::load_from_binary(&circuit_path)?;
         job.config_path = path;
+
+        #[cfg(feature = "correctness")]
+        {
+            job.original_circuit = Circuit::load_from_binary(&job.input_circuit_path)?;
+        }
+
         Ok(job)
     }
 
@@ -126,12 +137,12 @@ impl LocalMixingJob {
         self.in_progress = true;
 
         while self.in_inflationary_stage() {
-            #[cfg(feature = "correctness")]
-            let old = self.circuit.clone();
             let success = self.execute_step::<_, N_OUT_INF>(&mut rng);
             if success {
                 #[cfg(feature = "correctness")]
-                assert!(is_func_equiv(&old, &self.circuit, 1000, &mut rng) == Ok(()));
+                assert!(
+                    is_func_equiv(&self.original_circuit, &self.circuit, 1000, &mut rng) == Ok(())
+                );
 
                 self.curr_inflationary_step += 1;
 

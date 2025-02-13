@@ -37,6 +37,26 @@ fn run() {
                 .save_as_binary(&save_path);
             println!("Random circuit generated and saved to {}", save_path);
         }
+        "local-mixing" => {
+            let config_path = args.next().expect("Missing config path");
+            let mut job = LocalMixingJob::load(config_path).expect("Failed to load job");
+            #[cfg(any(feature = "trace", feature = "time"))]
+            {
+                let log_path_op = args.next();
+                match log_path_op {
+                    Some(log_path) => {
+                        init_logs(&log_path).expect("Error initializing logs in file")
+                    }
+                    None => init_stdout_logs().expect("Error initializing stdout logs"),
+                };
+            }
+            let _success = job.execute();
+            #[cfg(feature = "trace")]
+            {
+                let status = if _success { "SUCCESS" } else { "FAIL" };
+                log::info!("Local mixing finished, status = {}", status);
+            }
+        }
         "json" => {
             let circuit_path = args.next().expect("Missing circuit path");
 
@@ -48,21 +68,6 @@ fn run() {
                 println!("Circuit JSON saved to {}", json_path);
             } else {
                 println!("{:#?}", circuit);
-            }
-        }
-        "local-mixing" => {
-            let config_path = args.next().expect("Missing config path");
-            let mut job = LocalMixingJob::load(config_path).expect("Failed to load job");
-            #[cfg(any(feature = "trace", feature = "time"))]
-            {
-                let log_path = args.next().expect("Missing log path");
-                init_logs(&log_path).expect("Error initializing logs");
-            }
-            let _success = job.execute();
-            #[cfg(feature = "trace")]
-            {
-                let status = if _success { "SUCCESS" } else { "FAIL" };
-                log::info!("Local mixing finished, status = {}", status);
             }
         }
         "replace" => {
@@ -131,6 +136,28 @@ fn init_logs(log_path: &str) -> Result<(), Box<dyn Error>> {
         .build(
             log4rs::config::Root::builder()
                 .appender("file")
+                .build(log::LevelFilter::Trace),
+        )?;
+
+    log4rs::init_config(config)?;
+
+    Ok(())
+}
+
+#[cfg(any(feature = "trace", feature = "time"))]
+fn init_stdout_logs() -> Result<(), Box<dyn Error>> {
+    let stdout_appender = log4rs::append::console::ConsoleAppender::builder()
+        .encoder(Box::new(log4rs::encode::pattern::PatternEncoder::new(
+            "{d} - {l} - {m}{n}",
+        )))
+        .build();
+
+    // Build the configuration
+    let config = log4rs::Config::builder()
+        .appender(log4rs::config::Appender::builder().build("stdout", Box::new(stdout_appender)))
+        .build(
+            log4rs::config::Root::builder()
+                .appender("stdout")
                 .build(log::LevelFilter::Trace),
         )?;
 
