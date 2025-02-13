@@ -169,8 +169,10 @@ impl LocalMixingJob {
         }
 
         #[cfg(feature = "time")]
-        log::info!(target: "replacement", "Inflationary stage replacement times: {:?}", self.tracer.replacement_times);
-        self.tracer.replacement_times.clear();
+        {
+            log::info!(target: "replacement", "Inflationary stage replacement times: {:?}", self.tracer.replacement_times);
+            self.tracer.replacement_times.clear();
+        }
 
         while self.in_kneading_stage() {
             let success = self.execute_step::<_, N_OUT_KND>(&mut rng);
