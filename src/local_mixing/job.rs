@@ -11,8 +11,7 @@ use std::{error::Error, fs::File, io::BufReader};
 #[cfg(feature = "correctness")]
 use crate::circuit::circuit::is_func_equiv;
 
-#[cfg(feature = "time")]
-use super::replacement_stats::ReplacementStats;
+#[cfg(any(feature = "trace", feature = "time"))]
 use super::tracer::Tracer;
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -49,12 +48,11 @@ pub struct LocalMixingJob {
     /// Current circuit
     #[serde(default, skip_serializing)]
     pub circuit: Circuit,
-    #[cfg(feature = "time")]
-    #[serde(default, skip_serializing)]
-    pub replacement_stats: ReplacementStats<1000>,
+    /// Original input circuit
     #[cfg(feature = "correctness")]
     #[serde(default, skip_serializing)]
     original_circuit: Circuit,
+    /// Tracer
     #[cfg(any(feature = "trace", feature = "time"))]
     #[serde(default, skip_serializing)]
     pub tracer: Tracer,
@@ -85,8 +83,6 @@ impl LocalMixingJob {
             in_progress: false,
             curr_inflationary_step: 0,
             curr_kneading_step: 0,
-            #[cfg(feature = "time")]
-            replacement_stats: ReplacementStats::new(),
             #[cfg(feature = "correctness")]
             original_circuit: circuit,
             #[cfg(any(feature = "trace", feature = "time"))]
@@ -114,7 +110,10 @@ impl LocalMixingJob {
 
         #[cfg(any(feature = "trace", feature = "time"))]
         {
-            job.tracer = Tracer::new(dir_path)?;
+            job.tracer = Tracer::new(
+                dir_path,
+                job.inflationary_stage_steps + job.kneading_stage_steps,
+            )?;
         }
 
         Ok(job)
@@ -166,6 +165,10 @@ impl LocalMixingJob {
             }
         }
 
+        #[cfg(feature = "time")]
+        log::info!(target: "replacement", "Inflationary stage replacement times: {:?}", self.tracer.replacement_times);
+        self.tracer.replacement_times.clear();
+
         while self.in_kneading_stage() {
             let success = self.execute_step::<_, N_OUT_KND>(&mut rng);
             match success {
@@ -197,6 +200,9 @@ impl LocalMixingJob {
         if self.save {
             self.save(dir_path);
         }
+
+        #[cfg(feature = "time")]
+        log::info!(target: "replacement", "Kneading stage replacement times: {:?}", self.tracer.replacement_times);
 
         return true;
     }

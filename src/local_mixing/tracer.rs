@@ -1,15 +1,19 @@
-use std::error::Error;
+use std::{error::Error, time::Duration};
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, Default)]
-pub struct Tracer {}
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct Tracer {
+    pub replacement_times: Vec<Duration>,
+}
 
 impl Tracer {
-    pub fn new(dir_path: &String) -> Result<Self, Box<dyn Error>> {
+    pub fn new(dir_path: &String, capacity: usize) -> Result<Self, Box<dyn Error>> {
         init_logs(dir_path)?;
 
-        Ok(Self {})
+        Ok(Self {
+            replacement_times: Vec::with_capacity(capacity),
+        })
     }
 }
 

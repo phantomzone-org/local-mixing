@@ -173,14 +173,9 @@ impl LocalMixingJob {
                 );
 
                 #[cfg(feature = "time")]
-                {
-                    self.replacement_stats
-                        .add_entry(Instant::now() - repl_start);
-                    if self.replacement_stats.at_capacity() {
-                        log::info!(target: "replacement", "Replacement times: {:?}", self.replacement_stats.times);
-                        self.replacement_stats.clear();
-                    }
-                }
+                self.tracer
+                    .replacement_times
+                    .push(Instant::now() - repl_start);
 
                 res
             }
