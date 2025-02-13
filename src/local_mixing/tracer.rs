@@ -53,14 +53,14 @@ pub fn init_logs(dir_path: &String) -> Result<(), Box<dyn std::error::Error>> {
         .encoder(Box::new(log4rs::encode::pattern::PatternEncoder::new(
             "{d} - {l} - {m}{n}",
         )))
-        .build(&format!("{}/trace.log", dir_path))?;
+        .build(&format!("{}/logs/trace.log", dir_path))?;
 
     #[cfg(feature = "time")]
     let replacement_file_appender = log4rs::append::file::FileAppender::builder()
         .encoder(Box::new(log4rs::encode::pattern::PatternEncoder::new(
             "{d} - {l} - {m}{n}",
         )))
-        .build(&format!("{}/replacement.log", dir_path))?;
+        .build(&format!("{}/logs/replacement.log", dir_path))?;
 
     let mut config_builder = log4rs::Config::builder();
 
