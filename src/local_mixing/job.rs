@@ -125,50 +125,57 @@ impl LocalMixingJob {
 
         while self.in_inflationary_stage() {
             let success = self.execute_step::<_, N_OUT_INF>(&mut rng);
-            if success {
-                #[cfg(feature = "correctness")]
-                assert!(
-                    is_func_equiv(&self.original_circuit, &self.circuit, 1000, &mut rng) == Ok(())
-                );
+            match success {
+                Ok(()) => {
+                    #[cfg(feature = "correctness")]
+                    assert!(
+                        is_func_equiv(&self.original_circuit, &self.circuit, 1000, &mut rng)
+                            == Ok(())
+                    );
 
-                self.curr_inflationary_step += 1;
+                    self.curr_inflationary_step += 1;
 
-                // Save snapshot every epoch
-                if self.save && iter % self.epoch_size == 0 {
-                    self.save(dir_path);
+                    // Save snapshot every epoch
+                    if self.save && iter % self.epoch_size == 0 {
+                        self.save(dir_path);
+                    }
+
+                    iter += 1;
+                    fail_ctr = 0;
                 }
+                Err(e) => {
+                    #[cfg(feature = "trace")]
+                    log::warn!("FAILED: {}", e);
 
-                iter += 1;
-                fail_ctr = 0;
-            } else {
-                #[cfg(feature = "trace")]
-                log::warn!("FAILED");
-
-                fail_ctr += 1;
-                if fail_ctr == self.max_attempts_without_success {
-                    return false;
+                    fail_ctr += 1;
+                    if fail_ctr == self.max_attempts_without_success {
+                        return false;
+                    }
                 }
             }
         }
 
         while self.in_kneading_stage() {
             let success = self.execute_step::<_, N_OUT_KND>(&mut rng);
-            if success {
-                self.curr_kneading_step += 1;
+            match success {
+                Ok(()) => {
+                    self.curr_kneading_step += 1;
 
-                if self.save && iter % self.epoch_size == 0 {
-                    self.save(&dir_path);
+                    if self.save && iter % self.epoch_size == 0 {
+                        self.save(&dir_path);
+                    }
+
+                    iter += 1;
+                    fail_ctr = 0;
                 }
+                Err(e) => {
+                    #[cfg(feature = "trace")]
+                    log::warn!("FAILED: {}", e);
 
-                iter += 1;
-                fail_ctr = 0;
-            } else {
-                #[cfg(feature = "trace")]
-                log::warn!("FAILED");
-
-                fail_ctr += 1;
-                if fail_ctr == self.max_attempts_without_success {
-                    return false;
+                    fail_ctr += 1;
+                    if fail_ctr == self.max_attempts_without_success {
+                        return false;
+                    }
                 }
             }
         }

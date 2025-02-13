@@ -1,3 +1,4 @@
+use std::error::Error;
 #[cfg(any(feature = "time", feature = "trace"))]
 use std::time::Instant;
 
@@ -12,14 +13,14 @@ impl LocalMixingJob {
     pub fn execute_step<R: Send + Sync + RngCore + SeedableRng, const N_OUT: usize>(
         &mut self,
         rng: &mut R,
-    ) -> bool {
+    ) -> Result<(), Box<dyn Error>> {
         #[cfg(feature = "trace")]
         let start_time = Instant::now();
+        #[cfg(feature = "trace")]
+        let mut max_candidate_dist = 0;
 
         let num_gates = self.circuit.gates.len();
         let num_wires = self.wires as usize;
-
-        let mut _max_candidate_dist = 0;
 
         let mut selected_gate_idx = [0; N_OUT];
         let mut selected_gate_ctr = 0;
@@ -140,9 +141,9 @@ impl LocalMixingJob {
                 candidates_computed[selected_gate_ctr] = false;
                 selected_gate_ctr -= 1;
             } else {
-                // Save max_candidate_dist
+                #[cfg(feature = "trace")]
                 if selected_gate_ctr == N_OUT - 1 {
-                    _max_candidate_dist = candidate_next_gates[selected_gate_ctr].last().unwrap()
+                    max_candidate_dist = candidate_next_gates[selected_gate_ctr].last().unwrap()
                         - selected_gate_idx[0];
                 }
 
@@ -248,13 +249,13 @@ impl LocalMixingJob {
                  time = {:?}",
                 self.circuit.gates.len(),
                 _num_sampled,
-                _max_candidate_dist,
+                max_candidate_dist,
                 Instant::now() - start_time
             );
 
-            return true;
+            return Ok(());
         }
 
-        false
+        Err(format!("Failed to find replacement for c_out = {:?}", selected_gates).into())
     }
 }
