@@ -40,16 +40,11 @@ fn run() {
         "local-mixing" => {
             let job_dir = args.next().expect("Missing job directory");
             let mut job = LocalMixingJob::load(&job_dir).expect("Failed to load job");
-            #[cfg(any(feature = "trace", feature = "time"))]
-            {
-                let log_path = format!("{}/logs.log", job_dir);
-                init_logs(&log_path).expect("Error initializing logs");
-            }
             let _success = job.execute(&job_dir);
             #[cfg(feature = "trace")]
             {
                 let status = if _success { "SUCCESS" } else { "FAIL" };
-                log::info!("Local mixing finished, status = {}", status);
+                log::info!(target: "trace", "Local mixing finished, status = {}", status);
             }
         }
         "json" => {

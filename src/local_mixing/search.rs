@@ -127,7 +127,7 @@ impl LocalMixingJob {
             if selected_gate_ctr == 0 {
                 if search_restart_ctr >= 1000 {
                     #[cfg(feature = "trace")]
-                    log::warn!("Search has failed 1000 times in a row");
+                    log::warn!(target: "trace", "Search has failed 1000 times in a row");
                     search_restart_ctr = 0;
                 } else {
                     search_restart_ctr += 1;
@@ -177,7 +177,7 @@ impl LocalMixingJob {
                     self.replacement_stats
                         .add_entry(Instant::now() - repl_start);
                     if self.replacement_stats.at_capacity() {
-                        log::info!("Replacement times: {:?}", self.replacement_stats.times);
+                        log::info!(target: "replacement", "Replacement times: {:?}", self.replacement_stats.times);
                         self.replacement_stats.clear();
                     }
                 }
@@ -241,7 +241,7 @@ impl LocalMixingJob {
             self.circuit.gates.splice(c_out_start..c_out_end, c_in);
 
             #[cfg(feature = "trace")]
-            log::info!(
+            log::info!(target: "trace",
                 "SUCCESS, \
                  n_gates = {:?}, \
                  n_circuits_sampled = {:?}, \
@@ -256,6 +256,10 @@ impl LocalMixingJob {
             return Ok(());
         }
 
-        Err(format!("Failed to find replacement for c_out = {:?}", selected_gates).into())
+        Err(format!(
+            "Failed to find replacement for c_out = {:?}",
+            selected_gates
+        )
+        .into())
     }
 }

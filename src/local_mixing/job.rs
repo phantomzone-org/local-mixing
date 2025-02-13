@@ -13,6 +13,7 @@ use crate::circuit::circuit::is_func_equiv;
 
 #[cfg(feature = "time")]
 use super::replacement_stats::ReplacementStats;
+use super::tracer::Tracer;
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct LocalMixingJob {
@@ -54,6 +55,9 @@ pub struct LocalMixingJob {
     #[cfg(feature = "correctness")]
     #[serde(default, skip_serializing)]
     original_circuit: Circuit,
+    #[cfg(any(feature = "trace", feature = "time"))]
+    #[serde(default, skip_serializing)]
+    pub tracer: Tracer,
 }
 
 impl LocalMixingJob {
@@ -85,6 +89,8 @@ impl LocalMixingJob {
             replacement_stats: ReplacementStats::new(),
             #[cfg(feature = "correctness")]
             original_circuit: circuit,
+            #[cfg(any(feature = "trace", feature = "time"))]
+            tracer: Tracer::default(),
         }
     }
 
@@ -104,6 +110,11 @@ impl LocalMixingJob {
         #[cfg(feature = "correctness")]
         {
             job.original_circuit = Circuit::load_from_binary(format!("{}/input.bin", dir_path))?;
+        }
+
+        #[cfg(any(feature = "trace", feature = "time"))]
+        {
+            job.tracer = Tracer::new(dir_path)?;
         }
 
         Ok(job)
@@ -145,7 +156,7 @@ impl LocalMixingJob {
                 }
                 Err(e) => {
                     #[cfg(feature = "trace")]
-                    log::warn!("FAILED: {}", e);
+                    log::warn!(target: "trace", "FAILED: {}", e);
 
                     fail_ctr += 1;
                     if fail_ctr == self.max_attempts_without_success {
@@ -170,7 +181,7 @@ impl LocalMixingJob {
                 }
                 Err(e) => {
                     #[cfg(feature = "trace")]
-                    log::warn!("FAILED: {}", e);
+                    log::warn!(target: "trace", "FAILED: {}", e);
 
                     fail_ctr += 1;
                     if fail_ctr == self.max_attempts_without_success {
