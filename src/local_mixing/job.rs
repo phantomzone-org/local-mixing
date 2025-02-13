@@ -143,6 +143,9 @@ impl LocalMixingJob {
                             == Ok(())
                     );
 
+                    #[cfg(feature = "trace")]
+                    self.tracer.log_last_search_logs("inflationary".to_string());
+
                     self.curr_inflationary_step += 1;
 
                     // Save snapshot every epoch
@@ -155,7 +158,7 @@ impl LocalMixingJob {
                 }
                 Err(e) => {
                     #[cfg(feature = "trace")]
-                    log::warn!(target: "trace", "FAILED: {}", e);
+                    log::warn!(target: "trace", "inflationary, FAILED: {}", e);
 
                     fail_ctr += 1;
                     if fail_ctr == self.max_attempts_without_success {
@@ -173,6 +176,15 @@ impl LocalMixingJob {
             let success = self.execute_step::<_, N_OUT_KND>(&mut rng);
             match success {
                 Ok(()) => {
+                    #[cfg(feature = "correctness")]
+                    assert!(
+                        is_func_equiv(&self.original_circuit, &self.circuit, 1000, &mut rng)
+                            == Ok(())
+                    );
+
+                    #[cfg(feature = "trace")]
+                    self.tracer.log_last_search_logs("kneading".to_string());
+
                     self.curr_kneading_step += 1;
 
                     if self.save && iter % self.epoch_size == 0 {
@@ -184,7 +196,7 @@ impl LocalMixingJob {
                 }
                 Err(e) => {
                     #[cfg(feature = "trace")]
-                    log::warn!(target: "trace", "FAILED: {}", e);
+                    log::warn!(target: "trace", "kneading, FAILED: {}", e);
 
                     fail_ctr += 1;
                     if fail_ctr == self.max_attempts_without_success {

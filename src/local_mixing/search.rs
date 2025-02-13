@@ -236,16 +236,11 @@ impl LocalMixingJob {
             self.circuit.gates.splice(c_out_start..c_out_end, c_in);
 
             #[cfg(feature = "trace")]
-            log::info!(target: "trace",
-                "SUCCESS, \
-                 n_gates = {:?}, \
-                 n_circuits_sampled = {:?}, \
-                 max_candidate_dist = {:?} \
-                 time = {:?}",
+            self.tracer.add_search_entry(
                 self.circuit.gates.len(),
                 _num_sampled,
                 max_candidate_dist,
-                Instant::now() - start_time
+                Instant::now() - start_time,
             );
 
             return Ok(());
