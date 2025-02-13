@@ -156,9 +156,9 @@ impl LocalMixingJob {
                     iter += 1;
                     fail_ctr = 0;
                 }
-                Err(e) => {
+                Err(_e) => {
                     #[cfg(feature = "trace")]
-                    log::warn!(target: "trace", "inflationary, FAILED: {}", e);
+                    log::warn!(target: "trace", "inflationary, FAILED: {}", _e);
 
                     fail_ctr += 1;
                     if fail_ctr == self.max_attempts_without_success {
@@ -196,9 +196,9 @@ impl LocalMixingJob {
                     iter += 1;
                     fail_ctr = 0;
                 }
-                Err(e) => {
+                Err(_e) => {
                     #[cfg(feature = "trace")]
-                    log::warn!(target: "trace", "kneading, FAILED: {}", e);
+                    log::warn!(target: "trace", "kneading, FAILED: {}", _e);
 
                     fail_ctr += 1;
                     if fail_ctr == self.max_attempts_without_success {
