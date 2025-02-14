@@ -5,7 +5,10 @@ use crate::{
     circuit::Gate,
     local_mixing::consts::{N_IN, N_PROJ_INPUTS, N_PROJ_WIRES, PROJ_GATE_CANDIDATES},
 };
-use rand::{seq::IndexedRandom, Rng, RngCore, SeedableRng};
+use rand::{
+    seq::{IndexedRandom, SliceRandom},
+    Rng, RngCore, SeedableRng,
+};
 use rayon::{
     current_num_threads,
     iter::{ParallelBridge, ParallelIterator},
@@ -111,7 +114,6 @@ pub fn find_replacement_circuit<R: Send + Sync + RngCore + SeedableRng, const N_
         .find_map_any(|mut rng| {
             let epoch_size = rng.random_range(10..20);
             let mut replacement_circuit = [Gate::default(); N_IN];
-            // let mut placed_wire_in_gate;
             for iter in 1..=max_iterations {
                 if iter % epoch_size == 0 && found.load(Relaxed) {
                     return None;
@@ -203,44 +205,56 @@ pub fn sample_random_circuit<R: Send + Sync + RngCore + SeedableRng>(
     cf_choice: ControlFnChoice,
     rng: &mut R,
 ) {
-    let mut placed_wire_in_gate = [[false; 3]; N_IN];
+    let mut placed_wire_in_gate = [[false; N_IN]; 3];
 
+    // Place active target wires
     for i in 0..N_PROJ_WIRES {
         if !active_wires[0][i] {
             continue;
         }
         loop {
             let gate_idx = rng.random_range(0..N_IN);
-            if !placed_wire_in_gate[gate_idx][0] {
+            if !placed_wire_in_gate[0][gate_idx] {
                 circuit[gate_idx].wires[0] = i as u32;
-                placed_wire_in_gate[gate_idx][0] = true;
+                placed_wire_in_gate[0][gate_idx] = true;
                 break;
             }
         }
     }
-    for i in 0..N_PROJ_WIRES {
-        if !active_wires[1][i] {
-            continue;
-        }
-        loop {
-            let gate_idx = rng.random_range(0..N_IN);
-            if placed_wire_in_gate[gate_idx][0] && circuit[gate_idx].wires[0] == i as u32 {
+
+    // Place active control wires
+    let mut all_slots: [_; 2 * N_IN] = std::array::from_fn(|i| (i / 2, 1 + (i % 2)));
+    'active_control: loop {
+        for w in 0..N_PROJ_WIRES {
+            if !active_wires[1][w] {
                 continue;
             }
 
-            let control_idx = (rng.random_bool(0.5) as usize) + 1;
-            if !placed_wire_in_gate[gate_idx][control_idx] {
-                circuit[gate_idx].wires[control_idx] = i as u32;
-                placed_wire_in_gate[gate_idx][control_idx] = true;
-                break;
+            let mut placed = false;
+            all_slots.shuffle(rng);
+            for (gate_idx, control_idx) in all_slots {
+                // Check if the same wire is acting as target (and is placed)
+                if placed_wire_in_gate[0][gate_idx] && circuit[gate_idx].wires[0] == w as u32 {
+                    continue;
+                }
+
+                if !placed_wire_in_gate[control_idx][gate_idx] {
+                    circuit[gate_idx].wires[control_idx] = w as u32;
+                    placed_wire_in_gate[control_idx][gate_idx] = true;
+                    placed = true;
+                    break;
+                }
             }
 
-            if !placed_wire_in_gate[gate_idx][3 - control_idx] {
-                circuit[gate_idx].wires[3 - control_idx] = i as u32;
-                placed_wire_in_gate[gate_idx][3 - control_idx] = true;
-                break;
+            // Placement is impossible, try setting active control wires again
+            if !placed {
+                placed_wire_in_gate[1] = [false; N_IN];
+                placed_wire_in_gate[2] = [false; N_IN];
+                continue 'active_control;
             }
         }
+
+        break;
     }
 
     for gate_idx in 0..N_IN {
@@ -248,17 +262,17 @@ pub fn sample_random_circuit<R: Send + Sync + RngCore + SeedableRng>(
             let t;
             let c1;
             let c2;
-            if placed_wire_in_gate[gate_idx][0] {
+            if placed_wire_in_gate[0][gate_idx] {
                 t = circuit[gate_idx].wires[0];
             } else {
                 t = rng.random_range(0..N_PROJ_WIRES) as u32;
             }
-            if placed_wire_in_gate[gate_idx][1] {
+            if placed_wire_in_gate[1][gate_idx] {
                 c1 = circuit[gate_idx].wires[1];
             } else {
                 c1 = rng.random_range(0..N_PROJ_WIRES) as u32;
             }
-            if placed_wire_in_gate[gate_idx][2] {
+            if placed_wire_in_gate[2][gate_idx] {
                 c2 = circuit[gate_idx].wires[2];
             } else {
                 c2 = rng.random_range(0..N_PROJ_WIRES) as u32;
