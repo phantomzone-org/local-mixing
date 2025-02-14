@@ -147,9 +147,6 @@ impl LocalMixingJob {
                             == Ok(())
                     );
 
-                    #[cfg(any(feature = "trace"))]
-                    self.tracer.flush_stash(Stage::Inflationary);
-
                     self.curr_inflationary_step += 1;
 
                     // Save snapshot every epoch
@@ -170,6 +167,8 @@ impl LocalMixingJob {
                     }
                 }
             }
+            #[cfg(any(feature = "trace"))]
+            self.tracer.flush_stash(Stage::Inflationary);
         }
 
         #[cfg(feature = "trace")]
@@ -186,9 +185,6 @@ impl LocalMixingJob {
                         is_func_equiv(&self.original_circuit, &self.circuit, 1000, &mut rng)
                             == Ok(())
                     );
-
-                    #[cfg(any(feature = "trace"))]
-                    self.tracer.flush_stash(Stage::Kneading);
 
                     self.curr_kneading_step += 1;
 
@@ -209,6 +205,8 @@ impl LocalMixingJob {
                     }
                 }
             }
+            #[cfg(any(feature = "trace"))]
+            self.tracer.flush_stash(Stage::Kneading);
         }
 
         // Local mixing successful
