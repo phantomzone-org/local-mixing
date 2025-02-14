@@ -1,6 +1,9 @@
 use crate::{
     circuit::Circuit,
-    local_mixing::consts::{N_OUT_INF, N_OUT_KND},
+    local_mixing::{
+        consts::{N_OUT_INF, N_OUT_KND},
+        tracer::Stage,
+    },
     replacement::strategy::{ControlFnChoice, ReplacementStrategy},
 };
 use rand::SeedableRng;
@@ -11,7 +14,7 @@ use std::{error::Error, fs::File, io::BufReader};
 #[cfg(feature = "correctness")]
 use crate::circuit::circuit::is_func_equiv;
 
-#[cfg(any(feature = "trace", feature = "time"))]
+#[cfg(feature = "trace")]
 use super::tracer::Tracer;
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -53,7 +56,7 @@ pub struct LocalMixingJob {
     #[serde(default, skip_serializing)]
     original_circuit: Circuit,
     /// Tracer
-    #[cfg(any(feature = "trace", feature = "time"))]
+    #[cfg(feature = "trace")]
     #[serde(default, skip_serializing)]
     pub tracer: Tracer,
 }
@@ -85,7 +88,7 @@ impl LocalMixingJob {
             curr_kneading_step: 0,
             #[cfg(feature = "correctness")]
             original_circuit: circuit,
-            #[cfg(any(feature = "trace", feature = "time"))]
+            #[cfg(feature = "trace")]
             tracer: Tracer::default(),
         }
     }
@@ -108,11 +111,12 @@ impl LocalMixingJob {
             job.original_circuit = Circuit::load_from_binary(format!("{}/input.bin", dir_path))?;
         }
 
-        #[cfg(any(feature = "trace", feature = "time"))]
+        #[cfg(feature = "trace")]
         {
             job.tracer = Tracer::new(
                 dir_path,
-                job.inflationary_stage_steps + job.kneading_stage_steps,
+                job.inflationary_stage_steps,
+                job.kneading_stage_steps,
             )?;
         }
 
@@ -143,8 +147,8 @@ impl LocalMixingJob {
                             == Ok(())
                     );
 
-                    #[cfg(feature = "trace")]
-                    self.tracer.log_last_search_logs("inflationary".to_string());
+                    #[cfg(any(feature = "trace"))]
+                    self.tracer.flush_stash(Stage::Inflationary);
 
                     self.curr_inflationary_step += 1;
 
@@ -158,7 +162,7 @@ impl LocalMixingJob {
                 }
                 Err(_e) => {
                     #[cfg(feature = "trace")]
-                    log::warn!(target: "trace", "inflationary, FAILED: {}", _e);
+                    log::warn!(target: "trace", "{}, FAILED: {}", Stage::Inflationary, _e);
 
                     fail_ctr += 1;
                     if fail_ctr == self.max_attempts_without_success {
@@ -168,11 +172,10 @@ impl LocalMixingJob {
             }
         }
 
-        #[cfg(feature = "time")]
-        {
-            log::info!(target: "replacement", "Inflationary stage replacement times: {:?}", self.tracer.replacement_times);
-            self.tracer.replacement_times.clear();
-        }
+        #[cfg(feature = "trace")]
+        let _ = self.tracer.save_replacement_time().inspect_err(
+            |e| log::warn!(target: "trace", "{}, Failed to store replacement times with error: {}", Stage::Inflationary, e),
+        );
 
         while self.in_kneading_stage() {
             let success = self.execute_step::<_, N_OUT_KND>(&mut rng);
@@ -184,8 +187,8 @@ impl LocalMixingJob {
                             == Ok(())
                     );
 
-                    #[cfg(feature = "trace")]
-                    self.tracer.log_last_search_logs("kneading".to_string());
+                    #[cfg(any(feature = "trace"))]
+                    self.tracer.flush_stash(Stage::Kneading);
 
                     self.curr_kneading_step += 1;
 
@@ -198,7 +201,7 @@ impl LocalMixingJob {
                 }
                 Err(_e) => {
                     #[cfg(feature = "trace")]
-                    log::warn!(target: "trace", "kneading, FAILED: {}", _e);
+                    log::warn!(target: "trace", "{}, FAILED: {}", Stage::Kneading, _e);
 
                     fail_ctr += 1;
                     if fail_ctr == self.max_attempts_without_success {
@@ -215,8 +218,10 @@ impl LocalMixingJob {
             self.save(dir_path);
         }
 
-        #[cfg(feature = "time")]
-        log::info!(target: "replacement", "Kneading stage replacement times: {:?}", self.tracer.replacement_times);
+        #[cfg(feature = "trace")]
+        let _ = self.tracer.save_replacement_time().inspect_err(
+            |e| log::warn!(target: "trace", "{}, Failed to store replacement times with error: {}",Stage::Kneading, e),
+        );
 
         return true;
     }

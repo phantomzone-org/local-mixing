@@ -33,5 +33,4 @@ codegen-units = 1
 
 [features]
 trace = []
-time = []
 correctness = []

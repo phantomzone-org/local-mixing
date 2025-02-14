@@ -1,5 +1,5 @@
 use std::error::Error;
-#[cfg(any(feature = "time", feature = "trace"))]
+#[cfg(feature = "trace")]
 use std::time::Instant;
 
 use super::{consts::N_IN, LocalMixingJob};
@@ -160,7 +160,7 @@ impl LocalMixingJob {
         let replacement_res = match self.replacement_strategy == ReplacementStrategy::Dummy {
             true => Some(([Gate::default(); N_IN], 1)),
             false => {
-                #[cfg(feature = "time")]
+                #[cfg(feature = "trace")]
                 let repl_start = Instant::now();
 
                 let res = find_replacement_circuit::<_, N_OUT>(
@@ -172,10 +172,9 @@ impl LocalMixingJob {
                     rng,
                 );
 
-                #[cfg(feature = "time")]
+                #[cfg(feature = "trace")]
                 self.tracer
-                    .replacement_times
-                    .push(Instant::now() - repl_start);
+                    .add_replacement_time(Instant::now() - repl_start);
 
                 res
             }
