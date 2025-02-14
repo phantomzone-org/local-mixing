@@ -1,9 +1,6 @@
 use crate::{
     circuit::Circuit,
-    local_mixing::{
-        consts::{self, N_OUT_INF, N_OUT_KND},
-        tracer::Stage,
-    },
+    local_mixing::consts::{N_OUT_INF, N_OUT_KND},
     replacement::strategy::{ControlFnChoice, ReplacementStrategy},
 };
 use rand::SeedableRng;
@@ -105,10 +102,12 @@ impl LocalMixingJob {
             "input.bin"
         };
         job.circuit = Circuit::load_from_binary(format!("{}/{}", dir_path, circuit_file_name))?;
+        assert!(job.circuit.num_wires == job.wires);
 
         #[cfg(feature = "correctness")]
         {
             job.original_circuit = Circuit::load_from_binary(format!("{}/input.bin", dir_path))?;
+            assert!(job.original_circuit.num_wires == job.wires);
         }
 
         #[cfg(feature = "trace")]
@@ -146,14 +145,16 @@ impl LocalMixingJob {
                         is_func_equiv(
                             &self.original_circuit,
                             &self.circuit,
-                            consts::CORRECTNESS_CHECK_ITER,
+                            crate::local_mixing::consts::CORRECTNESS_CHECK_ITER,
                             &mut rng
                         ) == Ok(())
                     );
 
                     #[cfg(any(feature = "trace"))]
-                    self.tracer
-                        .flush_stash(Stage::Inflationary, self.curr_inflationary_step);
+                    self.tracer.flush_stash(
+                        crate::local_mixing::tracer::Stage::Inflationary,
+                        self.curr_inflationary_step,
+                    );
 
                     self.curr_inflationary_step += 1;
 
@@ -168,7 +169,7 @@ impl LocalMixingJob {
                 Err(_e) => {
                     #[cfg(feature = "trace")]
                     {
-                        log::warn!(target: "trace", "{}, FAILED: {}", Stage::Inflationary, _e);
+                        log::warn!(target: "trace", "{}, FAILED: {}", crate::local_mixing::tracer::Stage::Inflationary, _e);
                         // empty the stash if the step failed
                         self.tracer.empty_stash();
                     }
@@ -183,7 +184,7 @@ impl LocalMixingJob {
 
         #[cfg(feature = "trace")]
         let _ = self.tracer.save_replacement_time().inspect_err(
-            |e| log::warn!(target: "trace", "{}, Failed to store replacement times with error: {}", Stage::Inflationary, e),
+            |e| log::warn!(target: "trace", "{}, Failed to store replacement times with error: {}", crate::local_mixing::tracer::Stage::Inflationary, e),
         );
 
         while self.in_kneading_stage() {
@@ -195,14 +196,16 @@ impl LocalMixingJob {
                         is_func_equiv(
                             &self.original_circuit,
                             &self.circuit,
-                            consts::CORRECTNESS_CHECK_ITER,
+                            crate::local_mixing::consts::CORRECTNESS_CHECK_ITER,
                             &mut rng
                         ) == Ok(())
                     );
 
                     #[cfg(any(feature = "trace"))]
-                    self.tracer
-                        .flush_stash(Stage::Kneading, self.curr_kneading_step);
+                    self.tracer.flush_stash(
+                        crate::local_mixing::tracer::Stage::Kneading,
+                        self.curr_kneading_step,
+                    );
 
                     self.curr_kneading_step += 1;
 
@@ -216,7 +219,7 @@ impl LocalMixingJob {
                 Err(_e) => {
                     #[cfg(feature = "trace")]
                     {
-                        log::warn!(target: "trace", "{}, FAILED: {}", Stage::Kneading, _e);
+                        log::warn!(target: "trace", "{}, FAILED: {}", crate::local_mixing::tracer::Stage::Kneading, _e);
                         // empty the stash if the step failed
                         self.tracer.empty_stash();
                     }
@@ -238,7 +241,7 @@ impl LocalMixingJob {
 
         #[cfg(feature = "trace")]
         let _ = self.tracer.save_replacement_time().inspect_err(
-            |e| log::warn!(target: "trace", "{}, Failed to store replacement times with error: {}",Stage::Kneading, e),
+            |e| log::warn!(target: "trace", "{}, Failed to store replacement times with error: {}", crate::local_mixing::tracer::Stage::Kneading, e),
         );
 
         return true;

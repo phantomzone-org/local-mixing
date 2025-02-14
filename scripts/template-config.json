@@ -1,0 +1,11 @@
+{
+  "wires": 64,
+  "inflationary_stage_steps": 100,
+  "kneading_stage_steps": 100,
+  "max_replacement_samples": 10000000,
+  "max_attempts_without_success": 100,
+  "save": true,
+  "replacement_strategy": "SampleActive0",
+  "cf_choice": "OnlyUnique",
+  "epoch_size": 10
+}
