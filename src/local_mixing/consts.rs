@@ -9,6 +9,10 @@ pub const N_PROJ_WIRES: usize = N_IN * 2 + 1;
 /// 2 ^ # projection wires
 pub const N_PROJ_INPUTS: usize = 1 << N_PROJ_WIRES;
 
+#[cfg(feature = "correctness")]
+/// Correctness check iternations
+pub const CORRECTNESS_CHECK_ITER: usize = 1000;
+
 /// Precompiled table of candidate replacement gates over projection wires
 pub const PROJ_GATE_CANDIDATES_SIZE: usize = N_PROJ_WIRES * (N_PROJ_WIRES - 1) * (N_PROJ_WIRES - 2);
 pub const PROJ_GATE_CANDIDATES: [[u32; 3]; PROJ_GATE_CANDIDATES_SIZE] = {

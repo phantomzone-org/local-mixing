@@ -1,7 +1,7 @@
 use crate::{
     circuit::Circuit,
     local_mixing::{
-        consts::{N_OUT_INF, N_OUT_KND},
+        consts::{self, N_OUT_INF, N_OUT_KND},
         tracer::Stage,
     },
     replacement::strategy::{ControlFnChoice, ReplacementStrategy},
@@ -143,8 +143,12 @@ impl LocalMixingJob {
                 Ok(()) => {
                     #[cfg(feature = "correctness")]
                     assert!(
-                        is_func_equiv(&self.original_circuit, &self.circuit, 1000, &mut rng)
-                            == Ok(())
+                        is_func_equiv(
+                            &self.original_circuit,
+                            &self.circuit,
+                            consts::CORRECTNESS_CHECK_ITER,
+                            &mut rng
+                        ) == Ok(())
                     );
 
                     self.curr_inflationary_step += 1;
@@ -182,8 +186,12 @@ impl LocalMixingJob {
                 Ok(()) => {
                     #[cfg(feature = "correctness")]
                     assert!(
-                        is_func_equiv(&self.original_circuit, &self.circuit, 1000, &mut rng)
-                            == Ok(())
+                        is_func_equiv(
+                            &self.original_circuit,
+                            &self.circuit,
+                            consts::CORRECTNESS_CHECK_ITER,
+                            &mut rng
+                        ) == Ok(())
                     );
 
                     self.curr_kneading_step += 1;
