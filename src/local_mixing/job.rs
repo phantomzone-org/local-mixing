@@ -151,6 +151,10 @@ impl LocalMixingJob {
                         ) == Ok(())
                     );
 
+                    #[cfg(any(feature = "trace"))]
+                    self.tracer
+                        .flush_stash(Stage::Inflationary, self.curr_inflationary_step);
+
                     self.curr_inflationary_step += 1;
 
                     // Save snapshot every epoch
@@ -163,7 +167,11 @@ impl LocalMixingJob {
                 }
                 Err(_e) => {
                     #[cfg(feature = "trace")]
-                    log::warn!(target: "trace", "{}, FAILED: {}", Stage::Inflationary, _e);
+                    {
+                        log::warn!(target: "trace", "{}, FAILED: {}", Stage::Inflationary, _e);
+                        // empty the stash if the step failed
+                        self.tracer.empty_stash();
+                    }
 
                     fail_ctr += 1;
                     if fail_ctr == self.max_attempts_without_success {
@@ -171,8 +179,6 @@ impl LocalMixingJob {
                     }
                 }
             }
-            #[cfg(any(feature = "trace"))]
-            self.tracer.flush_stash(Stage::Inflationary);
         }
 
         #[cfg(feature = "trace")]
@@ -194,6 +200,10 @@ impl LocalMixingJob {
                         ) == Ok(())
                     );
 
+                    #[cfg(any(feature = "trace"))]
+                    self.tracer
+                        .flush_stash(Stage::Kneading, self.curr_kneading_step);
+
                     self.curr_kneading_step += 1;
 
                     if self.save && iter % self.epoch_size == 0 {
@@ -205,7 +215,11 @@ impl LocalMixingJob {
                 }
                 Err(_e) => {
                     #[cfg(feature = "trace")]
-                    log::warn!(target: "trace", "{}, FAILED: {}", Stage::Kneading, _e);
+                    {
+                        log::warn!(target: "trace", "{}, FAILED: {}", Stage::Kneading, _e);
+                        // empty the stash if the step failed
+                        self.tracer.empty_stash();
+                    }
 
                     fail_ctr += 1;
                     if fail_ctr == self.max_attempts_without_success {
@@ -213,8 +227,6 @@ impl LocalMixingJob {
                     }
                 }
             }
-            #[cfg(any(feature = "trace"))]
-            self.tracer.flush_stash(Stage::Kneading);
         }
 
         // Local mixing successful

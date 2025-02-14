@@ -125,9 +125,9 @@ impl LocalMixingJob {
             }
 
             if selected_gate_ctr == 0 {
-                if search_restart_ctr >= 1000 {
+                if search_restart_ctr >= 100 {
                     #[cfg(feature = "trace")]
-                    log::warn!(target: "trace", "Search has failed 1000 times in a row");
+                    log::warn!(target: "trace", "Search has failed 100 times in a row");
                     search_restart_ctr = 0;
                 } else {
                     search_restart_ctr += 1;

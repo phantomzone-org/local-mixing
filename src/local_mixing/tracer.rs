@@ -95,16 +95,20 @@ impl Tracer {
         self.stash.replacement = Some(time);
     }
 
-    pub fn flush_stash(&mut self, stage: Stage) {
+    pub fn flush_stash(&mut self, stage: Stage, step: usize) {
         if let Some(search) = self.stash.search {
-            log::info!(target: "trace", "{}", format!("{}, SUCCESS: n_gates = {}, n_circuits_sampled = {}, max_candidate_dist = {}, time = {:?}", 
-            stage, search.n_gates, search.n_circuits_sampled, search.max_candidate_dist, search.time));
+            log::info!(target: "trace", "{}", format!("{} step={}, SUCCESS: n_gates = {}, n_circuits_sampled = {}, max_candidate_dist = {}, time = {:?}", 
+            stage, step, search.n_gates, search.n_circuits_sampled, search.max_candidate_dist, search.time));
         }
 
         if let Some(duration) = self.stash.replacement {
             self.replacement_times.add_entry(stage, duration);
         }
 
+        self.stash = TracerStash::default();
+    }
+
+    pub fn empty_stash(&mut self) {
         self.stash = TracerStash::default();
     }
 
