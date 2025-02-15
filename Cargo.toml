@@ -21,6 +21,10 @@ name = "benchmark_sample"
 harness = false
 
 [[bench]]
+name = "benchmark_wc"
+harness = false
+
+[[bench]]
 name = "benchmark_replacement"
 harness = false
 

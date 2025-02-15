@@ -24,6 +24,7 @@ impl Gate {
             || other.wires[0] == self.wires[2]
     }
 
+    #[inline]
     pub fn evaluate_cf(&self, a: bool, b: bool) -> bool {
         Base2GateControlFunc::from_u8(self.control_func).evaluate(a, b)
     }
