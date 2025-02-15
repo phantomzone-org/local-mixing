@@ -140,21 +140,27 @@ impl LocalMixingJob {
             let success = self.execute_step::<_, N_OUT_INF>(&mut rng);
             match success {
                 Ok(()) => {
-                    #[cfg(feature = "correctness")]
-                    assert!(
-                        is_func_equiv(
-                            &self.original_circuit,
-                            &self.circuit,
-                            crate::local_mixing::consts::CORRECTNESS_CHECK_ITER,
-                            &mut rng
-                        ) == Ok(())
-                    );
-
                     #[cfg(any(feature = "trace"))]
                     self.tracer.flush_stash(
                         crate::local_mixing::tracer::Stage::Inflationary,
                         self.curr_inflationary_step,
                     );
+
+                    #[cfg(feature = "correctness")]
+                    if is_func_equiv(
+                        &self.original_circuit,
+                        &self.circuit,
+                        crate::local_mixing::consts::CORRECTNESS_CHECK_ITER,
+                        &mut rng,
+                    )
+                    .is_err()
+                    {
+                        self.circuit
+                            .save_as_binary(format!("{}/error.bin", dir_path,));
+                        let error_str = format!("{} step={}, Obfuscated circuit is functionally not equivalent to original input circuit", crate::local_mixing::tracer::Stage::Inflationary, self.curr_inflationary_step);
+                        log::error!(target: "trace", "{error_str}");
+                        panic!("{error_str}");
+                    }
 
                     self.curr_inflationary_step += 1;
 
@@ -191,21 +197,27 @@ impl LocalMixingJob {
             let success = self.execute_step::<_, N_OUT_KND>(&mut rng);
             match success {
                 Ok(()) => {
-                    #[cfg(feature = "correctness")]
-                    assert!(
-                        is_func_equiv(
-                            &self.original_circuit,
-                            &self.circuit,
-                            crate::local_mixing::consts::CORRECTNESS_CHECK_ITER,
-                            &mut rng
-                        ) == Ok(())
-                    );
-
                     #[cfg(any(feature = "trace"))]
                     self.tracer.flush_stash(
                         crate::local_mixing::tracer::Stage::Kneading,
                         self.curr_kneading_step,
                     );
+
+                    #[cfg(feature = "correctness")]
+                    if is_func_equiv(
+                        &self.original_circuit,
+                        &self.circuit,
+                        crate::local_mixing::consts::CORRECTNESS_CHECK_ITER,
+                        &mut rng,
+                    )
+                    .is_err()
+                    {
+                        self.circuit
+                            .save_as_binary(format!("{}/error.bin", dir_path,));
+                        let error_str = format!("{} step={}, Obfuscated circuit is functionally not equivalent to original input circuit", crate::local_mixing::tracer::Stage::Kneading, self.curr_kneading_step);
+                        log::error!(target: "trace", "{error_str}");
+                        panic!("{error_str}");
+                    }
 
                     self.curr_kneading_step += 1;
 
