@@ -40,7 +40,7 @@ fn find_convex_gate_ids<const N_OUT: usize, R: RngCore>(
             // invariant: |selected_gate_idx| >= 1, and there may be gates before the last inserted gate
             let mut num_selected_gates_seen = 1;
             for i in selected_gate_idx[0] + 1..num_gates {
-                if num_selected_gates_seen < selected_gate_idx.len()
+                if num_selected_gates_seen < selected_gate_ctr
                     && i == selected_gate_idx[num_selected_gates_seen]
                 {
                     num_selected_gates_seen += 1;
