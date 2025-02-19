@@ -95,5 +95,4 @@ To enable features, e.g.:
 cargo run --release --features "trace correctness" local-mixing ...
 ```
 - `trace` enables logs of each step of local-mixing. Logs will be saved to the log path.
-- `time` times the finding-replacement step, and logs it every 1000 steps.
 - `correctness` asserts that after each step, the current job circuit is functionally equivalent to the input circuit (not save). This runs a probabilistic test. Warning: doing this slows the execution down significantly.
