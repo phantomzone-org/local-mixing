@@ -21,6 +21,10 @@ name = "benchmark_sample"
 harness = false
 
 [[bench]]
+name = "benchmark_wc"
+harness = false
+
+[[bench]]
 name = "benchmark_replacement"
 harness = false
 
@@ -33,5 +37,4 @@ codegen-units = 1
 
 [features]
 trace = []
-time = []
 correctness = []

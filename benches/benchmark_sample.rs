@@ -10,8 +10,8 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     let mut rng = ChaCha8Rng::from_os_rng();
     let mut circuit = [Gate::default(); 4];
     let active_wires = [
-        [true, false, false, true, false, false, false, false, false],
-        [false, true, false, false, true, false, false, false, false],
+        [false, false, true, true, true, true, false, false, false],
+        [true, true, true, true, true, true, false, false, false],
     ];
     let cf_choice = ControlFnChoice::OnlyUnique;
 

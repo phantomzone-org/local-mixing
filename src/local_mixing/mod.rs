@@ -1,7 +1,7 @@
 pub mod consts;
 pub mod job;
 pub mod search;
-#[cfg(feature = "time")]
-pub mod replacement_stats;
+#[cfg(feature = "trace")]
+pub mod tracer;
 
 pub use job::LocalMixingJob;

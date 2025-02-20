@@ -11,8 +11,8 @@ use std::{error::Error, fs::File, io::BufReader};
 #[cfg(feature = "correctness")]
 use crate::circuit::circuit::is_func_equiv;
 
-#[cfg(feature = "time")]
-use super::replacement_stats::ReplacementStats;
+#[cfg(feature = "trace")]
+use super::tracer::Tracer;
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct LocalMixingJob {
@@ -28,13 +28,6 @@ pub struct LocalMixingJob {
     pub max_attempts_without_success: usize,
     /// Whether to save to file, logs
     pub save: bool,
-    /// Path of input circuit
-    pub input_circuit_path: String,
-    /// Path for storing obfuscated circuit
-    pub destination_circuit_path: String,
-    /// Path for storing intermediary steps
-    pub save_circuit_path: String,
-    /// Replacement strategy: default is SampleActive0
     #[serde(default)]
     pub replacement_strategy: ReplacementStrategy,
     /// Control function choice in replacement
@@ -55,15 +48,14 @@ pub struct LocalMixingJob {
     /// Current circuit
     #[serde(default, skip_serializing)]
     pub circuit: Circuit,
-    /// Path of config sourced
-    #[serde(default, skip_serializing)]
-    config_path: String,
-    #[cfg(feature = "time")]
-    #[serde(default, skip_serializing)]
-    pub replacement_stats: ReplacementStats<1000>,
+    /// Original input circuit
     #[cfg(feature = "correctness")]
     #[serde(default, skip_serializing)]
     original_circuit: Circuit,
+    /// Tracer
+    #[cfg(feature = "trace")]
+    #[serde(default, skip_serializing)]
+    pub tracer: Tracer,
 }
 
 impl LocalMixingJob {
@@ -88,48 +80,56 @@ impl LocalMixingJob {
             circuit: circuit.clone(),
             save: false,
             epoch_size: 0,
-            input_circuit_path: "".to_owned(),
-            destination_circuit_path: "".to_owned(),
-            save_circuit_path: "".to_owned(),
             in_progress: false,
             curr_inflationary_step: 0,
             curr_kneading_step: 0,
-            config_path: "".to_owned(),
-            #[cfg(feature = "time")]
-            replacement_stats: ReplacementStats::new(),
             #[cfg(feature = "correctness")]
             original_circuit: circuit,
+            #[cfg(feature = "trace")]
+            tracer: Tracer::default(),
         }
     }
 
-    pub fn load(path: String) -> Result<Self, Box<dyn Error>> {
-        let file = File::open(&path)?;
+    pub fn load(dir_path: &String) -> Result<Self, Box<dyn Error>> {
+        let config_path = format!("{}/config.json", dir_path);
+        let file = File::open(&config_path)?;
         let reader = BufReader::new(file);
-        let mut job: LocalMixingJob = serde_json::from_reader(reader)?;
+        let mut job: Self = serde_json::from_reader(reader)?;
 
-        let circuit_path = if job.in_progress {
-            job.save_circuit_path.clone()
+        let circuit_file_name = if job.in_progress {
+            "save.bin"
         } else {
-            job.input_circuit_path.clone()
+            "input.bin"
         };
-        job.circuit = Circuit::load_from_binary(&circuit_path)?;
-        job.config_path = path;
+        job.circuit = Circuit::load_from_binary(format!("{}/{}", dir_path, circuit_file_name))?;
+        assert!(job.circuit.num_wires == job.wires);
 
         #[cfg(feature = "correctness")]
         {
-            job.original_circuit = Circuit::load_from_binary(&job.input_circuit_path)?;
+            job.original_circuit = Circuit::load_from_binary(format!("{}/input.bin", dir_path))?;
+            assert!(job.original_circuit.num_wires == job.wires);
+        }
+
+        #[cfg(feature = "trace")]
+        {
+            job.tracer = Tracer::new(
+                dir_path,
+                job.inflationary_stage_steps,
+                job.kneading_stage_steps,
+            )?;
         }
 
         Ok(job)
     }
 
-    pub fn save(&self) {
-        self.circuit.save_as_binary(&self.save_circuit_path);
-        let file = File::create(self.config_path.clone()).unwrap();
-        serde_json::to_writer(file, &self).unwrap();
+    pub fn save(&self, dir_path: &String) {
+        self.circuit
+            .save_as_binary(format!("{}/save.bin", dir_path));
+        let file = File::create(format!("{}/config.json", dir_path)).unwrap();
+        serde_json::to_writer_pretty(file, &self).unwrap();
     }
 
-    pub fn execute(&mut self) -> bool {
+    pub fn execute(&mut self, dir_path: &String) -> bool {
         let mut iter = 1;
         let mut fail_ctr = 0;
         let mut rng = ChaCha8Rng::from_os_rng();
@@ -138,59 +138,123 @@ impl LocalMixingJob {
 
         while self.in_inflationary_stage() {
             let success = self.execute_step::<_, N_OUT_INF>(&mut rng);
-            if success {
-                #[cfg(feature = "correctness")]
-                assert!(
-                    is_func_equiv(&self.original_circuit, &self.circuit, 1000, &mut rng) == Ok(())
-                );
+            match success {
+                Ok(()) => {
+                    #[cfg(any(feature = "trace"))]
+                    self.tracer.flush_stash(
+                        crate::local_mixing::tracer::Stage::Inflationary,
+                        self.curr_inflationary_step,
+                    );
 
-                self.curr_inflationary_step += 1;
+                    #[cfg(feature = "correctness")]
+                    if is_func_equiv(
+                        &self.original_circuit,
+                        &self.circuit,
+                        crate::local_mixing::consts::CORRECTNESS_CHECK_ITER,
+                        &mut rng,
+                    )
+                    .is_err()
+                    {
+                        self.circuit
+                            .save_as_binary(format!("{}/error.bin", dir_path,));
+                        let error_str = format!("{} step={}, Obfuscated circuit is functionally not equivalent to original input circuit", crate::local_mixing::tracer::Stage::Inflationary, self.curr_inflationary_step);
+                        log::error!(target: "trace", "{error_str}");
+                        panic!("{error_str}");
+                    }
 
-                // Save snapshot every epoch
-                if self.save && iter % self.epoch_size == 0 {
-                    self.save();
+                    self.curr_inflationary_step += 1;
+
+                    // Save snapshot every epoch
+                    if self.save && iter % self.epoch_size == 0 {
+                        self.save(dir_path);
+                    }
+
+                    iter += 1;
+                    fail_ctr = 0;
                 }
+                Err(_e) => {
+                    #[cfg(feature = "trace")]
+                    {
+                        log::warn!(target: "trace", "{}, FAILED: {}", crate::local_mixing::tracer::Stage::Inflationary, _e);
+                        // empty the stash if the step failed
+                        self.tracer.empty_stash();
+                    }
 
-                iter += 1;
-                fail_ctr = 0;
-            } else {
-                #[cfg(feature = "trace")]
-                log::warn!("FAILED");
-
-                fail_ctr += 1;
-                if fail_ctr == self.max_attempts_without_success {
-                    return false;
+                    fail_ctr += 1;
+                    if fail_ctr == self.max_attempts_without_success {
+                        return false;
+                    }
                 }
             }
         }
 
+        #[cfg(feature = "trace")]
+        let _ = self.tracer.save_replacement_time().inspect_err(
+            |e| log::warn!(target: "trace", "{}, Failed to store replacement times with error: {}", crate::local_mixing::tracer::Stage::Inflationary, e),
+        );
+
         while self.in_kneading_stage() {
             let success = self.execute_step::<_, N_OUT_KND>(&mut rng);
-            if success {
-                self.curr_kneading_step += 1;
+            match success {
+                Ok(()) => {
+                    #[cfg(any(feature = "trace"))]
+                    self.tracer.flush_stash(
+                        crate::local_mixing::tracer::Stage::Kneading,
+                        self.curr_kneading_step,
+                    );
 
-                if self.save && iter % self.epoch_size == 0 {
-                    self.save();
+                    #[cfg(feature = "correctness")]
+                    if is_func_equiv(
+                        &self.original_circuit,
+                        &self.circuit,
+                        crate::local_mixing::consts::CORRECTNESS_CHECK_ITER,
+                        &mut rng,
+                    )
+                    .is_err()
+                    {
+                        self.circuit
+                            .save_as_binary(format!("{}/error.bin", dir_path,));
+                        let error_str = format!("{} step={}, Obfuscated circuit is functionally not equivalent to original input circuit", crate::local_mixing::tracer::Stage::Kneading, self.curr_kneading_step);
+                        log::error!(target: "trace", "{error_str}");
+                        panic!("{error_str}");
+                    }
+
+                    self.curr_kneading_step += 1;
+
+                    if self.save && iter % self.epoch_size == 0 {
+                        self.save(&dir_path);
+                    }
+
+                    iter += 1;
+                    fail_ctr = 0;
                 }
+                Err(_e) => {
+                    #[cfg(feature = "trace")]
+                    {
+                        log::warn!(target: "trace", "{}, FAILED: {}", crate::local_mixing::tracer::Stage::Kneading, _e);
+                        // empty the stash if the step failed
+                        self.tracer.empty_stash();
+                    }
 
-                iter += 1;
-                fail_ctr = 0;
-            } else {
-                #[cfg(feature = "trace")]
-                log::warn!("FAILED");
-
-                fail_ctr += 1;
-                if fail_ctr == self.max_attempts_without_success {
-                    return false;
+                    fail_ctr += 1;
+                    if fail_ctr == self.max_attempts_without_success {
+                        return false;
+                    }
                 }
             }
         }
 
         // Local mixing successful
-        self.circuit.save_as_binary(&self.destination_circuit_path);
+        self.circuit
+            .save_as_binary(format!("{}/target.bin", dir_path));
         if self.save {
-            self.save();
+            self.save(dir_path);
         }
+
+        #[cfg(feature = "trace")]
+        let _ = self.tracer.save_replacement_time().inspect_err(
+            |e| log::warn!(target: "trace", "{}, Failed to store replacement times with error: {}", crate::local_mixing::tracer::Stage::Kneading, e),
+        );
 
         return true;
     }

@@ -37,6 +37,7 @@ pub enum ControlFnChoice {
 }
 
 impl ControlFnChoice {
+    #[inline]
     pub fn random_cf<R: Rng>(&self, rng: &mut R) -> u8 {
         match self {
             Self::All => rng.random_range(0..Base2GateControlFunc::COUNT),

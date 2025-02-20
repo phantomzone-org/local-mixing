@@ -17,6 +17,29 @@ use std::{
 };
 use strategy::{ControlFnChoice, ReplacementStrategy};
 
+#[inline]
+pub fn is_weakly_connected(circuit: &[Gate]) -> bool {
+    // weak-connectedness
+    let mut visited = [false; N_IN];
+    let mut stack = [0; N_IN];
+    let mut stack_size = 1;
+    visited[0] = true;
+
+    while stack_size > 0 {
+        stack_size -= 1;
+        let current = stack[stack_size];
+        for i in 0..N_IN {
+            if !visited[i] && circuit[current].collides_with(&circuit[i]) {
+                visited[i] = true;
+                stack[stack_size] = i;
+                stack_size += 1;
+            }
+        }
+    }
+
+    visited.iter().all(|&v| v)
+}
+
 pub fn find_replacement_circuit<R: Send + Sync + RngCore + SeedableRng, const N_OUT: usize>(
     circuit: &[Gate; N_OUT],
     num_wires: usize,
@@ -111,7 +134,6 @@ pub fn find_replacement_circuit<R: Send + Sync + RngCore + SeedableRng, const N_
         .find_map_any(|mut rng| {
             let epoch_size = rng.random_range(10..20);
             let mut replacement_circuit = [Gate::default(); N_IN];
-            // let mut placed_wire_in_gate;
             for iter in 1..=max_iterations {
                 if iter % epoch_size == 0 && found.load(Relaxed) {
                     return None;
@@ -139,27 +161,7 @@ pub fn find_replacement_circuit<R: Send + Sync + RngCore + SeedableRng, const N_
                     continue;
                 }
 
-                // weak-connectedness
-                let mut visited = [false; N_IN];
-                let mut stack = [0; N_IN];
-                let mut stack_size = 1;
-                visited[0] = true;
-
-                while stack_size > 0 {
-                    stack_size -= 1;
-                    let current = stack[stack_size];
-                    for i in 0..N_IN {
-                        if !visited[i]
-                            && replacement_circuit[current].collides_with(&replacement_circuit[i])
-                        {
-                            visited[i] = true;
-                            stack[stack_size] = i;
-                            stack_size += 1;
-                        }
-                    }
-                }
-
-                if !visited.iter().all(|&v| v) {
+                if !is_weakly_connected(&replacement_circuit) {
                     continue;
                 }
 
@@ -203,72 +205,81 @@ pub fn sample_random_circuit<R: Send + Sync + RngCore + SeedableRng>(
     cf_choice: ControlFnChoice,
     rng: &mut R,
 ) {
-    let mut placed_wire_in_gate = [[false; 3]; N_IN];
+    let mut placed_wire_in_gate = [[false; N_IN]; 3];
 
+    // Place active target wires
     for i in 0..N_PROJ_WIRES {
         if !active_wires[0][i] {
             continue;
         }
         loop {
             let gate_idx = rng.random_range(0..N_IN);
-            if !placed_wire_in_gate[gate_idx][0] {
+            if !placed_wire_in_gate[0][gate_idx] {
                 circuit[gate_idx].wires[0] = i as u32;
-                placed_wire_in_gate[gate_idx][0] = true;
+                placed_wire_in_gate[0][gate_idx] = true;
                 break;
             }
         }
     }
-    for i in 0..N_PROJ_WIRES {
-        if !active_wires[1][i] {
-            continue;
-        }
-        loop {
-            let gate_idx = rng.random_range(0..N_IN);
-            if placed_wire_in_gate[gate_idx][0] && circuit[gate_idx].wires[0] == i as u32 {
+
+    // Place active control wires
+    'active_control: loop {
+        for w in 0..N_PROJ_WIRES {
+            if !active_wires[1][w] {
                 continue;
             }
 
-            let control_idx = (rng.random_bool(0.5) as usize) + 1;
-            if !placed_wire_in_gate[gate_idx][control_idx] {
-                circuit[gate_idx].wires[control_idx] = i as u32;
-                placed_wire_in_gate[gate_idx][control_idx] = true;
-                break;
+            let mut placed = false;
+
+            // Probability that any slot (there are 2*N_IN) is not sampled in 3*N_IN iterations
+            // is 1/( 2*N_IN )^{3*N_IN} which is very low.
+            // For ex, when N_IN=4 non-sampling probability is 1/(8^12) = 1/2^{36}
+            for _ in 0..3 * N_IN {
+                let index = rng.random_range(0..2 * N_IN);
+                let (gate_idx, control_idx) = (index >> 1, (index & 1) + 1);
+                // Check if the same wire is acting as target (and is placed)
+                if placed_wire_in_gate[0][gate_idx] && circuit[gate_idx].wires[0] == w as u32 {
+                    continue;
+                }
+
+                if !placed_wire_in_gate[control_idx][gate_idx] {
+                    circuit[gate_idx].wires[control_idx] = w as u32;
+                    placed_wire_in_gate[control_idx][gate_idx] = true;
+                    placed = true;
+                    break;
+                }
             }
 
-            if !placed_wire_in_gate[gate_idx][3 - control_idx] {
-                circuit[gate_idx].wires[3 - control_idx] = i as u32;
-                placed_wire_in_gate[gate_idx][3 - control_idx] = true;
-                break;
+            // Placement is impossible with very high probability, try setting active control wires again
+            if !placed {
+                placed_wire_in_gate[1] = [false; N_IN];
+                placed_wire_in_gate[2] = [false; N_IN];
+                continue 'active_control;
             }
         }
+
+        break;
     }
 
     for gate_idx in 0..N_IN {
-        loop {
-            let t;
-            let c1;
-            let c2;
-            if placed_wire_in_gate[gate_idx][0] {
-                t = circuit[gate_idx].wires[0];
-            } else {
-                t = rng.random_range(0..N_PROJ_WIRES) as u32;
-            }
-            if placed_wire_in_gate[gate_idx][1] {
-                c1 = circuit[gate_idx].wires[1];
-            } else {
-                c1 = rng.random_range(0..N_PROJ_WIRES) as u32;
-            }
-            if placed_wire_in_gate[gate_idx][2] {
-                c2 = circuit[gate_idx].wires[2];
-            } else {
-                c2 = rng.random_range(0..N_PROJ_WIRES) as u32;
-            }
-            if t != c1 && t != c2 && c1 != c2 {
-                circuit[gate_idx].wires = [t, c1, c2];
-                circuit[gate_idx].control_func = cf_choice.random_cf(rng);
-                break;
+        let mut set: [bool; N_PROJ_WIRES] = [false; N_PROJ_WIRES];
+        for i in 0..3 {
+            if placed_wire_in_gate[i][gate_idx] {
+                set[circuit[gate_idx].wires[i] as usize] = true;
             }
         }
+        for i in 0..3 {
+            if !placed_wire_in_gate[i][gate_idx] {
+                circuit[gate_idx].wires[i] = loop {
+                    let v = rng.random_range(0..N_PROJ_WIRES);
+                    if !set[v] {
+                        set[v] = true;
+                        break v as u32;
+                    }
+                };
+            }
+        }
+        circuit[gate_idx].control_func = cf_choice.random_cf(rng);
     }
 }
 
