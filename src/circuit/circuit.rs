@@ -109,6 +109,40 @@ pub fn is_func_equiv<R: Rng>(
     Ok(())
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct PrettyCircuit {
+    wire_count: usize,
+    gate_count: usize,
+    gates: Vec<[u32; 4]>,
+}
+
+impl PrettyCircuit {
+    pub fn save_as_json(&self, path: impl AsRef<Path>) {
+        std::fs::write(path, serde_json::to_vec_pretty(&self).unwrap()).unwrap();
+    }
+}
+
+impl From<Circuit> for PrettyCircuit {
+    fn from(c: Circuit) -> Self {
+        Self {
+            wire_count: c.num_wires as usize,
+            gate_count: c.gates.len(),
+            gates: c
+                .gates
+                .iter()
+                .map(|gate| {
+                    [
+                        gate.wires[0],
+                        gate.wires[1],
+                        gate.wires[2],
+                        gate.control_func.into(),
+                    ]
+                })
+                .collect(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rand::SeedableRng;

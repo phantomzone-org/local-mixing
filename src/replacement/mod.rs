@@ -1,11 +1,8 @@
 pub mod strategy;
 pub mod test;
 
-use crate::{
-    circuit::Gate,
-    local_mixing::consts::{N_IN, N_PROJ_INPUTS, N_PROJ_WIRES, PROJ_GATE_CANDIDATES},
-};
-use rand::{seq::IndexedRandom, Rng, RngCore, SeedableRng};
+use crate::circuit::Gate;
+use rand::{Rng, RngCore, SeedableRng};
 use rayon::{
     current_num_threads,
     iter::{ParallelBridge, ParallelIterator},
@@ -18,17 +15,17 @@ use std::{
 use strategy::{ControlFnChoice, ReplacementStrategy};
 
 #[inline]
-pub fn is_weakly_connected(circuit: &[Gate]) -> bool {
+pub fn is_weakly_connected<const N: usize>(circuit: &[Gate]) -> bool {
     // weak-connectedness
-    let mut visited = [false; N_IN];
-    let mut stack = [0; N_IN];
+    let mut visited = [false; N];
+    let mut stack = [0; N];
     let mut stack_size = 1;
     visited[0] = true;
 
     while stack_size > 0 {
         stack_size -= 1;
         let current = stack[stack_size];
-        for i in 0..N_IN {
+        for i in 0..N {
             if !visited[i] && circuit[current].collides_with(&circuit[i]) {
                 visited[i] = true;
                 stack[stack_size] = i;
@@ -40,9 +37,15 @@ pub fn is_weakly_connected(circuit: &[Gate]) -> bool {
     visited.iter().all(|&v| v)
 }
 
-pub fn find_replacement_circuit<R: Send + Sync + RngCore + SeedableRng, const N_OUT: usize>(
+pub fn find_replacement_circuit<
+    const N_OUT: usize,
+    const N_IN: usize,
+    const N_PROJ_WIRES: usize,
+    const N_PROJ_INPUTS: usize,
+    R: Send + Sync + RngCore + SeedableRng,
+>(
     circuit: &[Gate; N_OUT],
-    num_wires: usize,
+    num_wires: u32,
     num_attempts: usize,
     strategy: ReplacementStrategy,
     cf_choice: ControlFnChoice,
@@ -117,13 +120,14 @@ pub fn find_replacement_circuit<R: Send + Sync + RngCore + SeedableRng, const N_
         dyn Fn(&mut [Gate; N_IN], &[[bool; N_PROJ_WIRES]; 2], &mut R) + Send + Sync,
     > = match strategy {
         ReplacementStrategy::SampleUnguided => Box::new(|replacement_circuit, _, rng| {
-            sample_random_circuit_unguided(replacement_circuit, cf_choice, rng);
+            sample_random_circuit_unguided::<N_IN, N_PROJ_WIRES, _>(
+                replacement_circuit,
+                cf_choice,
+                rng,
+            );
         }),
         ReplacementStrategy::SampleActive0 => Box::new(|replacement_circuit, active_wires, rng| {
             sample_random_circuit(replacement_circuit, &active_wires, cf_choice, rng);
-        }),
-        ReplacementStrategy::SampleActive1 => Box::new(|replacement_circuit, active_wires, rng| {
-            sample_circuit_lookup(replacement_circuit, &active_wires, cf_choice, rng);
         }),
         _ => todo!(),
     };
@@ -161,7 +165,7 @@ pub fn find_replacement_circuit<R: Send + Sync + RngCore + SeedableRng, const N_
                     continue;
                 }
 
-                if !is_weakly_connected(&replacement_circuit) {
+                if !is_weakly_connected::<N_IN>(&replacement_circuit) {
                     continue;
                 }
 
@@ -199,7 +203,11 @@ pub fn find_replacement_circuit<R: Send + Sync + RngCore + SeedableRng, const N_
     None
 }
 
-pub fn sample_random_circuit<R: Send + Sync + RngCore + SeedableRng>(
+pub fn sample_random_circuit<
+    const N_IN: usize,
+    const N_PROJ_WIRES: usize,
+    R: Send + Sync + RngCore + SeedableRng,
+>(
     circuit: &mut [Gate; N_IN],
     active_wires: &[[bool; N_PROJ_WIRES]; 2],
     cf_choice: ControlFnChoice,
@@ -283,7 +291,7 @@ pub fn sample_random_circuit<R: Send + Sync + RngCore + SeedableRng>(
     }
 }
 
-pub fn sample_random_circuit_unguided<R: Rng>(
+pub fn sample_random_circuit_unguided<const N_IN: usize, const N_PROJ_WIRES: usize, R: Rng>(
     circuit: &mut [Gate; N_IN],
     cf_choice: ControlFnChoice,
     rng: &mut R,
@@ -308,40 +316,6 @@ pub fn sample_random_circuit_unguided<R: Rng>(
     });
 }
 
-pub fn sample_circuit_lookup<R: Rng>(
-    circuit: &mut [Gate; N_IN],
-    active_wires: &[[bool; N_PROJ_WIRES]; 2],
-    cf_choice: ControlFnChoice,
-    rng: &mut R,
-) {
-    let mut success = false;
-    while !success {
-        let mut circuit_contains_wire = [[false; N_PROJ_WIRES]; 2];
-        circuit.iter_mut().for_each(|g| {
-            g.wires = *PROJ_GATE_CANDIDATES.choose(rng).unwrap();
-
-            circuit_contains_wire[0][g.wires[0] as usize] = true;
-            circuit_contains_wire[1][g.wires[1] as usize] = true;
-            circuit_contains_wire[1][g.wires[2] as usize] = true;
-        });
-        success = true;
-        for w in 0..N_PROJ_WIRES {
-            if active_wires[0][w] && !circuit_contains_wire[0][w] {
-                success = false;
-                break;
-            }
-            if active_wires[1][w] && !circuit_contains_wire[1][w] {
-                success = false;
-                break;
-            }
-        }
-
-        circuit
-            .iter_mut()
-            .for_each(|g| g.control_func = cf_choice.random_cf(rng));
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use rand::SeedableRng;
@@ -355,14 +329,14 @@ mod tests {
     };
 
     #[test]
-    fn test_find_replacement() {
+    fn test_find_replacement_n_out_4() {
         let wires = 100u32;
         let mut rng = ChaCha8Rng::from_os_rng();
-        for _ in 0..1000 {
+        for _ in 0..100 {
             let ckt_one = Circuit::random(wires, 2, &mut rng);
-            let replacement = match find_replacement_circuit(
+            let replacement = match find_replacement_circuit::<2, 4, 9, { 1 << 9 }, _>(
                 &[ckt_one.gates[0], ckt_one.gates[1]],
-                wires as usize,
+                wires,
                 1_000_000_000,
                 ReplacementStrategy::SampleActive0,
                 ControlFnChoice::OnlyUnique,

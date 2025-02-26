@@ -7,7 +7,6 @@ use crate::circuit::cf::Base2GateControlFunc;
 pub enum ReplacementStrategy {
     SampleUnguided,
     SampleActive0,
-    SampleActive1,
     Dummy,
 }
 
@@ -16,8 +15,7 @@ impl ReplacementStrategy {
         match value {
             0 => Some(Self::SampleUnguided),
             1 => Some(Self::SampleActive0),
-            2 => Some(Self::SampleActive1),
-            3 => Some(Self::Dummy),
+            2 => Some(Self::Dummy),
             _ => None,
         }
     }

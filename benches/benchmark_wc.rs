@@ -8,7 +8,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     let circuit = Circuit::random(9, 4, &mut rng);
 
     c.bench_function("weakly connected", |b| {
-        b.iter(|| black_box(is_weakly_connected(&circuit.gates)))
+        b.iter(|| black_box(is_weakly_connected::<4>(&circuit.gates)))
     });
 }
 
