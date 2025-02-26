@@ -1,7 +1,7 @@
 use local_mixing::{
     circuit::{
         cf::Base2GateControlFunc,
-        circuit::{is_func_equiv, Circuit, PrettyCircuit},
+        circuit::{check_equiv_probabilistic, Circuit, PrettyCircuit},
     },
     local_mixing::LocalMixingJob,
     replacement::{
@@ -103,7 +103,7 @@ fn run() {
                 Circuit::load_from_binary(circuit_two_path).expect("Failed to load circuit 2");
             let mut rng = ChaCha8Rng::from_os_rng();
 
-            let res = is_func_equiv(&circuit_one, &circuit_two, num_iter, &mut rng);
+            let res = check_equiv_probabilistic(&circuit_one, &circuit_two, num_iter, &mut rng);
             match res {
                 Ok(()) => println!("func equiv check passes"),
                 Err(e) => println!("func equiv check fails: {}", e),

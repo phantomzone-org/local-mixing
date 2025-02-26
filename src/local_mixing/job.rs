@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::{error::Error, fs::File, io::BufReader};
 
 #[cfg(feature = "correctness")]
-use crate::circuit::circuit::is_func_equiv;
+use crate::circuit::circuit::check_equiv_probabilistic;
 
 #[cfg(feature = "trace")]
 use super::tracer::Tracer;
@@ -147,7 +147,7 @@ impl LocalMixingJob {
                     );
 
                     #[cfg(feature = "correctness")]
-                    if is_func_equiv(
+                    if check_equiv_probabilistic(
                         &self.original_circuit,
                         &self.circuit,
                         crate::local_mixing::consts::CORRECTNESS_CHECK_ITER,
@@ -204,7 +204,7 @@ impl LocalMixingJob {
                     );
 
                     #[cfg(feature = "correctness")]
-                    if is_func_equiv(
+                    if check_equiv_probabilistic(
                         &self.original_circuit,
                         &self.circuit,
                         crate::local_mixing::consts::CORRECTNESS_CHECK_ITER,

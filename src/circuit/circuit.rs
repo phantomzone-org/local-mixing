@@ -1,5 +1,6 @@
 use crate::circuit::cf::Base2GateControlFunc;
 use rand::Rng;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use std::{error::Error, path::Path};
 
@@ -86,7 +87,7 @@ impl Circuit {
     }
 }
 
-pub fn is_func_equiv<R: Rng>(
+pub fn check_equiv_probabilistic<R: Rng>(
     ckt_one: &Circuit,
     ckt_two: &Circuit,
     num_inputs: usize,
@@ -96,17 +97,20 @@ pub fn is_func_equiv<R: Rng>(
         return Err("Different num wires".to_string());
     }
 
-    for _ in 0..num_inputs {
-        let random_input: Vec<bool> = (0..ckt_one.num_wires)
-            .map(|_| rng.random_bool(0.5))
-            .collect();
+    let random_inputs: Vec<Vec<bool>> = (0..num_inputs)
+        .map(|_| {
+            (0..ckt_one.num_wires)
+                .map(|_| rng.random_bool(0.5))
+                .collect()
+        })
+        .collect();
 
-        if ckt_one.evaluate(&random_input) != ckt_two.evaluate(&random_input) {
+    random_inputs.par_iter().try_for_each(|random_input| {
+        if ckt_one.evaluate(random_input) != ckt_two.evaluate(random_input) {
             return Err("Circuits produce different outputs".to_string());
         }
-    }
-
-    Ok(())
+        Ok(())
+    })
 }
 
 #[derive(Serialize, Deserialize)]
@@ -148,12 +152,12 @@ mod tests {
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 
-    use crate::circuit::circuit::is_func_equiv;
+    use crate::circuit::circuit::check_equiv_probabilistic;
 
     use super::{Circuit, Gate};
 
     #[test]
-    fn test_is_func_equiv() {
+    fn test_check_equiv_probabilistic() {
         let mut rng = ChaCha8Rng::from_os_rng();
         let ckt = Circuit {
             num_wires: 64,
@@ -211,7 +215,7 @@ mod tests {
                 },
             ],
         };
-        assert!(is_func_equiv(&ckt, &equiv_ckt, 1000, &mut rng) == Ok(()));
-        assert!(is_func_equiv(&ckt, &nequiv_ckt, 1000, &mut rng) != Ok(()));
+        assert!(check_equiv_probabilistic(&ckt, &equiv_ckt, 1000, &mut rng) == Ok(()));
+        assert!(check_equiv_probabilistic(&ckt, &nequiv_ckt, 1000, &mut rng) != Ok(()));
     }
 }

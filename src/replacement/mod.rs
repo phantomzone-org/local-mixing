@@ -321,7 +321,7 @@ mod tests {
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 
-    use crate::circuit::{circuit::is_func_equiv, Circuit};
+    use crate::circuit::{circuit::check_equiv_probabilistic, Circuit};
 
     use super::{
         find_replacement_circuit,
@@ -349,7 +349,7 @@ mod tests {
                 num_wires: wires,
                 gates: Vec::from(replacement),
             };
-            match is_func_equiv(&ckt_one, &ckt_two, 1000, &mut rng) {
+            match check_equiv_probabilistic(&ckt_one, &ckt_two, 1000, &mut rng) {
                 Ok(()) => continue,
                 _ => {
                     dbg!(ckt_one);
