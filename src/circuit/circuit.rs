@@ -124,6 +124,10 @@ impl PrettyCircuit {
     pub fn save_as_json(&self, path: impl AsRef<Path>) {
         std::fs::write(path, serde_json::to_vec_pretty(&self).unwrap()).unwrap();
     }
+
+    pub fn load_from_json(path: impl AsRef<Path>) -> Self {
+        serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+    }
 }
 
 impl From<Circuit> for PrettyCircuit {
@@ -141,6 +145,22 @@ impl From<Circuit> for PrettyCircuit {
                         gate.wires[2],
                         gate.control_func.into(),
                     ]
+                })
+                .collect(),
+        }
+    }
+}
+
+impl From<PrettyCircuit> for Circuit {
+    fn from(c: PrettyCircuit) -> Self {
+        Self {
+            num_wires: c.wire_count as u32,
+            gates: c
+                .gates
+                .iter()
+                .map(|g| Gate {
+                    wires: [g[0], g[1], g[2]],
+                    control_func: g[3] as u8,
                 })
                 .collect(),
         }
