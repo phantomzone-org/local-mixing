@@ -1,8 +1,6 @@
 use std::cmp::max;
 
 use rand::{seq::SliceRandom, RngCore, SeedableRng};
-use rand_chacha::ChaCha8Rng;
-
 use crate::{circuit::Gate, local_mixing::consts::{N_IN, N_PROJ_WIRES}};
 
 use super::strategy::ControlFnChoice;
@@ -50,6 +48,17 @@ impl Iterator for LFSR128 {
         self.state = (self.state << 1) | (new);
 
         Some(old)
+    }
+}
+
+impl LFSR128 {
+    pub fn sample_excluding(&mut self, exclusion_values: &Vec<usize>) -> u128 {
+        loop {
+            let new = self.next().unwrap_or(0);
+            if !exclusion_values.contains(&(new as usize)) {
+                return new;
+            }
+        }
     }
 }
 
@@ -110,31 +119,28 @@ pub struct LFSRShuffle {
 }
 
 impl LFSRShuffle {
-    pub fn new(active_wires: [[bool; N_PROJ_WIRES]; 2]) -> Self {
+    pub fn new<R: RngCore>(active_wires: [[bool; N_PROJ_WIRES]; 2], rng: &mut R) -> Self {
         // extracting the actual target and control wires
         let mut true_active_target_wires = active_wires[0]
             .into_iter()
-            .filter(|x| *x)
             .enumerate()
+            .filter(|(_, x)| *x)
             .map(|(i, _)| i)
             .collect::<Vec<usize>>();
 
         let mut  true_active_control_wires = active_wires[1]
             .into_iter()
-            .filter(|x| *x)
             .enumerate()
+            .filter(|(_, x)| *x)
             .map(|(i, _)| i)
             .collect::<Vec<usize>>();
 
         assert!(true_active_control_wires.len() <= (2*N_IN), "The control wires have to be lesser than and equal 2 * N_IN");
         assert!(true_active_target_wires.len() <= (N_IN), "The control wires have to be lesser and equal than N_IN");
 
-        // rng for shuffling
-        let mut chacha =  ChaCha8Rng::from_os_rng();
-
         // shuffling the targets and controls
-        true_active_control_wires.shuffle(&mut chacha);
-        true_active_target_wires.shuffle(&mut chacha);
+        true_active_control_wires.shuffle(rng);
+        true_active_target_wires.shuffle(rng);
 
         let mut control_matrix: [[WireEntries; 4]; 2] = [[WireEntries::default();N_IN];2];
         let mut targets: [WireEntries; N_IN] = [WireEntries::default();N_IN];
@@ -155,7 +161,7 @@ impl LFSRShuffle {
             };
         }
 
-        let lfsr_seed: u128 = ((chacha.next_u64() as u128) << 64) + (chacha.next_u64() as u128);
+        let lfsr_seed: u128 = ((rng.next_u64() as u128) << 64) + (rng.next_u64() as u128);
 
         // let mut control_matrix: [[WireEntries; N_IN];2];
         Self {
@@ -187,7 +193,7 @@ impl LFSRShuffle {
             if i < target_index {
                 self.targets.rotate_left(get_tap_128(self.lfsr.state, target_index as u128) as usize);
             }
-            let column_swap_index = (self.lfsr.state % (N_IN as u128) ) as usize; 
+            let column_swap_index: usize = (self.lfsr.state % (N_IN as u128) ) as usize; 
             if get_tap_128(self.lfsr.state, 0) == 1 {
                 let temp = self.control_matrix[0][column_swap_index];
                 self.control_matrix[0][column_swap_index] = self.control_matrix[1][column_swap_index];
@@ -210,19 +216,31 @@ impl GateProvider for LFSRShuffle {
         for i in 0..N_IN {
             // assigning the wires
             // will assign a wire if there are no active wires
+            let mut exclusion_store = vec![];
+            if self.control_matrix[0][i].present {
+                exclusion_store.push(self.control_matrix[0][i].position as usize)
+            }
+            if self.control_matrix[1][i].present {
+                exclusion_store.push(self.control_matrix[0][i].position as usize)
+            }
+
+            if self.targets[i].present {
+                exclusion_store.push(self.control_matrix[0][i].position as usize)
+            }
+
             gates[i].wires[0] = match self.control_matrix[0][i].present {
                 true => self.control_matrix[0][i].position as u32,
-                false => (self.lfsr.next().unwrap_or(0) as u32) % (N_PROJ_WIRES as u32),
+                false => (self.lfsr.sample_excluding(&exclusion_store) as u32) % (N_PROJ_WIRES as u32),
             };
 
             gates[i].wires[1] = match self.control_matrix[1][i].present {
                 true => self.control_matrix[1][i].position as u32,
-                false => (self.lfsr.next().unwrap_or(0) as u32) % (N_PROJ_WIRES as u32),
+                false => (self.lfsr.sample_excluding(&exclusion_store) as u32) % (N_PROJ_WIRES as u32),
             };
 
             gates[i].wires[2] = match self.targets[i].present {
                 true => self.targets[i].position as u32,
-                false => (self.lfsr.next().unwrap_or(0) as u32) % (N_PROJ_WIRES as u32),
+                false => (self.lfsr.sample_excluding(&exclusion_store) as u32) % (N_PROJ_WIRES as u32),
             };
             // assigning gates
             gates[i].control_func = cf_choice.random_cf(&mut self.lfsr);
@@ -241,5 +259,32 @@ impl RngCore for LFSRShuffle {
 
     fn fill_bytes(&mut self, dest: &mut [u8]) {
         self.lfsr.fill_bytes(dest);
+    }
+}
+
+
+mod tests {
+    use rand_chacha::ChaCha8Rng;
+
+    use super::*;
+
+    #[test]
+    fn test_shuffle() {
+       let mut active_wires = [[false;N_PROJ_WIRES];2];
+       let mut rng  = ChaCha8Rng::from_os_rng();
+       for i in 0..6{
+        active_wires[i % 2][i] = true;
+       }
+       println!("The active wires are {:?}",active_wires);
+       let mut shuff = LFSRShuffle::new(active_wires, &mut rng);
+
+       println!("The initial state matrix :{:?}, targets: {:?}", shuff.control_matrix, shuff.targets);
+       shuff.shuffle();
+       println!("The shuffled state matrix :{:?}, targets: {:?}", shuff.control_matrix, shuff.targets);
+       shuff.shuffle();
+       println!("The shuffled state matrix :{:?}, targets: {:?}", shuff.control_matrix, shuff.targets);
+       shuff.shuffle();
+       println!("The shuffled state matrix :{:?}, targets: {:?}", shuff.control_matrix, shuff.targets);
+
     }
 }
