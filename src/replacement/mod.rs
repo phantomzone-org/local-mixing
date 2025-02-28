@@ -1,3 +1,4 @@
+pub mod lfsr;
 pub mod strategy;
 pub mod test;
 
@@ -5,6 +6,7 @@ use crate::{
     circuit::Gate,
     local_mixing::consts::{N_IN, N_PROJ_INPUTS, N_PROJ_WIRES, PROJ_GATE_CANDIDATES},
 };
+use lfsr::{GateProvider, LFSRShuffle};
 use rand::{seq::IndexedRandom, Rng, RngCore, SeedableRng};
 use rayon::{
     current_num_threads,
@@ -113,6 +115,8 @@ pub fn find_replacement_circuit<R: Send + Sync + RngCore + SeedableRng, const N_
     let max_iterations = num_attempts / current_num_threads();
     let found = AtomicBool::new(false);
 
+    let lfsr_shuffle = LFSRShuffle::new(active_wires);
+
     let sample_function: Box<
         dyn Fn(&mut [Gate; N_IN], &[[bool; N_PROJ_WIRES]; 2], &mut R) + Send + Sync,
     > = match strategy {
@@ -124,6 +128,11 @@ pub fn find_replacement_circuit<R: Send + Sync + RngCore + SeedableRng, const N_
         }),
         ReplacementStrategy::SampleActive1 => Box::new(|replacement_circuit, active_wires, rng| {
             sample_circuit_lookup(replacement_circuit, &active_wires, cf_choice, rng);
+        }),
+        ReplacementStrategy::SampleActiveLFSR => Box::new(|replacement_circuit, _, rng: &mut R| {
+            let mut shuf = lfsr_shuffle.clone();
+            shuf.set_seed(rng);
+            shuf.get_gates(replacement_circuit, cf_choice);
         }),
         _ => todo!(),
     };
@@ -281,6 +290,14 @@ pub fn sample_random_circuit<R: Send + Sync + RngCore + SeedableRng>(
         }
         circuit[gate_idx].control_func = cf_choice.random_cf(rng);
     }
+}
+
+pub fn sample_random_circuit_with_lfsr<R: Send + Sync + RngCore + GateProvider>(
+    circuit: &mut [Gate; N_IN],
+    cf_choice: ControlFnChoice,
+    rng: &mut R,
+) {
+    rng.get_gates(circuit, cf_choice);
 }
 
 pub fn sample_random_circuit_unguided<R: Rng>(
