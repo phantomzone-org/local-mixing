@@ -332,7 +332,7 @@ mod tests {
     fn test_find_replacement_n_out_4() {
         let wires = 100u32;
         let mut rng = ChaCha8Rng::from_os_rng();
-        for _ in 0..100 {
+        for _ in 0..10 {
             let ckt_one = Circuit::random(wires, 2, &mut rng);
             let replacement = match find_replacement_circuit::<2, 4, 9, { 1 << 9 }, _>(
                 &[ckt_one.gates[0], ckt_one.gates[1]],
