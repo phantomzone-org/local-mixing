@@ -1,11 +1,16 @@
 use std::cmp::max;
 
 use rand::{seq::SliceRandom, RngCore, SeedableRng};
+use rand_chacha::{ChaCha20Rng, ChaCha8Core, ChaCha8Rng};
 use crate::{circuit::Gate, local_mixing::consts::{N_IN, N_PROJ_WIRES}};
 
 use super::strategy::ControlFnChoice;
 
 fn get_tap_128(state: u128, n: u128) -> u128 {
+    (state & (1 << n)) >> n
+}
+
+fn get_tap(state: usize, n: usize) -> usize {
     (state & (1 << n)) >> n
 }
 
@@ -111,15 +116,16 @@ impl Default for WireEntries {
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct LFSRShuffle {
+#[derive(Clone)]
+pub struct LFSRShuffle{
     control_matrix: [[WireEntries; N_IN]; 2],
     targets: [WireEntries; N_IN],
+    rng: ChaCha8Rng,
     lfsr: LFSR128,
 }
 
 impl LFSRShuffle {
-    pub fn new<R: RngCore>(active_wires: [[bool; N_PROJ_WIRES]; 2], rng: &mut R) -> Self {
+    pub fn new<R: RngCore> (active_wires: [[bool; N_PROJ_WIRES]; 2], rng: &mut R) -> Self {
         // extracting the actual target and control wires
         let mut true_active_target_wires = active_wires[0]
             .into_iter()
@@ -167,34 +173,63 @@ impl LFSRShuffle {
         Self {
             control_matrix,
             targets,
+            rng: ChaCha8Rng::from_rng(rng),
             lfsr: LFSR128::new(lfsr_seed),
         }
     }
 
-    pub fn set_seed<R: Send + Sync + RngCore + SeedableRng>(&mut self, rng: &mut R) {
-        self.lfsr.state = ((rng.next_u64() as u128) << 64) + (rng.next_u64() as u128);
-    }
-
     fn shuffle(&mut self) {
         // getting the rotation indexes
-        let rotation_index_1 = (self.lfsr.next().unwrap_or(0) as usize) % N_IN;
-        let rotation_index_2 = (self.lfsr.next().unwrap_or(0) as usize) % N_IN;
-        let target_index = (self.lfsr.next().unwrap_or(0) as usize) % N_IN;
-        let max_rotations = max(rotation_index_1, max(rotation_index_2, target_index));
+        let rotation_count_1 = (self.lfsr.next().unwrap() as usize) % N_IN;
+        let rotation_count_2 = (self.lfsr.next().unwrap() as usize) % N_IN;
+        let target_count = (self.lfsr.next().unwrap() as usize) % N_IN;
+        // let max_rotations = max(max(rotation_count_1, column_swap_count), max(rotation_count_2, target_count));
+
+        for _i in 0..N_IN {
+            // if i < rotation_count_1{
+                self.control_matrix[0].rotate_left(get_tap_128(self.lfsr.state, rotation_count_1 as u128) as usize);
+            // }
+            // if i < rotation_count_2{
+                self.control_matrix[1].rotate_left(get_tap_128(self.lfsr.state, rotation_count_2 as u128) as usize);
+            // }
+
+            // if i < target_count {
+                self.targets.rotate_left(get_tap_128(self.lfsr.state, target_count as u128) as usize);
+            // }
+
+            let column_swap_index: usize = (self.lfsr.next().unwrap() % (N_IN as u128) ) as usize; 
+            if get_tap_128(self.lfsr.state, column_swap_index as u128) == 1 {
+                let temp = self.control_matrix[0][column_swap_index];
+                self.control_matrix[0][column_swap_index] = self.control_matrix[1][column_swap_index];
+                self.control_matrix[1][column_swap_index] = temp;
+            }
+        }
+        
+    }
+
+    fn shuffle_rng(&mut self) {
+        // getting the rotation indexes
+        let rotation_count_1 = (self.rng.next_u32() as usize) % N_IN;
+        let rotation_count_2 = (self.rng.next_u32() as usize) % N_IN;
+        let target_count = (self.rng.next_u32() as usize) % N_IN;
+        let column_swap_count = (self.rng.next_u32() as usize) % N_IN;
+        let max_rotations = max(max(rotation_count_1, column_swap_count), max(rotation_count_2, target_count));
 
         for i in 0..max_rotations {
-            if i < rotation_index_1{
-                self.control_matrix[0].rotate_left(get_tap_128(self.lfsr.state, rotation_index_1 as u128) as usize)
+            if i < rotation_count_1{
+                self.control_matrix[0].rotate_left(get_tap_128(self.lfsr.state, rotation_count_1 as u128) as usize)
             }
-            if i < rotation_index_2{
-                self.control_matrix[1].rotate_left(get_tap_128(self.lfsr.state, rotation_index_2 as u128) as usize)
+            if i < rotation_count_2{
+                self.control_matrix[1].rotate_left(get_tap_128(self.lfsr.state, rotation_count_2 as u128) as usize)
             }
 
-            if i < target_index {
-                self.targets.rotate_left(get_tap_128(self.lfsr.state, target_index as u128) as usize);
+            if i < target_count {
+                self.targets.rotate_left(get_tap_128(self.lfsr.state, target_count as u128) as usize);
             }
-            let column_swap_index: usize = (self.lfsr.state % (N_IN as u128) ) as usize; 
-            if get_tap_128(self.lfsr.state, 0) == 1 {
+
+            let rand_val = self.rng.next_u32() as usize;
+            let column_swap_index: usize = rand_val % N_IN ; 
+            if get_tap(column_swap_index, 0) == 1 {
                 let temp = self.control_matrix[0][column_swap_index];
                 self.control_matrix[0][column_swap_index] = self.control_matrix[1][column_swap_index];
                 self.control_matrix[1][column_swap_index] = temp;
@@ -208,7 +243,7 @@ pub trait GateProvider {
     fn get_gates(&mut self, gates: &mut [Gate; N_IN], cf_choice: ControlFnChoice);
 }
 
-impl GateProvider for LFSRShuffle {
+impl GateProvider for LFSRShuffle{
     fn get_gates(&mut self, gates: &mut [Gate; N_IN], cf_choice: ControlFnChoice) {
 
         self.shuffle();
