@@ -8,6 +8,7 @@ pub enum ReplacementStrategy {
     SampleUnguided,
     SampleActive0,
     SampleActive1,
+    SampleActiveLFSR,
     Dummy,
 }
 
