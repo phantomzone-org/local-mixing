@@ -34,9 +34,16 @@ fn populate_rainbow_table_recursive<const SIZE: usize, const TT_SIZE: usize>(
     wires_used: u32,
     rt: &mut HashMap<[u32; TT_SIZE], [Gate; SIZE]>,
 ) {
+    // if current_size == SIZE {
+    //     let tt: [u32; TT_SIZE] = truth_table(&current_circuit);
+    //     rt.insert(tt, *current_circuit);
+    //     return;
+    // }
+
+    let tt = truth_table(&current_circuit);
+    rt.insert(tt, *current_circuit);
+
     if current_size == SIZE {
-        let tt: [u32; TT_SIZE] = truth_table(&current_circuit);
-        rt.insert(tt, *current_circuit);
         return;
     }
 
