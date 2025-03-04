@@ -462,7 +462,7 @@ impl LFSRShuffle {
             }
 
             if self.control_matrix[1][i].present & self.targets[i].present {
-                if self.targets[i].position == self.control_matrix[0][i].position {
+                if self.targets[i].position == self.control_matrix[1][i].position {
                     return true;
                 }
             }
