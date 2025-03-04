@@ -332,7 +332,7 @@ impl Iterator for LFSR128 {
 impl LFSR128 {
     pub fn sample_excluding<const N_IN:usize>(&mut self, exclusion_values: &Vec<usize>) -> u128 {
         loop {
-            let new = self.next().unwrap_or(0) % (N_IN as u128);
+            let new = self.next().unwrap_or(0) % (N_PROJ_WIRES as u128);
             if !exclusion_values.contains(&(new as usize)) {
                 return new;
             }
@@ -461,7 +461,7 @@ impl LFSRShuffle {
                 }
             }
 
-            if self.control_matrix[0][i].present & self.targets[i].present {
+            if self.control_matrix[1][i].present & self.targets[i].present {
                 if self.targets[i].position == self.control_matrix[0][i].position {
                     return true;
                 }
@@ -526,8 +526,8 @@ impl LFSRShuffle {
         // targets permuted
         self.targets = self.permutor.permute_4(&self.targets);
         // control permuted
-        self.control_matrix[0] = self.permutor.permute_4(&self.control_matrix[0]);
-        self.control_matrix[1] = self.permutor.permute_4(&self.control_matrix[1]);
+        // self.control_matrix[0] = self.permutor.permute_4(&self.control_matrix[0]);
+        // self.control_matrix[1] = self.permutor.permute_4(&self.control_matrix[1]);
 
 
         let mut columns = [WireEntries::default(); 2*N_IN];
@@ -545,7 +545,39 @@ impl LFSRShuffle {
         for index in 0..17 {
             control.push((( state >> index) & 1) == 1);
         }
+        columns = self.permutor.riffle_array(&columns);
         columns = walksman_permutation_8(&columns, control);
+
+        for i in 0..(2*N_IN) {
+            if i < N_IN {
+                self.control_matrix[0][i] = columns[i];
+            } else {
+                self.control_matrix[1][i - N_IN] = columns[i];
+            }
+        }
+        
+    }
+
+    fn rng_shuffle(&mut self) {
+        
+        // targets permuted
+        self.targets.shuffle(&mut self.rng);
+        // control permuted
+        // self.control_matrix[0].shuffle(&mut self.rng);
+        // self.control_matrix[1].shuffle(&mut self.rng);
+
+
+        let mut columns = [WireEntries::default(); 2*N_IN];
+
+        for i in 0..(2*N_IN) {
+            if i < N_IN {
+                columns[i] =  self.control_matrix[0][i];
+            } else {
+                // println!("The index is {} -> {}/ {}", i, N_IN - i, i - N_IN);
+                columns[i] =  self.control_matrix[1][i - N_IN];
+            }
+        }
+        columns.shuffle(&mut self.rng);
 
         for i in 0..(2*N_IN) {
             if i < N_IN {
@@ -596,6 +628,7 @@ impl GateProvider for LFSRShuffle{
             // self.shuffle_riffle();
             // self.shuffle_rng();
             self.shuffle_permute();
+            // self.rng_shuffle();
             if self.collision_check() == false {
                 break;
             }
