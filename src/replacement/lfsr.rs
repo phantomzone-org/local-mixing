@@ -43,7 +43,7 @@ fn get_4<T: Default + Copy + Sized>(a: &[T], start_index: usize) -> [T;4] {
 #[inline]
 fn fill_4<T: Default + Copy + Sized>(a: &mut [T], b: &[T], start_index: usize) {
     for i in 0..4 {
-        a[i] = b[start_index + i];
+        a[start_index + i] = b[i];
     }
 }
 
@@ -97,14 +97,21 @@ fn walksman_permutation_8<T: Default + Copy + Sized> (a: &[T;8], control: Vec<bo
     }
 
     // intermerate layers
-    let first_half: [T; 4] = get_4(&out, 0);
+    let first_half: [T; 4] = [out[0], out[2], out[4], out[6]];
     let interim_1 = walksman_permutation_4(&first_half,&control[4..]);
+    // let interim_1 = permutation_net_4(&first_half,control[4..].to_vec());
 
-    let second_half: [T; 4] = get_4(&out, 4);
+    let second_half: [T; 4] = [out[1], out[3], out[5], out[7]];
     let interim_2 = walksman_permutation_4(&second_half,&control[9..]);
+    // let interim_2 = permutation_net_4(&second_half,control[9..].to_vec());
 
-    fill_4(&mut out, &interim_1, 0);
-    fill_4(&mut out, &interim_2, 4);
+    for i in 0..8 {
+        if i % 2 == 0 {
+            out[i] = interim_1[i/2];
+        } else {
+            out[i] = interim_2[i/2];
+        }
+    }
 
     // last layer swaps
     if control[14] {
@@ -512,6 +519,44 @@ impl LFSRShuffle {
         
     }
 
+    fn shuffle_permute(&mut self) {
+        // getting the rotation indexes
+        let state = self.rng.next_u32() as usize;
+        
+        // targets permuted
+        self.targets = self.permutor.permute_4(&self.targets);
+        // control permuted
+        self.control_matrix[0] = self.permutor.permute_4(&self.control_matrix[0]);
+        self.control_matrix[1] = self.permutor.permute_4(&self.control_matrix[1]);
+
+
+        let mut columns = [WireEntries::default(); 2*N_IN];
+
+        for i in 0..(2*N_IN) {
+            if i < N_IN {
+                columns[i] =  self.control_matrix[0][i];
+            } else {
+                // println!("The index is {} -> {}/ {}", i, N_IN - i, i - N_IN);
+                columns[i] =  self.control_matrix[1][i - N_IN];
+            }
+        }
+
+        let mut control = vec![];
+        for index in 0..17 {
+            control.push((( state >> index) & 1) == 1);
+        }
+        columns = walksman_permutation_8(&columns, control);
+
+        for i in 0..(2*N_IN) {
+            if i < N_IN {
+                self.control_matrix[0][i] = columns[i];
+            } else {
+                self.control_matrix[1][i - N_IN] = columns[i];
+            }
+        }
+        
+    }
+
     fn shuffle_rng(&mut self) {
         // getting the rotation indexes
         let rotation_count_1 = (self.rng.next_u32() as usize) % N_IN;
@@ -549,7 +594,8 @@ impl GateProvider for LFSRShuffle{
         loop {
             // self.shuffle();
             // self.shuffle_riffle();
-            self.shuffle_rng();
+            // self.shuffle_rng();
+            self.shuffle_permute();
             if self.collision_check() == false {
                 break;
             }
@@ -757,6 +803,41 @@ mod tests {
 
         println!("The perm net map values are {:?}", map);
         assert!(map.len() == 24, "There should be 24 values");
+
+    }
+
+    #[test]
+    fn test_permute_8(){
+        let a:[usize; 8] = [1, 2, 3, 4, 5, 6, 7, 8];
+        let b = walksman_permutation_8(&a, vec![true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]);
+        println!("The actual values are {:?} -> {:?}", a, b);
+        assert!(b == [2, 1, 3, 4, 5, 6, 7, 8]);
+
+        // let mut rng = ChaCha8Rng::from_os_rng();
+
+        // let mut lfsr = LFSR16::new(rng.next_u32() as u16);
+
+        let mut map = HashMap::new();
+        let mut b = a.clone();
+        map.insert(b.clone(), 0);
+        for i in 0..(1<<18) {
+            // println!("The values before {:?}", b);
+            let mut control = vec![];
+            for index in 0..17 {
+                control.push((( i >> index) & 1) == 1);
+            }
+            b = walksman_permutation_8(&b, control);
+            if map.contains_key(&b) {
+                map.insert(b.clone(), map.get(&b).unwrap() + 1);
+            } else {
+                map.insert(b.clone(), 0);
+            }
+            
+            // println!("The values after {:?} state = {}", b, even);
+        }
+
+        println!("The walksman 8 map values are {:?}", map.len());
+        assert!(map.len() == 40320, "There should be 40320 values");
 
     }
 
