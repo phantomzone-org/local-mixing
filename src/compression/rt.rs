@@ -1,7 +1,6 @@
-use crate::circuit::{analysis::truth_table, cf::Base2GateControlFunc, Gate};
+use std::collections::HashMap;
 
-const PROJ_WIRES: usize = 9;
-const PROJ_TT_SIZE: usize = 1 << PROJ_WIRES;
+use crate::circuit::{analysis::truth_table, cf::Base2GateControlFunc, Gate};
 
 const fn other_two_wire_pos(wire_pos: usize) -> [usize; 2] {
     match wire_pos {
@@ -12,37 +11,46 @@ const fn other_two_wire_pos(wire_pos: usize) -> [usize; 2] {
     }
 }
 
-pub fn populate_rainbow_table<const SIZE: usize>() {
+pub fn populate_rainbow_table<const SIZE: usize, const TT_SIZE: usize>(
+) -> HashMap<[u32; TT_SIZE], [Gate; SIZE]> {
     assert!(SIZE >= 1);
-    match SIZE {
-        1 => populate_rainbow_table_size_one(),
-        _ => {
-            let mut current_circuit = [Gate::default(); SIZE];
-            current_circuit[0].wires = [0, 1, 2];
-            for cf in 0..Base2GateControlFunc::COUNT {
-                current_circuit[0].control_func = cf;
-                populate_rainbow_table_recursive(1, &mut current_circuit, 3);
-            }
-        }
+
+    let mut rt = HashMap::new();
+
+    let mut current_circuit = [Gate::default(); SIZE];
+    current_circuit[0].wires = [0, 1, 2];
+
+    for cf in 0..Base2GateControlFunc::COUNT - 1 {
+        current_circuit[0].control_func = cf;
+        populate_rainbow_table_recursive::<SIZE, TT_SIZE>(1, &mut current_circuit, 3, &mut rt);
     }
+
+    rt
 }
 
-fn populate_rainbow_table_recursive<const SIZE: usize>(
+fn populate_rainbow_table_recursive<const SIZE: usize, const TT_SIZE: usize>(
     current_size: usize,
     current_circuit: &mut [Gate; SIZE],
     wires_used: u32,
+    rt: &mut HashMap<[u32; TT_SIZE], [Gate; SIZE]>,
 ) {
     if current_size == SIZE {
-        let _tt: [u32; PROJ_TT_SIZE] = truth_table(&current_circuit);
+        let tt: [u32; TT_SIZE] = truth_table(&current_circuit);
+        rt.insert(tt, *current_circuit);
         return;
     }
 
-    for cf in 0..Base2GateControlFunc::COUNT {
+    for cf in 0..Base2GateControlFunc::COUNT - 1 {
         current_circuit[current_size].control_func = cf;
 
         // Three new wires
         current_circuit[current_size].wires = [wires_used, wires_used + 1, wires_used + 2];
-        populate_rainbow_table_recursive(current_size + 1, current_circuit, wires_used + 3);
+        populate_rainbow_table_recursive::<SIZE, TT_SIZE>(
+            current_size + 1,
+            current_circuit,
+            wires_used + 3,
+            rt,
+        );
 
         for w in 0..3 {
             let other_wires = other_two_wire_pos(w);
@@ -51,7 +59,12 @@ fn populate_rainbow_table_recursive<const SIZE: usize>(
             current_circuit[current_size].wires[other_wires[1]] = wires_used + 1;
             for label in 0..wires_used {
                 current_circuit[current_size].wires[w] = label;
-                populate_rainbow_table_recursive(current_size + 1, current_circuit, wires_used + 2);
+                populate_rainbow_table_recursive::<SIZE, TT_SIZE>(
+                    current_size + 1,
+                    current_circuit,
+                    wires_used + 2,
+                    rt,
+                );
             }
 
             // TODO: improve this
@@ -62,20 +75,22 @@ fn populate_rainbow_table_recursive<const SIZE: usize>(
                         current_circuit[current_size].wires[w] = wires_used;
                         current_circuit[current_size].wires[other_wires[0]] = label1;
                         current_circuit[current_size].wires[other_wires[1]] = label2;
-                        populate_rainbow_table_recursive(
+                        populate_rainbow_table_recursive::<SIZE, TT_SIZE>(
                             current_size + 1,
                             current_circuit,
                             wires_used + 1,
+                            rt,
                         );
 
                         // Three old wires
                         for label3 in 0..wires_used {
                             if label3 != label1 && label3 != label2 {
                                 current_circuit[current_size].wires[w] = label3;
-                                populate_rainbow_table_recursive(
+                                populate_rainbow_table_recursive::<SIZE, TT_SIZE>(
                                     current_size + 1,
                                     current_circuit,
                                     wires_used,
+                                    rt,
                                 );
                             }
                         }
@@ -83,16 +98,5 @@ fn populate_rainbow_table_recursive<const SIZE: usize>(
                 }
             }
         }
-    }
-}
-
-fn populate_rainbow_table_size_one() {
-    for control_func in 0..16 {
-        let ckt = [Gate {
-            wires: [0, 1, 2], // projected circuit always gives this,
-            control_func,
-        }];
-        let _tt: [u32; PROJ_TT_SIZE] = truth_table(&ckt);
-        // dbg!(tt);
     }
 }

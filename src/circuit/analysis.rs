@@ -25,7 +25,7 @@ pub fn projection_circuit<const SIZE: usize, const PROJ_WIRES: usize>(
 }
 
 /*
- * Assumes that max # wiresw is 32,
+ * Assumes that max # wires is 32,
  * TT_SIZE == 1 << PROJ_WIRES,
  * Otherwise correctness is not guaranteed.
  */
