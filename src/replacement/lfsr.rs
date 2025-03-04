@@ -330,10 +330,10 @@ impl Iterator for LFSR128 {
 }
 
 impl LFSR128 {
-    pub fn sample_excluding<const N_IN:usize>(&mut self, exclusion_values: &Vec<usize>) -> u128 {
+    pub fn sample_excluding<const N_IN:usize>(&mut self, exclusion_values: &Vec<usize>) -> usize {
         loop {
-            let new = self.next().unwrap_or(0) % (N_PROJ_WIRES as u128);
-            if !exclusion_values.contains(&(new as usize)) {
+            let new = self.next().unwrap() as usize % N_PROJ_WIRES;
+            if !exclusion_values.contains(&new) {
                 return new;
             }
         }
@@ -627,8 +627,8 @@ impl GateProvider for LFSRShuffle{
             // self.shuffle();
             // self.shuffle_riffle();
             // self.shuffle_rng();
-            self.shuffle_permute();
-            // self.rng_shuffle();
+            // self.shuffle_permute();
+            self.rng_shuffle();
             if self.collision_check() == false {
                 break;
             }
@@ -651,18 +651,31 @@ impl GateProvider for LFSRShuffle{
 
             gates[i].wires[0] = match self.control_matrix[0][i].present {
                 true => self.control_matrix[0][i].position as u32,
-                false => (self.lfsr.sample_excluding::<N_IN>(&exclusion_store) as u32) % (N_PROJ_WIRES as u32),
+                false => {
+                    let val = self.lfsr.sample_excluding::<N_IN>(&exclusion_store);
+                    exclusion_store.push(val as usize);
+                    val as u32
+                },
             };
 
             gates[i].wires[1] = match self.control_matrix[1][i].present {
                 true => self.control_matrix[1][i].position as u32,
-                false => (self.lfsr.sample_excluding::<N_IN>(&exclusion_store) as u32) % (N_PROJ_WIRES as u32),
+                false => {
+                    let val = self.lfsr.sample_excluding::<N_IN>(&exclusion_store);
+                    exclusion_store.push(val as usize);
+                    val as u32
+                },
             };
 
             gates[i].wires[2] = match self.targets[i].present {
                 true => self.targets[i].position as u32,
-                false => (self.lfsr.sample_excluding::<N_IN>(&exclusion_store) as u32) % (N_PROJ_WIRES as u32),
+                false => {
+                    let val = self.lfsr.sample_excluding::<N_IN>(&exclusion_store);
+                    exclusion_store.push(val as usize);
+                    val as u32
+                },
             };
+            assert!(exclusion_store.len() <= 3, "There should at most 3 values" );
             // assigning gates
             gates[i].control_func = cf_choice.random_cf(&mut self.lfsr);
         }
