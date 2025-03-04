@@ -3,6 +3,7 @@ use local_mixing::{
         cf::Base2GateControlFunc,
         circuit::{check_equiv_probabilistic, Circuit, PrettyCircuit},
     },
+    compression::rt::populate_rainbow_table,
     local_mixing::LocalMixingJob,
     replacement::{
         strategy::{ControlFnChoice, ReplacementStrategy},
@@ -11,10 +12,15 @@ use local_mixing::{
 };
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
-use std::{env::args, error::Error};
+use std::{env::args, error::Error, time::Instant};
 
 fn main() {
-    run();
+    // run();
+
+    let s = Instant::now();
+    populate_rainbow_table::<3>();
+    let d = Instant::now() - s;
+    dbg!(d);
 }
 
 fn run() {
