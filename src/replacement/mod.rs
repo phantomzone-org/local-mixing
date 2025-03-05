@@ -400,6 +400,10 @@ mod tests {
             }
         }
         println!("The failures are {:?}", fails);
-        assert!(fails.len() <= (NUMBER_OF_RUNS as f32 * 0.1).ceil() as usize, "All tests should'nt fail");
+        assert!(
+            fails.len() < 1,
+            // fails.len() <= (NUMBER_OF_RUNS as f32 * 0.1).ceil() as usize,
+            "Nothing should fail"
+        );
     }
 }
