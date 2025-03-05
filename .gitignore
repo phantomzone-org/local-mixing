@@ -1,4 +1,5 @@
 /target
 /bin
 /.vscode
+*.json
 .test_outputs

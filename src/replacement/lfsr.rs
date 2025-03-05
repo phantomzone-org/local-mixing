@@ -753,6 +753,10 @@ mod tests {
     use rand::Rng;
     use rand_chacha::ChaCha8Rng;
 
+    use std::fs::File;
+    use std::io::Write;
+    use serde_json;
+
     use super::*;
 
     #[test]
@@ -885,6 +889,7 @@ mod tests {
 
     #[test]
     fn test_permute_8() {
+        const DUMP: bool = false;
         ///////////////////////////////////////////////////////////////////////////////////////////////////
         // base test
         ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -985,7 +990,23 @@ mod tests {
         }
 
         println!("The walksman 8 occurance of values are {:?}", occurance);
+        if DUMP {
+        // Convert to JSON string
+        let json_string = serde_json::to_string_pretty(&occurance).unwrap();
+        // Write to a file
+        let mut file = File::create("riffle-permute.json").unwrap();
+        file.write_all(json_string.as_bytes()).unwrap();
 
+        let reduced_map: HashMap<usize, Vec<usize>> = occurance.iter().map(|(k, v)| {
+            (*k, v.iter().map(|&x| x/ 10_000).collect::<Vec<usize>>())
+        }).collect();
+
+        // Convert to JSON string
+        let json_string = serde_json::to_string_pretty(&reduced_map).unwrap();
+        // Write to a file
+        let mut file = File::create("riffle-permute-reduced.json").unwrap();
+        file.write_all(json_string.as_bytes()).unwrap();
+        }
         ///////////////////////////////////////////////////////////////////////////////////////////////////
         // testing the frequncy of occurance of each value in the different positions
         // for in built shuffle
@@ -1008,6 +1029,13 @@ mod tests {
         }
 
         println!("The walksman 8 occurance of values are {:?}", occurance);
+        if DUMP {
+         // Convert to JSON string
+         let json_string = serde_json::to_string_pretty(&occurance).unwrap();
+         // Write to a file
+         let mut file = File::create("rust-shuffle.json").unwrap();
+         file.write_all(json_string.as_bytes()).unwrap();
+        }
     }
 
     #[test]
