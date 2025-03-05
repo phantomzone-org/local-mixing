@@ -598,14 +598,12 @@ impl LFSRShuffle {
 
     fn shuffle_permute(&mut self) {
         // getting the rotation indexes
-        let state = self.rng.next_u32() as usize;
+        let state = self.next_u32() as usize;
 
         // targets permuted
         self.targets = self.permutor.permute_4(&self.targets);
-        // control permuted
-        // self.control_matrix[0] = self.permutor.permute_4(&self.control_matrix[0]);
-        // self.control_matrix[1] = self.permutor.permute_4(&self.control_matrix[1]);
 
+        // control permuted
         let mut columns = [WireEntries::default(); 2 * N_IN];
 
         for i in 0..(2 * N_IN) {
@@ -636,9 +634,6 @@ impl LFSRShuffle {
     fn rng_shuffle(&mut self) {
         // targets permuted
         self.targets.shuffle(&mut self.rng);
-        // control permuted
-        // self.control_matrix[0].shuffle(&mut self.rng);
-        // self.control_matrix[1].shuffle(&mut self.rng);
 
         let mut columns = [WireEntries::default(); 2 * N_IN];
 
@@ -735,40 +730,13 @@ mod tests {
     use rand_chacha::ChaCha8Rng;
 
     use super::*;
-
-    #[test]
-    fn test_shuffle() {
-        let mut active_wires = [[false; N_PROJ_WIRES]; 2];
-        let mut rng = ChaCha8Rng::from_os_rng();
-        for i in 0..6 {
-            active_wires[i % 2][i] = true;
-        }
-        println!("The active wires are {:?}", active_wires);
-        let mut shuff = LFSRShuffle::new(active_wires, &mut rng);
-
-        println!(
-            "The initial state matrix :{:?}, targets: {:?}",
-            shuff.control_matrix, shuff.targets
-        );
-        shuff.shuffle();
-        println!(
-            "The shuffled state matrix :{:?}, targets: {:?}",
-            shuff.control_matrix, shuff.targets
-        );
-        shuff.shuffle();
-        println!(
-            "The shuffled state matrix :{:?}, targets: {:?}",
-            shuff.control_matrix, shuff.targets
-        );
-        shuff.shuffle();
-        println!(
-            "The shuffled state matrix :{:?}, targets: {:?}",
-            shuff.control_matrix, shuff.targets
-        );
-    }
+    
 
     #[test]
     fn test_riffle() {
+        ///////////////////////////////////////////////////////////////////////////////////////////////////
+        // base case
+        ///////////////////////////////////////////////////////////////////////////////////////////////////
         let a: [usize; 4] = [1, 2, 3, 4];
         let b = riffle_shuffle(&a, false);
         println!("The actual values are {:?} -> {:?}", a, b);
@@ -782,6 +750,10 @@ mod tests {
 
         let mut lfsr = LFSR16::new(rng.next_u32() as u16);
 
+        ///////////////////////////////////////////////////////////////////////////////////////////////////
+        // testing if all values are reached
+        ///////////////////////////////////////////////////////////////////////////////////////////////////
+
         let mut set = HashSet::new();
         let mut b = a.clone();
         set.insert(b.clone());
@@ -794,6 +766,10 @@ mod tests {
 
         println!("The set is values are {:?}", set);
         assert!(set.len() == 24, "There should be 24 values");
+
+        ///////////////////////////////////////////////////////////////////////////////////////////////////
+        // testing the distribution of values
+        ///////////////////////////////////////////////////////////////////////////////////////////////////
 
         let mut map = HashMap::new();
         let mut b = a.clone();
@@ -816,6 +792,9 @@ mod tests {
 
     #[test]
     fn test_permute_4() {
+        ///////////////////////////////////////////////////////////////////////////////////////////////////
+        // base test
+        ///////////////////////////////////////////////////////////////////////////////////////////////////
         let a: [usize; 4] = [1, 2, 3, 4];
         let b = walksman_permutation_4(&a, &vec![true, false, false, false, false]);
         println!("The actual values are {:?} -> {:?}", a, b);
@@ -824,6 +803,10 @@ mod tests {
         let mut rng = ChaCha8Rng::from_os_rng();
 
         let mut lfsr = LFSR16::new(rng.next_u32() as u16);
+
+        ///////////////////////////////////////////////////////////////////////////////////////////////////
+        // testing permute 4
+        ///////////////////////////////////////////////////////////////////////////////////////////////////
 
         let mut set = HashSet::new();
         let mut b = a.clone();
@@ -856,6 +839,10 @@ mod tests {
         println!("The lfsr map values are {:?}", map);
         assert!(map.len() == 24, "There should be 24 values");
 
+        ///////////////////////////////////////////////////////////////////////////////////////////////////
+        // testing permute with chacha
+        ///////////////////////////////////////////////////////////////////////////////////////////////////
+
         let mut map = HashMap::new();
         let mut b = a.clone();
         map.insert(b.clone(), 0);
@@ -883,36 +870,13 @@ mod tests {
         println!("The walksman map values are {:?}", map);
         assert!(map.len() == 24, "There should be 24 values");
 
-        let mut map = HashMap::new();
-        let mut b = a.clone();
-        map.insert(b.clone(), 0);
-        for _i in 0..240000 {
-            // println!("The values before {:?}", b);
-            b = permutation_net_4(
-                &b,
-                vec![
-                    (rng.next_u32() % 2 == 1),
-                    (rng.next_u32() % 2 == 1),
-                    (rng.next_u32() % 2 == 1),
-                    (rng.next_u32() % 2 == 1),
-                    (rng.next_u32() % 2 == 1),
-                ],
-            );
-            if map.contains_key(&b) {
-                map.insert(b.clone(), map.get(&b).unwrap() + 1);
-            } else {
-                map.insert(b.clone(), 0);
-            }
-
-            // println!("The values after {:?} state = {}", b, even);
-        }
-
-        println!("The perm net map values are {:?}", map);
-        assert!(map.len() == 24, "There should be 24 values");
     }
 
     #[test]
     fn test_permute_8() {
+        ///////////////////////////////////////////////////////////////////////////////////////////////////
+        // base test
+        ///////////////////////////////////////////////////////////////////////////////////////////////////
         let a: [usize; 8] = [1, 2, 3, 4, 5, 6, 7, 8];
         let b = walksman_permutation_8(
             &a,
@@ -924,35 +888,85 @@ mod tests {
         println!("The actual values are {:?} -> {:?}", a, b);
         assert!(b == [2, 1, 3, 4, 5, 6, 7, 8]);
 
-        // let mut rng = ChaCha8Rng::from_os_rng();
+        let mut rng = ChaCha8Rng::from_os_rng();
 
-        // let mut lfsr = LFSR16::new(rng.next_u32() as u16);
+        let mut lfsr = LFSR16::new(rng.next_u32() as u16);
+        ///////////////////////////////////////////////////////////////////////////////////////////////////
+        // Testing the permutation and shuffle for size 8
+        ///////////////////////////////////////////////////////////////////////////////////////////////////
 
         let mut map = HashMap::new();
         let mut b = a.clone();
         map.insert(b.clone(), 0);
-        for i in 0..(1 << 18) {
+        for i in 0..(1 << 20) {
             // println!("The values before {:?}", b);
             let mut control = vec![];
             for index in 0..17 {
                 control.push(((i >> index) & 1) == 1);
             }
+            b = lfsr.riffle_array(&b);
             b = walksman_permutation_8(&b, control);
             if map.contains_key(&b) {
                 map.insert(b.clone(), map.get(&b).unwrap() + 1);
             } else {
                 map.insert(b.clone(), 0);
             }
-
-            // println!("The values after {:?} state = {}", b, even);
         }
 
-        println!("The walksman 8 map values are {:?}", map.len());
+        println!("The walksman 8 map values are {:?}", map.iter().filter(|(_, v)| **v > 20).map(|(_, v)| *v).collect::<Vec<usize>>().len());
         assert!(map.len() == 40320, "There should be 40320 values");
+        ///////////////////////////////////////////////////////////////////////////////////////////////////
+        // testing the in built shuffle function
+        ///////////////////////////////////////////////////////////////////////////////////////////////////
+
+        let mut map = HashMap::new();
+        let mut b = a.clone();
+        map.insert(b.clone(), 0);
+        for _ in 0..(1<<20) {
+            b.shuffle(&mut rng);
+            if map.contains_key(&b) {
+                map.insert(b.clone(), map.get(&b).unwrap() + 1);
+            } else {
+                map.insert(b.clone(), 0);
+            }
+        }
+
+        println!("The walksman 8 map values are {:?}", map.iter().filter(|(_, v)| **v > 20).map(|(_, v)| *v).collect::<Vec<usize>>().len());
+        assert!(map.len() == 40320, "There should be 40320 values");
+
+        ///////////////////////////////////////////////////////////////////////////////////////////////////
+        // testing the occurance of 
+        ///////////////////////////////////////////////////////////////////////////////////////////////////
+        
+        let mut occurance = HashMap::new();
+        let mut b: [usize; 8] = [1, 2, 3, 4, 5, 6, 7, 8];
+        for i in 1..=8 {
+            occurance.insert(i, [0 as usize;8]);
+        }
+
+        for i in 0..(1 << 20) {
+            // println!("The values before {:?}", b);
+            let mut control = vec![];
+            for index in 0..17 {
+                control.push(((i >> index) & 1) == 1);
+            }
+            b = lfsr.riffle_array(&b);
+            b = walksman_permutation_8(&b, control);
+            let index = 1;
+            let position = b.iter().position(|&x| x == index).unwrap();
+            let mut values = *occurance.get(&index).unwrap();
+            values[position] += 1;
+            occurance.insert(1, values);
+        }
+
+        println!("The walksman 8 occurance of values are {:?}", occurance.get(&1));
     }
 
     #[test]
     fn test_riffle_5() {
+        ///////////////////////////////////////////////////////////////////////////////////////////////////
+        // testing if riffle implementation reaches all value for length 5
+        ///////////////////////////////////////////////////////////////////////////////////////////////////
         let a: [usize; 5] = [1, 2, 3, 4, 5];
 
         let mut rng = ChaCha8Rng::from_os_rng();

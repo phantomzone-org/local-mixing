@@ -369,7 +369,7 @@ mod tests {
     fn test_find_replacement() {
         let wires = 100u32;
         let mut rng = ChaCha8Rng::from_os_rng();
-        const NUMBER_OF_RUNS: usize = 10;
+        const NUMBER_OF_RUNS: usize = 500;
         let mut fails = vec![];
         for i in 0..NUMBER_OF_RUNS {
             let ckt_one = Circuit::random(wires, 2, &mut rng);
@@ -400,6 +400,6 @@ mod tests {
             }
         }
         println!("The failures are {:?}", fails);
-        assert_ne!(fails.len(), 1, "All tests should'nt fail");
+        assert!(fails.len() <= (NUMBER_OF_RUNS as f32 * 0.1).ceil() as usize, "All tests should'nt fail");
     }
 }
