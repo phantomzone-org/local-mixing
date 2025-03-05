@@ -3,7 +3,10 @@ use std::time::Instant;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 
-use crate::{circuit::Gate, local_mixing::consts::N_OUT_INF};
+use crate::{
+    circuit::Gate,
+    local_mixing::consts::{N_IN, N_OUT_INF, N_PROJ_INPUTS, N_PROJ_WIRES},
+};
 
 use super::{
     find_replacement_circuit,
@@ -27,7 +30,7 @@ pub fn test_num_samples(strategy: ReplacementStrategy, cf_choice: ControlFnChoic
     let mut avg = 0;
     for _ in 0..n_iter {
         let s = Instant::now();
-        let res = find_replacement_circuit::<_, N_OUT_INF>(
+        let res = find_replacement_circuit::<N_OUT_INF, N_IN, N_PROJ_WIRES, N_PROJ_INPUTS, _>(
             &circuit,
             num_wires,
             1_000_000_000,

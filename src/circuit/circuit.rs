@@ -1,5 +1,6 @@
 use crate::circuit::cf::Base2GateControlFunc;
 use rand::Rng;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use std::{error::Error, path::Path};
 
@@ -64,19 +65,23 @@ impl Circuit {
     }
 
     pub fn load_from_binary(path: impl AsRef<Path>) -> Result<Self, Box<dyn Error>> {
-        Ok(bincode::deserialize(&std::fs::read(path)?)?)
+        let data: CircuitData = bincode::deserialize(&std::fs::read(path)?)?;
+        Ok(Self::from(data))
     }
 
     pub fn save_as_binary(&self, path: impl AsRef<Path>) {
-        std::fs::write(path, bincode::serialize(&self).unwrap()).unwrap();
+        let data = CircuitData::from(self.clone());
+        std::fs::write(path, bincode::serialize(&data).unwrap()).unwrap();
     }
 
     pub fn load_from_json(path: impl AsRef<Path>) -> Self {
-        serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+        let data: CircuitData = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        Self::from(data)
     }
 
     pub fn save_as_json(&self, path: impl AsRef<Path>) {
-        std::fs::write(path, serde_json::to_vec_pretty(&self).unwrap()).unwrap();
+        let data = CircuitData::from(self.clone());
+        std::fs::write(path, serde_json::to_vec_pretty(&data).unwrap()).unwrap();
     }
 
     pub fn evaluate(&self, input: &Vec<bool>) -> Vec<bool> {
@@ -86,7 +91,7 @@ impl Circuit {
     }
 }
 
-pub fn is_func_equiv<R: Rng>(
+pub fn check_equiv_probabilistic<R: Rng>(
     ckt_one: &Circuit,
     ckt_two: &Circuit,
     num_inputs: usize,
@@ -96,17 +101,71 @@ pub fn is_func_equiv<R: Rng>(
         return Err("Different num wires".to_string());
     }
 
-    for _ in 0..num_inputs {
-        let random_input: Vec<bool> = (0..ckt_one.num_wires)
-            .map(|_| rng.random_bool(0.5))
-            .collect();
+    let random_inputs: Vec<Vec<bool>> = (0..num_inputs)
+        .map(|_| {
+            (0..ckt_one.num_wires)
+                .map(|_| rng.random_bool(0.5))
+                .collect()
+        })
+        .collect();
 
-        if ckt_one.evaluate(&random_input) != ckt_two.evaluate(&random_input) {
+    random_inputs.par_iter().try_for_each(|random_input| {
+        if ckt_one.evaluate(random_input) != ckt_two.evaluate(random_input) {
             return Err("Circuits produce different outputs".to_string());
         }
-    }
+        Ok(())
+    })
+}
 
-    Ok(())
+/// Structs for saving to file
+
+#[derive(Clone, Copy, Serialize, Deserialize)]
+pub struct GateData(u32, u32, u32, u8);
+
+impl From<Gate> for GateData {
+    fn from(value: Gate) -> Self {
+        Self(
+            value.wires[1],
+            value.wires[2],
+            value.wires[0],
+            value.control_func,
+        )
+    }
+}
+
+impl From<GateData> for Gate {
+    fn from(value: GateData) -> Self {
+        Self {
+            wires: [value.2, value.0, value.1],
+            control_func: value.3,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct CircuitData {
+    wire_count: usize,
+    gate_count: usize,
+    gates: Vec<GateData>,
+}
+
+impl From<Circuit> for CircuitData {
+    fn from(value: Circuit) -> Self {
+        Self {
+            wire_count: value.num_wires as usize,
+            gate_count: value.gates.len(),
+            gates: value.gates.iter().map(|g| GateData::from(*g)).collect(),
+        }
+    }
+}
+
+impl From<CircuitData> for Circuit {
+    fn from(value: CircuitData) -> Self {
+        Self {
+            num_wires: value.wire_count as u32,
+            gates: value.gates.iter().map(|g| Gate::from(*g)).collect(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -114,12 +173,12 @@ mod tests {
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 
-    use crate::circuit::circuit::is_func_equiv;
+    use crate::circuit::circuit::check_equiv_probabilistic;
 
     use super::{Circuit, Gate};
 
     #[test]
-    fn test_is_func_equiv() {
+    fn test_check_equiv_probabilistic() {
         let mut rng = ChaCha8Rng::from_os_rng();
         let ckt = Circuit {
             num_wires: 64,
@@ -177,7 +236,7 @@ mod tests {
                 },
             ],
         };
-        assert!(is_func_equiv(&ckt, &equiv_ckt, 1000, &mut rng) == Ok(()));
-        assert!(is_func_equiv(&ckt, &nequiv_ckt, 1000, &mut rng) != Ok(()));
+        assert!(check_equiv_probabilistic(&ckt, &equiv_ckt, 1000, &mut rng) == Ok(()));
+        assert!(check_equiv_probabilistic(&ckt, &nequiv_ckt, 1000, &mut rng) != Ok(()));
     }
 }

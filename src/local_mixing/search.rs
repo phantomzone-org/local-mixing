@@ -2,7 +2,10 @@ use std::error::Error;
 #[cfg(feature = "trace")]
 use std::time::Instant;
 
-use super::{consts::N_IN, LocalMixingJob};
+use super::{
+    consts::{N_IN, N_PROJ_INPUTS, N_PROJ_WIRES},
+    LocalMixingJob,
+};
 use crate::{
     circuit::{Circuit, Gate},
     replacement::{find_replacement_circuit, strategy::ReplacementStrategy},
@@ -154,6 +157,63 @@ fn find_convex_gate_ids<const N_OUT: usize, R: RngCore>(
     (selected_gate_idx, max_candidate_dist)
 }
 
+fn permute_circuit<const N_OUT: usize>(
+    circuit: &mut Circuit,
+    selected_gate_idx: &[usize; N_OUT],
+) -> usize {
+    // let selected_gates: [Gate; N_OUT] = std::array::from_fn(|i| circuit.gates[selected_gate_idx[i]]);
+    let mut to_before = vec![];
+    let mut to_after = vec![];
+    let mut path_connected_target_wires = vec![false; circuit.num_wires as usize];
+    let mut path_connected_control_wires = vec![false; circuit.num_wires as usize];
+
+    for j in 0..selected_gate_idx.len() - 1 {
+        for i in selected_gate_idx[j] + 1..selected_gate_idx[j + 1] {
+            let curr_gate = &circuit.gates[i];
+            let curr_target = curr_gate.wires[0] as usize;
+            let curr_control0 = curr_gate.wires[1] as usize;
+            let curr_control1 = curr_gate.wires[2] as usize;
+
+            let mut collides_with_prev_selected = false;
+            for k in 0..=j {
+                collides_with_prev_selected = collides_with_prev_selected
+                    || circuit.gates[selected_gate_idx[k]].collides_with(curr_gate);
+            }
+
+            if collides_with_prev_selected
+                || path_connected_control_wires[curr_target]
+                || path_connected_target_wires[curr_control0]
+                || path_connected_target_wires[curr_control1]
+            {
+                to_after.push(*curr_gate);
+
+                path_connected_target_wires[curr_target] = true;
+                path_connected_control_wires[curr_control0] = true;
+                path_connected_control_wires[curr_control1] = true;
+            } else {
+                to_before.push(*curr_gate);
+            }
+        }
+    }
+
+    let mut write_idx = selected_gate_idx[0];
+    for i in 0..to_before.len() {
+        circuit.gates[write_idx] = to_before[i];
+        write_idx += 1;
+    }
+    let c_out_start = write_idx;
+    for i in 0..N_OUT {
+        circuit.gates[write_idx] = circuit.gates[selected_gate_idx[i]];
+        write_idx += 1;
+    }
+    for i in 0..to_after.len() {
+        circuit.gates[write_idx] = to_after[i];
+        write_idx += 1;
+    }
+
+    c_out_start
+}
+
 impl LocalMixingJob {
     pub fn execute_step<R: Send + Sync + RngCore + SeedableRng, const N_OUT: usize>(
         &mut self,
@@ -161,8 +221,6 @@ impl LocalMixingJob {
     ) -> Result<(), Box<dyn Error>> {
         #[cfg(feature = "trace")]
         let start_time = Instant::now();
-
-        let num_wires = self.wires as usize;
 
         let (selected_gate_idx, _max_candidate_dist) =
             find_convex_gate_ids::<N_OUT, _>(&self.circuit, rng);
@@ -175,9 +233,9 @@ impl LocalMixingJob {
                 #[cfg(feature = "trace")]
                 let repl_start = Instant::now();
 
-                let res = find_replacement_circuit::<_, N_OUT>(
+                let res = find_replacement_circuit::<N_OUT, N_IN, N_PROJ_WIRES, N_PROJ_INPUTS, _>(
                     &selected_gates,
-                    num_wires,
+                    self.wires,
                     self.max_replacement_samples,
                     self.replacement_strategy,
                     self.cf_choice,
@@ -193,58 +251,10 @@ impl LocalMixingJob {
         };
         if let Some((c_in, _num_sampled)) = replacement_res {
             // permute step
-            let mut to_before = vec![];
-            let mut to_after = vec![];
-            let mut path_connected_target_wires = vec![false; num_wires];
-            let mut path_connected_control_wires = vec![false; num_wires];
-
-            for j in 0..selected_gate_idx.len() - 1 {
-                for i in selected_gate_idx[j] + 1..selected_gate_idx[j + 1] {
-                    let curr_gate = &self.circuit.gates[i];
-                    let curr_target = curr_gate.wires[0] as usize;
-                    let curr_control0 = curr_gate.wires[1] as usize;
-                    let curr_control1 = curr_gate.wires[2] as usize;
-
-                    let mut collides_with_prev_selected = false;
-                    for k in 0..=j {
-                        collides_with_prev_selected = collides_with_prev_selected
-                            || selected_gates[k].collides_with(curr_gate);
-                    }
-
-                    if collides_with_prev_selected
-                        || path_connected_control_wires[curr_target]
-                        || path_connected_target_wires[curr_control0]
-                        || path_connected_target_wires[curr_control1]
-                    {
-                        to_after.push(*curr_gate);
-
-                        path_connected_target_wires[curr_target] = true;
-                        path_connected_control_wires[curr_control0] = true;
-                        path_connected_control_wires[curr_control1] = true;
-                    } else {
-                        to_before.push(*curr_gate);
-                    }
-                }
-            }
-
-            let mut write_idx = selected_gate_idx[0];
-            for i in 0..to_before.len() {
-                self.circuit.gates[write_idx] = to_before[i];
-                write_idx += 1;
-            }
-            let c_out_start = write_idx;
-            for i in 0..N_OUT {
-                self.circuit.gates[write_idx] = selected_gates[i];
-                write_idx += 1;
-            }
-            let c_out_end = write_idx;
-            for i in 0..to_after.len() {
-                self.circuit.gates[write_idx] = to_after[i];
-                write_idx += 1;
-            }
-
-            // replace c_out with c_in
-            self.circuit.gates.splice(c_out_start..c_out_end, c_in);
+            let c_out_start = permute_circuit(&mut self.circuit, &selected_gate_idx);
+            self.circuit
+                .gates
+                .splice(c_out_start..c_out_start + N_OUT, c_in);
 
             #[cfg(feature = "trace")]
             self.tracer.add_search_entry(

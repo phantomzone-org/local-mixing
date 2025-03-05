@@ -7,7 +7,6 @@ use crate::circuit::cf::Base2GateControlFunc;
 pub enum ReplacementStrategy {
     SampleUnguided,
     SampleActive0,
-    SampleActive1,
     Dummy,
 }
 
@@ -16,8 +15,7 @@ impl ReplacementStrategy {
         match value {
             0 => Some(Self::SampleUnguided),
             1 => Some(Self::SampleActive0),
-            2 => Some(Self::SampleActive1),
-            3 => Some(Self::Dummy),
+            2 => Some(Self::Dummy),
             _ => None,
         }
     }
@@ -34,6 +32,7 @@ pub enum ControlFnChoice {
     All,
     NoIdentity,
     OnlyUnique,
+    UniqueNo0Bit,
 }
 
 impl ControlFnChoice {
@@ -43,6 +42,7 @@ impl ControlFnChoice {
             Self::All => rng.random_range(0..Base2GateControlFunc::COUNT),
             Self::NoIdentity => rng.random_range(0..Base2GateControlFunc::COUNT - 1),
             Self::OnlyUnique => *[0, 3, 12, 1, 4, 7, 13, 6, 9, 14, 8].choose(rng).unwrap(),
+            Self::UniqueNo0Bit => *[3, 12, 1, 4, 7, 13, 6, 9, 14, 8].choose(rng).unwrap(),
         }
     }
 

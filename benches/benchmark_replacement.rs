@@ -24,7 +24,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
     c.bench_function("replacement", |b| {
         b.iter(|| {
-            black_box(find_replacement_circuit(
+            black_box(find_replacement_circuit::<2, 4, 9, { 1 << 9 }, _>(
                 &circuit,
                 20,
                 1_000_000_000,

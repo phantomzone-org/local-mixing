@@ -1,3 +1,4 @@
+pub mod analysis;
 pub mod cf;
 pub mod circuit;
 

@@ -1,5 +1,8 @@
 use local_mixing::{
-    circuit::circuit::{is_func_equiv, Circuit},
+    circuit::{
+        cf::Base2GateControlFunc,
+        circuit::{check_equiv_probabilistic, Circuit},
+    },
     local_mixing::LocalMixingJob,
     replacement::{
         strategy::{ControlFnChoice, ReplacementStrategy},
@@ -87,7 +90,7 @@ fn run() {
             test_num_samples(strategy, cf_choice, n_iter);
         }
         "equiv" => {
-            let circuit_one_path = args.next().expect("Missing circuit 1");
+            let circuit_one_path = args.next().expect("Missing circuit 1 path");
             let circuit_two_path = args.next().expect("Missing circuit 2 path");
             let num_iter = args
                 .next()
@@ -100,10 +103,26 @@ fn run() {
                 Circuit::load_from_binary(circuit_two_path).expect("Failed to load circuit 2");
             let mut rng = ChaCha8Rng::from_os_rng();
 
-            let res = is_func_equiv(&circuit_one, &circuit_two, num_iter, &mut rng);
+            let res = check_equiv_probabilistic(&circuit_one, &circuit_two, num_iter, &mut rng);
             match res {
                 Ok(()) => println!("func equiv check passes"),
                 Err(e) => println!("func equiv check fails: {}", e),
+            }
+        }
+        "stats" => {
+            let circuit_path = args.next().expect("Missing circuit path");
+            let circuit = Circuit::load_from_binary(circuit_path).expect("Failed to load circuit");
+
+            let mut cf_freq = [0u32; Base2GateControlFunc::COUNT as usize];
+            for g in &circuit.gates {
+                cf_freq[g.control_func as usize] += 1;
+            }
+
+            println!("Control functions:");
+            let total_gates = circuit.gates.len() as f32;
+            for (i, &count) in cf_freq.iter().enumerate() {
+                let proportion = count as f32 / total_gates;
+                println!("{}: {:.2}%", i, proportion * 100.0);
             }
         }
         _ => {

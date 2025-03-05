@@ -12,9 +12,18 @@ rayon = "1.10.0"
 serde = { version = "1.0.217", features = ["derive"] }
 serde_json = "1.0.138"
 bincode = "1.3.3"
+rusqlite = { version = "0.33.0", features = ["bundled"] }
+sha2 = "0.10.8"
 
 [dev-dependencies]
 criterion = "0.5.1"
+
+[profile.release]
+codegen-units = 1
+
+[features]
+trace = []
+correctness = []
 
 [[bench]]
 name = "benchmark_sample"
@@ -32,9 +41,6 @@ harness = false
 name = "benchmark_search_degredation"
 harness = false
 
-[profile.release]
-codegen-units = 1
-
-[features]
-trace = []
-correctness = []
+[[bench]]
+name = "benchmark_rainbow_table"
+harness = false
