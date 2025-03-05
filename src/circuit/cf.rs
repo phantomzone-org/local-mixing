@@ -1,7 +1,7 @@
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Base2GateControlFunc {
-    T = 0,     // true,
+    F = 0,     // false,
     AND = 1,   // a & b,
     ANDNB = 2, // a & (!b),
     A = 3,     // a,
@@ -16,14 +16,14 @@ pub enum Base2GateControlFunc {
     NA = 12,   // !a,
     ORNA = 13, // (!a) | b,
     NAND = 14, // !(a & b),
-    F = 15,    // false,
+    T = 15,    // true,
 }
 
 impl Base2GateControlFunc {
     pub const COUNT: u8 = 16;
     pub const fn from_u8(v: u8) -> Self {
         match v {
-            0 => Self::T,
+            0 => Self::F,
             1 => Self::AND,
             2 => Self::ANDNB,
             3 => Self::A,
@@ -38,7 +38,7 @@ impl Base2GateControlFunc {
             12 => Self::NA,
             13 => Self::ORNA,
             14 => Self::NAND,
-            15 => Self::F,
+            15 => Self::T,
             _ => unreachable!(),
         }
     }

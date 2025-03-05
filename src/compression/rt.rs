@@ -20,7 +20,7 @@ pub fn populate_rainbow_table<const SIZE: usize, const TT_SIZE: usize>(
     let mut current_circuit = [Gate::default(); SIZE];
     current_circuit[0].wires = [0, 1, 2];
 
-    for cf in 0..Base2GateControlFunc::COUNT - 1 {
+    for cf in 1..Base2GateControlFunc::COUNT {
         current_circuit[0].control_func = cf;
         populate_rainbow_table_recursive::<SIZE, TT_SIZE>(1, &mut current_circuit, 3, &mut rt);
     }
@@ -47,7 +47,7 @@ fn populate_rainbow_table_recursive<const SIZE: usize, const TT_SIZE: usize>(
         return;
     }
 
-    for cf in 0..Base2GateControlFunc::COUNT - 1 {
+    for cf in 1..Base2GateControlFunc::COUNT {
         current_circuit[current_size].control_func = cf;
 
         // Three new wires

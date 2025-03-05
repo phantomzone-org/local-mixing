@@ -40,8 +40,8 @@ impl ControlFnChoice {
     pub fn random_cf<R: Rng>(&self, rng: &mut R) -> u8 {
         match self {
             Self::All => rng.random_range(0..Base2GateControlFunc::COUNT),
-            Self::NoIdentity => rng.random_range(0..Base2GateControlFunc::COUNT - 1),
-            Self::OnlyUnique => *[0, 3, 12, 1, 4, 7, 13, 6, 9, 14, 8].choose(rng).unwrap(),
+            Self::NoIdentity => rng.random_range(1..Base2GateControlFunc::COUNT),
+            Self::OnlyUnique => *[15, 3, 12, 1, 4, 7, 13, 6, 9, 14, 8].choose(rng).unwrap(),
             Self::UniqueNo0Bit => *[3, 12, 1, 4, 7, 13, 6, 9, 14, 8].choose(rng).unwrap(),
         }
     }
