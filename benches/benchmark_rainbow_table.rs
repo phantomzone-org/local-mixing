@@ -4,7 +4,7 @@ use local_mixing::compression::rainbow_table::populate_rainbow_table_brute_force
 pub fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("rainbow-table", |b| {
         b.iter(|| {
-            black_box(populate_rainbow_table_brute_force::<1>());
+            black_box(populate_rainbow_table_brute_force::<2>());
         });
     });
 }

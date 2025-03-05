@@ -1,9 +1,8 @@
 use local_mixing::{
     circuit::{
         cf::Base2GateControlFunc,
-        circuit::{check_equiv_probabilistic, Circuit, PrettyCircuit},
+        circuit::{check_equiv_probabilistic, Circuit},
     },
-    compression::rt::populate_rainbow_table,
     local_mixing::LocalMixingJob,
     replacement::{
         strategy::{ControlFnChoice, ReplacementStrategy},
@@ -12,15 +11,10 @@ use local_mixing::{
 };
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
-use std::{env::args, error::Error, time::Instant};
+use std::{env::args, error::Error};
 
 fn main() {
-    // run();
-
-    let s = Instant::now();
-    populate_rainbow_table::<3>();
-    let d = Instant::now() - s;
-    dbg!(d);
+    run();
 }
 
 fn run() {
@@ -130,11 +124,6 @@ fn run() {
                 let proportion = count as f32 / total_gates;
                 println!("{}: {:.2}%", i, proportion * 100.0);
             }
-        }
-        "pretty" => {
-            let ckt = Circuit::load_from_binary(args.next().unwrap()).unwrap();
-            let pretty = PrettyCircuit::from(ckt);
-            pretty.save_as_json(args.next().unwrap());
         }
         _ => {
             eprintln!("Unknown command: {}", cmd);

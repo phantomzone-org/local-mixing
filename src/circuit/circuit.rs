@@ -65,19 +65,23 @@ impl Circuit {
     }
 
     pub fn load_from_binary(path: impl AsRef<Path>) -> Result<Self, Box<dyn Error>> {
-        Ok(bincode::deserialize(&std::fs::read(path)?)?)
+        let data: CircuitData = bincode::deserialize(&std::fs::read(path)?)?;
+        Ok(Self::from(data))
     }
 
     pub fn save_as_binary(&self, path: impl AsRef<Path>) {
-        std::fs::write(path, bincode::serialize(&self).unwrap()).unwrap();
+        let data = CircuitData::from(self.clone());
+        std::fs::write(path, bincode::serialize(&data).unwrap()).unwrap();
     }
 
     pub fn load_from_json(path: impl AsRef<Path>) -> Self {
-        serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+        let data: CircuitData = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        Self::from(data)
     }
 
     pub fn save_as_json(&self, path: impl AsRef<Path>) {
-        std::fs::write(path, serde_json::to_vec_pretty(&self).unwrap()).unwrap();
+        let data = CircuitData::from(self.clone());
+        std::fs::write(path, serde_json::to_vec_pretty(&data).unwrap()).unwrap();
     }
 
     pub fn evaluate(&self, input: &Vec<bool>) -> Vec<bool> {
@@ -113,56 +117,53 @@ pub fn check_equiv_probabilistic<R: Rng>(
     })
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct PrettyCircuit {
-    wire_count: usize,
-    gate_count: usize,
-    gates: Vec<[u32; 4]>,
+/// Structs for saving to file
+
+#[derive(Clone, Copy, Serialize, Deserialize)]
+pub struct GateData(u32, u32, u32, u8);
+
+impl From<Gate> for GateData {
+    fn from(value: Gate) -> Self {
+        Self(
+            value.wires[1],
+            value.wires[2],
+            value.wires[0],
+            value.control_func,
+        )
+    }
 }
 
-impl PrettyCircuit {
-    pub fn save_as_json(&self, path: impl AsRef<Path>) {
-        std::fs::write(path, serde_json::to_vec_pretty(&self).unwrap()).unwrap();
-    }
-
-    pub fn load_from_json(path: impl AsRef<Path>) -> Self {
-        serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
-    }
-}
-
-impl From<Circuit> for PrettyCircuit {
-    fn from(c: Circuit) -> Self {
+impl From<GateData> for Gate {
+    fn from(value: GateData) -> Self {
         Self {
-            wire_count: c.num_wires as usize,
-            gate_count: c.gates.len(),
-            gates: c
-                .gates
-                .iter()
-                .map(|gate| {
-                    [
-                        gate.wires[0],
-                        gate.wires[1],
-                        gate.wires[2],
-                        gate.control_func.into(),
-                    ]
-                })
-                .collect(),
+            wires: [value.2, value.0, value.1],
+            control_func: value.3,
         }
     }
 }
 
-impl From<PrettyCircuit> for Circuit {
-    fn from(c: PrettyCircuit) -> Self {
+#[derive(Serialize, Deserialize)]
+pub struct CircuitData {
+    wire_count: usize,
+    gate_count: usize,
+    gates: Vec<GateData>,
+}
+
+impl From<Circuit> for CircuitData {
+    fn from(value: Circuit) -> Self {
         Self {
-            num_wires: c.wire_count as u32,
-            gates: c
-                .gates
-                .iter()
-                .map(|g| Gate {
-                    wires: [g[0], g[1], g[2]],
-                    control_func: g[3] as u8,
-                })
-                .collect(),
+            wire_count: value.num_wires as usize,
+            gate_count: value.gates.len(),
+            gates: value.gates.iter().map(|g| GateData::from(*g)).collect(),
+        }
+    }
+}
+
+impl From<CircuitData> for Circuit {
+    fn from(value: CircuitData) -> Self {
+        Self {
+            num_wires: value.wire_count as u32,
+            gates: value.gates.iter().map(|g| Gate::from(*g)).collect(),
         }
     }
 }
