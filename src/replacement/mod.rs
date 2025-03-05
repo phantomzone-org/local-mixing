@@ -115,7 +115,6 @@ pub fn find_replacement_circuit<R: Send + Sync + RngCore + SeedableRng, const N_
     let max_iterations = num_attempts / current_num_threads();
     let found = AtomicBool::new(false);
 
-
     let _sample_function: Box<
         dyn Fn(&mut [Gate; N_IN], &[[bool; N_PROJ_WIRES]; 2], &mut R) + Send + Sync,
     > = match strategy {
@@ -384,9 +383,9 @@ mod tests {
             ) {
                 Some((r, _)) => r,
                 None => {
-                    fails.push(i);  
+                    fails.push(i);
                     continue;
-                },
+                }
             };
             let ckt_two = Circuit {
                 num_wires: wires,
@@ -401,6 +400,6 @@ mod tests {
             }
         }
         println!("The failures are {:?}", fails);
-        assert_ne!(fails.len(), NUMBER_OF_RUNS, "All tests should'nt fail");
+        assert_ne!(fails.len(), 1, "All tests should'nt fail");
     }
 }

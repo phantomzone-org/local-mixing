@@ -1,9 +1,11 @@
-
 use std::usize;
 
+use crate::{
+    circuit::Gate,
+    local_mixing::consts::{N_IN, N_PROJ_WIRES},
+};
 use rand::{seq::SliceRandom, RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
-use crate::{circuit::Gate, local_mixing::consts::{N_IN, N_PROJ_WIRES}};
 
 use super::strategy::ControlFnChoice;
 
@@ -32,8 +34,8 @@ fn get_u8_array_from_u128(value: u128) -> [u8; 16] {
 }
 
 #[inline]
-fn get_4<T: Default + Copy + Sized>(a: &[T], start_index: usize) -> [T;4] {
-    let mut out = [T::default();4];
+fn get_4<T: Default + Copy + Sized>(a: &[T], start_index: usize) -> [T; 4] {
+    let mut out = [T::default(); 4];
     for i in 0..4 {
         out[i] = a[start_index + i];
     }
@@ -47,7 +49,7 @@ fn fill_4<T: Default + Copy + Sized>(a: &mut [T], b: &[T], start_index: usize) {
     }
 }
 
-fn walksman_permutation_4<T: Default + Copy + Sized> (a: &[T;4], control: &[bool]) -> [T; 4] {
+fn walksman_permutation_4<T: Default + Copy + Sized>(a: &[T; 4], control: &[bool]) -> [T; 4] {
     let mut out = a.clone();
 
     // first layer swaps
@@ -58,7 +60,7 @@ fn walksman_permutation_4<T: Default + Copy + Sized> (a: &[T;4], control: &[bool
     if control[1] {
         out.swap(2, 3);
     }
-    
+
     // second layer swaps
     if control[2] {
         out.swap(0, 2);
@@ -72,12 +74,11 @@ fn walksman_permutation_4<T: Default + Copy + Sized> (a: &[T;4], control: &[bool
     if control[4] {
         out.swap(0, 1);
     }
-    
+
     out
 }
 
-
-fn walksman_permutation_8<T: Default + Copy + Sized> (a: &[T;8], control: Vec<bool>) -> [T; 8] {
+fn walksman_permutation_8<T: Default + Copy + Sized>(a: &[T; 8], control: Vec<bool>) -> [T; 8] {
     let mut out = a.clone();
 
     // first layer swaps
@@ -98,18 +99,18 @@ fn walksman_permutation_8<T: Default + Copy + Sized> (a: &[T;8], control: Vec<bo
 
     // intermerate layers
     let first_half: [T; 4] = [out[0], out[2], out[4], out[6]];
-    let interim_1 = walksman_permutation_4(&first_half,&control[4..]);
+    let interim_1 = walksman_permutation_4(&first_half, &control[4..]);
     // let interim_1 = permutation_net_4(&first_half,control[4..].to_vec());
 
     let second_half: [T; 4] = [out[1], out[3], out[5], out[7]];
-    let interim_2 = walksman_permutation_4(&second_half,&control[9..]);
+    let interim_2 = walksman_permutation_4(&second_half, &control[9..]);
     // let interim_2 = permutation_net_4(&second_half,control[9..].to_vec());
 
     for i in 0..8 {
         if i % 2 == 0 {
-            out[i] = interim_1[i/2];
+            out[i] = interim_1[i / 2];
         } else {
-            out[i] = interim_2[i/2];
+            out[i] = interim_2[i / 2];
         }
     }
 
@@ -124,11 +125,11 @@ fn walksman_permutation_8<T: Default + Copy + Sized> (a: &[T;8], control: Vec<bo
     if control[16] {
         out.swap(4, 5);
     }
-    
+
     out
 }
 
-fn permutation_net_4<T: Default + Copy> (a: &[T;4], control: Vec<bool>) -> [T; 4] {
+fn permutation_net_4<T: Default + Copy>(a: &[T; 4], control: Vec<bool>) -> [T; 4] {
     let mut out = a.clone();
 
     // first layer swaps
@@ -139,7 +140,7 @@ fn permutation_net_4<T: Default + Copy> (a: &[T;4], control: Vec<bool>) -> [T; 4
     if control[1] {
         out.swap(2, 3);
     }
-    
+
     // second layer swaps
     if control[2] {
         out.swap(1, 2);
@@ -153,12 +154,9 @@ fn permutation_net_4<T: Default + Copy> (a: &[T;4], control: Vec<bool>) -> [T; 4
     if control[4] {
         out.swap(2, 3);
     }
-    
+
     out
 }
-
-
-
 
 // pub fn walksman_permutation <const N_IN: usize, T: Default + Copy + Clone > (a: &[T;N_IN], control: Vec<bool>) -> [T; N_IN] {
 //     let  out = [T::default(); N_IN];
@@ -216,28 +214,28 @@ fn permutation_net_4<T: Default + Copy> (a: &[T;4], control: Vec<bool>) -> [T; 4
 /// let deck = [10, 20, 30, 40];
 /// let shuffled = riffle_shuffle(deck, false);
 /// println!("{:?}", shuffled); // e.g., [30, 10, 40, 20]
-fn riffle_shuffle<const N_IN: usize, T: Default + Copy> (a: &[T;N_IN], even: bool) -> [T; N_IN] {
+fn riffle_shuffle<const N_IN: usize, T: Default + Copy>(a: &[T; N_IN], even: bool) -> [T; N_IN] {
     let mut out = [T::default(); N_IN];
     let half_point: usize = N_IN / 2;
-    if N_IN % 2 == 1  {
+    if N_IN % 2 == 1 {
         if even {
-            let left  = &a[0..=half_point];
+            let left = &a[0..=half_point];
             let right = &a[(half_point + 1)..];
             for i in 0..N_IN {
-                if i %2 == 0 {
-                  out[i] = left[i / 2];
+                if i % 2 == 0 {
+                    out[i] = left[i / 2];
                 } else {
-                  out[i] = right[i / 2];
+                    out[i] = right[i / 2];
                 }
             }
         } else {
             let left = &a[0..half_point];
             let right = &a[half_point..];
             for i in 0..N_IN {
-                if i %2 == 0 {
-                  out[i] = right[i / 2];
+                if i % 2 == 0 {
+                    out[i] = right[i / 2];
                 } else {
-                  out[i] = left[i / 2];
+                    out[i] = left[i / 2];
                 }
             }
         }
@@ -246,27 +244,27 @@ fn riffle_shuffle<const N_IN: usize, T: Default + Copy> (a: &[T;N_IN], even: boo
         let right = &a[half_point..];
         if even {
             for i in 0..N_IN {
-              if i %2 == 0 {
-                out[i] = left[i / 2];
-              } else {
-                out[i] = right[i / 2];
-              }
+                if i % 2 == 0 {
+                    out[i] = left[i / 2];
+                } else {
+                    out[i] = right[i / 2];
+                }
             }
         } else {
             for i in 0..N_IN {
-                if i %2 == 0 {
-                  out[i] = right[i / 2];
+                if i % 2 == 0 {
+                    out[i] = right[i / 2];
                 } else {
-                  out[i] = left[i / 2];
+                    out[i] = left[i / 2];
                 }
             }
         }
     }
-    out 
+    out
 }
 #[derive(Clone)]
 pub struct LFSR16 {
-    state: u16
+    state: u16,
 }
 
 impl LFSR16 {
@@ -275,16 +273,22 @@ impl LFSR16 {
     }
 
     fn sample(&mut self) -> u16 {
-        let old  = self.state;
-        let new_bit = ((self.state >> 15) & 1) ^ ((self.state >> 13) & 1) ^ ((self.state >> 12) & 1) ^ ((self.state >> 10) & 1) ;
+        let old = self.state;
+        let new_bit = ((self.state >> 15) & 1)
+            ^ ((self.state >> 13) & 1)
+            ^ ((self.state >> 12) & 1)
+            ^ ((self.state >> 10) & 1);
         self.state = (self.state << 1) | new_bit;
-        old 
+        old
     }
 
-    // riffle_array 
-    // uses the state of the first bit riffle the array 
+    // riffle_array
+    // uses the state of the first bit riffle the array
     // and 5th bit to either rotate or not
-    pub fn riffle_array<const N_IN: usize, T: Default + Copy> (&mut self,a: &[T;N_IN]) -> [T; N_IN] {
+    pub fn riffle_array<const N_IN: usize, T: Default + Copy>(
+        &mut self,
+        a: &[T; N_IN],
+    ) -> [T; N_IN] {
         let state = self.sample();
 
         let mut out = riffle_shuffle(a, (state & 1) == 1);
@@ -292,11 +296,11 @@ impl LFSR16 {
         out
     }
 
-    pub fn permute_4<T: Default + Copy> (&mut self,a: &[T;4]) -> [T; 4] {
+    pub fn permute_4<T: Default + Copy>(&mut self, a: &[T; 4]) -> [T; 4] {
         let mut control = vec![];
         for _i in 0..5 {
             let state = self.sample();
-            control.push(((state ) & 1) == 1);
+            control.push(((state) & 1) == 1);
         }
 
         walksman_permutation_4(a, &control)
@@ -330,7 +334,10 @@ impl Iterator for LFSR128 {
 }
 
 impl LFSR128 {
-    pub fn sample_excluding<const N_IN:usize>(&mut self, exclusion_values: &Vec<usize>) -> usize {
+    pub fn sample_excluding<const N_PROJ_WIRES: usize>(
+        &mut self,
+        exclusion_values: &Vec<usize>,
+    ) -> usize {
         loop {
             let new = self.next().unwrap() as usize % N_PROJ_WIRES;
             if !exclusion_values.contains(&new) {
@@ -374,7 +381,7 @@ impl SeedableRng for LFSR128 {
     }
 }
 
-#[derive(Debug,Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct WireEntries {
     position: u8,
     present: bool,
@@ -390,7 +397,7 @@ impl Default for WireEntries {
 }
 
 #[derive(Clone)]
-pub struct LFSRShuffle{
+pub struct LFSRShuffle {
     control_matrix: [[WireEntries; N_IN]; 2],
     targets: [WireEntries; N_IN],
     permutor: LFSR16,
@@ -399,7 +406,7 @@ pub struct LFSRShuffle{
 }
 
 impl LFSRShuffle {
-    pub fn new<R: RngCore> (active_wires: [[bool; N_PROJ_WIRES]; 2], rng: &mut R) -> Self {
+    pub fn new<R: RngCore>(active_wires: [[bool; N_PROJ_WIRES]; 2], rng: &mut R) -> Self {
         // extracting the actual target and control wires
         let mut true_active_target_wires = active_wires[0]
             .into_iter()
@@ -408,36 +415,60 @@ impl LFSRShuffle {
             .map(|(i, _)| i)
             .collect::<Vec<usize>>();
 
-        let mut  true_active_control_wires = active_wires[1]
+        let mut true_active_control_wires = active_wires[1]
             .into_iter()
             .enumerate()
             .filter(|(_, x)| *x)
             .map(|(i, _)| i)
             .collect::<Vec<usize>>();
 
-        assert!(true_active_control_wires.len() <= (2*N_IN), "The control wires have to be lesser than and equal 2 * N_IN");
-        assert!(true_active_target_wires.len() <= (N_IN), "The control wires have to be lesser and equal than N_IN");
+        assert!(
+            true_active_control_wires.len() <= (2 * N_IN),
+            "The control wires have to be lesser than and equal 2 * N_IN"
+        );
+        assert!(
+            true_active_target_wires.len() <= (N_IN),
+            "The control wires have to be lesser and equal than N_IN"
+        );
 
         // shuffling the targets and controls
         true_active_control_wires.shuffle(rng);
         true_active_target_wires.shuffle(rng);
 
-        let mut control_matrix: [[WireEntries; 4]; 2] = [[WireEntries::default();N_IN];2];
-        let mut targets: [WireEntries; N_IN] = [WireEntries::default();N_IN];
-        
+        let mut control_matrix: [[WireEntries; 4]; 2] = [[WireEntries::default(); N_IN]; 2];
+        let mut targets: [WireEntries; N_IN] = [WireEntries::default(); N_IN];
+
         // populating the matrix and the target rows
         for i in 0..N_IN {
             control_matrix[0][i] = match true_active_control_wires.get(i) {
-                Some(v) => WireEntries{position: (*v as u8), present:true},
-                None => WireEntries{position:0, present:false}
+                Some(v) => WireEntries {
+                    position: (*v as u8),
+                    present: true,
+                },
+                None => WireEntries {
+                    position: 0,
+                    present: false,
+                },
             };
             control_matrix[1][i] = match true_active_control_wires.get(N_IN + i) {
-                Some(v) => WireEntries{position: (*v as u8), present:true},
-                None => WireEntries{position:0, present:false}
+                Some(v) => WireEntries {
+                    position: (*v as u8),
+                    present: true,
+                },
+                None => WireEntries {
+                    position: 0,
+                    present: false,
+                },
             };
             targets[i] = match true_active_target_wires.get(i) {
-                Some(v) => WireEntries{position: (*v as u8), present:true},
-                None => WireEntries{position:0, present:false}
+                Some(v) => WireEntries {
+                    position: (*v as u8),
+                    present: true,
+                },
+                None => WireEntries {
+                    position: 0,
+                    present: false,
+                },
             };
         }
 
@@ -470,6 +501,54 @@ impl LFSRShuffle {
         false
     }
 
+    // Places the control wires and the targets of a particular 
+    // gate into a gate object. The values are taken from
+    // the control matrix and target rows and placed.
+    fn place_gate_wires(&mut self, index: usize) -> Gate {
+        let mut gate = Gate {
+            wires: [0; 3],
+            control_func: 0,
+        };
+        let mut exclusion_store = vec![];
+
+        // placing the targets in position 0
+        gate.wires[0] = match self.targets[index].present {
+            true => {
+                exclusion_store.push(self.targets[index].position as usize);
+                self.targets[index].position as u32
+            }
+            false => {
+                let val = self.lfsr.sample_excluding::<N_PROJ_WIRES>(&exclusion_store);
+                exclusion_store.push(val as usize);
+                val as u32
+            }
+        };
+
+        // placing the control in position 1 & 2
+        gate.wires[1] = match self.control_matrix[0][index].present {
+            true => {
+                exclusion_store.push(self.control_matrix[0][index].position as usize);
+                self.control_matrix[0][index].position as u32
+            }
+            false => {
+                let val = self.lfsr.sample_excluding::<N_PROJ_WIRES>(&exclusion_store);
+                exclusion_store.push(val as usize);
+                val as u32
+            }
+        };
+        gate.wires[2] = match self.control_matrix[1][index].present {
+            true => self.control_matrix[1][index].position as u32,
+            false => {
+                let val = self.lfsr.sample_excluding::<N_PROJ_WIRES>(&exclusion_store);
+                val as u32
+            }
+        };
+        gate
+    }
+}
+
+/// Here all the implementations of the shuffle algorithm
+impl LFSRShuffle {
     fn shuffle(&mut self) {
         // getting the rotation indexes
         let rotation_count_1 = (self.lfsr.next().unwrap() as usize) % N_IN;
@@ -478,115 +557,108 @@ impl LFSRShuffle {
         // let max_rotations = max(max(rotation_count_1, column_swap_count), max(rotation_count_2, target_count));
 
         for i in 0..N_IN {
-            if i < rotation_count_1{
+            if i < rotation_count_1 {
                 self.control_matrix[0].rotate_left(1);
             }
-            if i < rotation_count_2{
+            if i < rotation_count_2 {
                 self.control_matrix[1].rotate_left(1);
             }
             if i < target_count {
                 self.targets.rotate_left(1);
             }
 
-            let column_swap_index: usize = (self.lfsr.next().unwrap() % (N_IN as u128) ) as usize; 
+            let column_swap_index: usize = (self.lfsr.next().unwrap() % (N_IN as u128)) as usize;
             // if get_tap_128(self.lfsr.state, column_swap_index as u128) == 1 {
             let temp = self.control_matrix[0][column_swap_index];
             self.control_matrix[0][column_swap_index] = self.control_matrix[1][column_swap_index];
             self.control_matrix[1][column_swap_index] = temp;
             // }
         }
-        
     }
 
     fn shuffle_riffle(&mut self) {
         // getting the rotation indexes
         let column_swap_count = (self.lfsr.next().unwrap() as usize) % N_IN;
-        
+
         // targets permuted
         self.targets = self.permutor.riffle_array(&self.targets);
         // control permuted
         self.control_matrix[0] = self.permutor.riffle_array(&self.control_matrix[0]);
         self.control_matrix[1] = self.permutor.riffle_array(&self.control_matrix[1]);
 
-        for _ in 0..column_swap_count{
-            let column_swap_index: usize = (self.lfsr.next().unwrap() % (N_IN as u128) ) as usize; 
+        for _ in 0..column_swap_count {
+            let column_swap_index: usize = (self.lfsr.next().unwrap() % (N_IN as u128)) as usize;
             // if get_tap_128(self.lfsr.state, column_swap_index as u128) == 1 {
             let temp = self.control_matrix[0][column_swap_index];
             self.control_matrix[0][column_swap_index] = self.control_matrix[1][column_swap_index];
             self.control_matrix[1][column_swap_index] = temp;
             // }
         }
-        
     }
 
     fn shuffle_permute(&mut self) {
         // getting the rotation indexes
         let state = self.rng.next_u32() as usize;
-        
+
         // targets permuted
         self.targets = self.permutor.permute_4(&self.targets);
         // control permuted
         // self.control_matrix[0] = self.permutor.permute_4(&self.control_matrix[0]);
         // self.control_matrix[1] = self.permutor.permute_4(&self.control_matrix[1]);
 
+        let mut columns = [WireEntries::default(); 2 * N_IN];
 
-        let mut columns = [WireEntries::default(); 2*N_IN];
-
-        for i in 0..(2*N_IN) {
+        for i in 0..(2 * N_IN) {
             if i < N_IN {
-                columns[i] =  self.control_matrix[0][i];
+                columns[i] = self.control_matrix[0][i];
             } else {
                 // println!("The index is {} -> {}/ {}", i, N_IN - i, i - N_IN);
-                columns[i] =  self.control_matrix[1][i - N_IN];
+                columns[i] = self.control_matrix[1][i - N_IN];
             }
         }
 
         let mut control = vec![];
         for index in 0..17 {
-            control.push((( state >> index) & 1) == 1);
+            control.push(((state >> index) & 1) == 1);
         }
         columns = self.permutor.riffle_array(&columns);
         columns = walksman_permutation_8(&columns, control);
 
-        for i in 0..(2*N_IN) {
+        for i in 0..(2 * N_IN) {
             if i < N_IN {
                 self.control_matrix[0][i] = columns[i];
             } else {
                 self.control_matrix[1][i - N_IN] = columns[i];
             }
         }
-        
     }
 
     fn rng_shuffle(&mut self) {
-        
         // targets permuted
         self.targets.shuffle(&mut self.rng);
         // control permuted
         // self.control_matrix[0].shuffle(&mut self.rng);
         // self.control_matrix[1].shuffle(&mut self.rng);
 
+        let mut columns = [WireEntries::default(); 2 * N_IN];
 
-        let mut columns = [WireEntries::default(); 2*N_IN];
-
-        for i in 0..(2*N_IN) {
+        for i in 0..(2 * N_IN) {
             if i < N_IN {
-                columns[i] =  self.control_matrix[0][i];
+                columns[i] = self.control_matrix[0][i];
             } else {
                 // println!("The index is {} -> {}/ {}", i, N_IN - i, i - N_IN);
-                columns[i] =  self.control_matrix[1][i - N_IN];
+                columns[i] = self.control_matrix[1][i - N_IN];
             }
         }
         columns.shuffle(&mut self.rng);
 
-        for i in 0..(2*N_IN) {
+        for i in 0..(2 * N_IN) {
             if i < N_IN {
                 self.control_matrix[0][i] = columns[i];
             } else {
                 self.control_matrix[1][i - N_IN] = columns[i];
             }
         }
-        
     }
 
     fn shuffle_rng(&mut self) {
@@ -596,10 +668,10 @@ impl LFSRShuffle {
         let target_count = (self.rng.next_u32() as usize) % N_IN;
 
         for i in 0..N_IN {
-            if i < rotation_count_1{
+            if i < rotation_count_1 {
                 self.control_matrix[0] = self.permutor.riffle_array(&self.control_matrix[0]);
             }
-            if i < rotation_count_2{
+            if i < rotation_count_2 {
                 self.control_matrix[1] = self.permutor.riffle_array(&self.control_matrix[1]);
             }
 
@@ -608,12 +680,11 @@ impl LFSRShuffle {
             }
 
             let rand_val = self.rng.next_u32() as usize;
-            let column_swap_index: usize = rand_val % N_IN ;
+            let column_swap_index: usize = rand_val % N_IN;
             let temp = self.control_matrix[0][column_swap_index];
             self.control_matrix[0][column_swap_index] = self.control_matrix[1][column_swap_index];
             self.control_matrix[1][column_swap_index] = temp;
         }
-        
     }
 }
 
@@ -621,14 +692,14 @@ pub trait GateProvider {
     fn get_gates(&mut self, gates: &mut [Gate; N_IN], cf_choice: ControlFnChoice);
 }
 
-impl GateProvider for LFSRShuffle{
+impl GateProvider for LFSRShuffle {
     fn get_gates(&mut self, gates: &mut [Gate; N_IN], cf_choice: ControlFnChoice) {
         loop {
             // self.shuffle();
             // self.shuffle_riffle();
             // self.shuffle_rng();
-            // self.shuffle_permute();
-            self.rng_shuffle();
+            self.shuffle_permute();
+            // self.rng_shuffle();
             if self.collision_check() == false {
                 break;
             }
@@ -636,46 +707,7 @@ impl GateProvider for LFSRShuffle{
 
         for i in 0..N_IN {
             // assigning the wires
-            // will assign a wire if there are no active wires
-            let mut exclusion_store = vec![];
-            if self.control_matrix[0][i].present {
-                exclusion_store.push(self.control_matrix[0][i].position as usize)
-            }
-            if self.control_matrix[1][i].present {
-                exclusion_store.push(self.control_matrix[0][i].position as usize)
-            }
-
-            if self.targets[i].present {
-                exclusion_store.push(self.control_matrix[0][i].position as usize)
-            }
-
-            gates[i].wires[0] = match self.control_matrix[0][i].present {
-                true => self.control_matrix[0][i].position as u32,
-                false => {
-                    let val = self.lfsr.sample_excluding::<N_IN>(&exclusion_store);
-                    exclusion_store.push(val as usize);
-                    val as u32
-                },
-            };
-
-            gates[i].wires[1] = match self.control_matrix[1][i].present {
-                true => self.control_matrix[1][i].position as u32,
-                false => {
-                    let val = self.lfsr.sample_excluding::<N_IN>(&exclusion_store);
-                    exclusion_store.push(val as usize);
-                    val as u32
-                },
-            };
-
-            gates[i].wires[2] = match self.targets[i].present {
-                true => self.targets[i].position as u32,
-                false => {
-                    let val = self.lfsr.sample_excluding::<N_IN>(&exclusion_store);
-                    exclusion_store.push(val as usize);
-                    val as u32
-                },
-            };
-            assert!(exclusion_store.len() <= 3, "There should at most 3 values" );
+            gates[i] = self.place_gate_wires(i);
             // assigning gates
             gates[i].control_func = cf_choice.random_cf(&mut self.lfsr);
         }
@@ -696,9 +728,8 @@ impl RngCore for LFSRShuffle {
     }
 }
 
-
 mod tests {
-    use std::collections::{HashSet, HashMap};
+    use std::collections::{HashMap, HashSet};
 
     use rand::Rng;
     use rand_chacha::ChaCha8Rng;
@@ -707,27 +738,38 @@ mod tests {
 
     #[test]
     fn test_shuffle() {
-       let mut active_wires = [[false;N_PROJ_WIRES];2];
-       let mut rng  = ChaCha8Rng::from_os_rng();
-       for i in 0..6{
-        active_wires[i % 2][i] = true;
-       }
-       println!("The active wires are {:?}",active_wires);
-       let mut shuff = LFSRShuffle::new(active_wires, &mut rng);
+        let mut active_wires = [[false; N_PROJ_WIRES]; 2];
+        let mut rng = ChaCha8Rng::from_os_rng();
+        for i in 0..6 {
+            active_wires[i % 2][i] = true;
+        }
+        println!("The active wires are {:?}", active_wires);
+        let mut shuff = LFSRShuffle::new(active_wires, &mut rng);
 
-       println!("The initial state matrix :{:?}, targets: {:?}", shuff.control_matrix, shuff.targets);
-       shuff.shuffle();
-       println!("The shuffled state matrix :{:?}, targets: {:?}", shuff.control_matrix, shuff.targets);
-       shuff.shuffle();
-       println!("The shuffled state matrix :{:?}, targets: {:?}", shuff.control_matrix, shuff.targets);
-       shuff.shuffle();
-       println!("The shuffled state matrix :{:?}, targets: {:?}", shuff.control_matrix, shuff.targets);
-
+        println!(
+            "The initial state matrix :{:?}, targets: {:?}",
+            shuff.control_matrix, shuff.targets
+        );
+        shuff.shuffle();
+        println!(
+            "The shuffled state matrix :{:?}, targets: {:?}",
+            shuff.control_matrix, shuff.targets
+        );
+        shuff.shuffle();
+        println!(
+            "The shuffled state matrix :{:?}, targets: {:?}",
+            shuff.control_matrix, shuff.targets
+        );
+        shuff.shuffle();
+        println!(
+            "The shuffled state matrix :{:?}, targets: {:?}",
+            shuff.control_matrix, shuff.targets
+        );
     }
 
     #[test]
-    fn test_riffle(){
-        let a:[usize; 4] = [1, 2, 3, 4];
+    fn test_riffle() {
+        let a: [usize; 4] = [1, 2, 3, 4];
         let b = riffle_shuffle(&a, false);
         println!("The actual values are {:?} -> {:?}", a, b);
         assert!(b == [3, 1, 4, 2], "There should be 24 values");
@@ -764,7 +806,7 @@ mod tests {
             } else {
                 map.insert(b.clone(), 0);
             }
-            
+
             // println!("The values after {:?} state = {}", b, even);
         }
 
@@ -773,8 +815,8 @@ mod tests {
     }
 
     #[test]
-    fn test_permute_4(){
-        let a:[usize; 4] = [1, 2, 3, 4];
+    fn test_permute_4() {
+        let a: [usize; 4] = [1, 2, 3, 4];
         let b = walksman_permutation_4(&a, &vec![true, false, false, false, false]);
         println!("The actual values are {:?} -> {:?}", a, b);
         assert!(b == [2, 1, 3, 4]);
@@ -807,7 +849,7 @@ mod tests {
             } else {
                 map.insert(b.clone(), 0);
             }
-            
+
             // println!("The values after {:?} state = {}", b, even);
         }
 
@@ -819,13 +861,22 @@ mod tests {
         map.insert(b.clone(), 0);
         for _i in 0..240000 {
             // println!("The values before {:?}", b);
-            b = walksman_permutation_4(&b, &vec![(rng.next_u32() %2 == 1), (rng.next_u32() %2 == 1), (rng.next_u32() %2 == 1), (rng.next_u32() %2 == 1), (rng.next_u32() %2 == 1)]);
+            b = walksman_permutation_4(
+                &b,
+                &vec![
+                    (rng.next_u32() % 2 == 1),
+                    (rng.next_u32() % 2 == 1),
+                    (rng.next_u32() % 2 == 1),
+                    (rng.next_u32() % 2 == 1),
+                    (rng.next_u32() % 2 == 1),
+                ],
+            );
             if map.contains_key(&b) {
                 map.insert(b.clone(), map.get(&b).unwrap() + 1);
             } else {
                 map.insert(b.clone(), 0);
             }
-            
+
             // println!("The values after {:?} state = {}", b, even);
         }
 
@@ -837,25 +888,39 @@ mod tests {
         map.insert(b.clone(), 0);
         for _i in 0..240000 {
             // println!("The values before {:?}", b);
-            b = permutation_net_4(&b, vec![(rng.next_u32() %2 == 1), (rng.next_u32() %2 == 1), (rng.next_u32() %2 == 1), (rng.next_u32() %2 == 1), (rng.next_u32() %2 == 1),]);
+            b = permutation_net_4(
+                &b,
+                vec![
+                    (rng.next_u32() % 2 == 1),
+                    (rng.next_u32() % 2 == 1),
+                    (rng.next_u32() % 2 == 1),
+                    (rng.next_u32() % 2 == 1),
+                    (rng.next_u32() % 2 == 1),
+                ],
+            );
             if map.contains_key(&b) {
                 map.insert(b.clone(), map.get(&b).unwrap() + 1);
             } else {
                 map.insert(b.clone(), 0);
             }
-            
+
             // println!("The values after {:?} state = {}", b, even);
         }
 
         println!("The perm net map values are {:?}", map);
         assert!(map.len() == 24, "There should be 24 values");
-
     }
 
     #[test]
-    fn test_permute_8(){
-        let a:[usize; 8] = [1, 2, 3, 4, 5, 6, 7, 8];
-        let b = walksman_permutation_8(&a, vec![true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]);
+    fn test_permute_8() {
+        let a: [usize; 8] = [1, 2, 3, 4, 5, 6, 7, 8];
+        let b = walksman_permutation_8(
+            &a,
+            vec![
+                true, false, false, false, false, false, false, false, false, false, false, false,
+                false, false, false, false, false,
+            ],
+        );
         println!("The actual values are {:?} -> {:?}", a, b);
         assert!(b == [2, 1, 3, 4, 5, 6, 7, 8]);
 
@@ -866,11 +931,11 @@ mod tests {
         let mut map = HashMap::new();
         let mut b = a.clone();
         map.insert(b.clone(), 0);
-        for i in 0..(1<<18) {
+        for i in 0..(1 << 18) {
             // println!("The values before {:?}", b);
             let mut control = vec![];
             for index in 0..17 {
-                control.push((( i >> index) & 1) == 1);
+                control.push(((i >> index) & 1) == 1);
             }
             b = walksman_permutation_8(&b, control);
             if map.contains_key(&b) {
@@ -878,18 +943,17 @@ mod tests {
             } else {
                 map.insert(b.clone(), 0);
             }
-            
+
             // println!("The values after {:?} state = {}", b, even);
         }
 
         println!("The walksman 8 map values are {:?}", map.len());
         assert!(map.len() == 40320, "There should be 40320 values");
-
     }
 
     #[test]
-    fn test_riffle_5(){
-        let a:[usize; 5] = [1, 2, 3, 4, 5];
+    fn test_riffle_5() {
+        let a: [usize; 5] = [1, 2, 3, 4, 5];
 
         let mut rng = ChaCha8Rng::from_os_rng();
 
