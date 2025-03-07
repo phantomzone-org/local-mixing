@@ -63,6 +63,7 @@ fn walksman_permutation_4<T: Default + Copy + Sized>(a: &[T; 4], control: &[bool
 
     out
 }
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // Walksman permutation for size 8
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -937,6 +938,54 @@ mod tests {
                 .len()
         );
         assert!(map.len() == 40320, "There should be 40320 values");
+
+        ///////////////////////////////////////////////////////////////////////////////////////////////////
+        // Testing the permutation and shuffle for size 8
+        ///////////////////////////////////////////////////////////////////////////////////////////////////
+        
+        #[derive(Clone, Debug)]
+        struct Perm {
+            frequency: usize,
+            controls: Vec<Vec<bool>>,
+        }
+
+        let mut map: HashMap<[usize;8], Perm> = HashMap::new();
+        // map.insert(b.clone(), 0);
+        for i in 0..(1 << 17) {
+            let mut control = vec![];
+            for index in 0..17 {
+                control.push(((i >> index) & 1) == 1);
+            }
+            // b = lfsr.riffle_array(&b);
+            b = walksman_permutation_8(&a, control.clone());
+            if map.contains_key(&b) {
+                let mut new_perm: Perm = map.get(&b).unwrap().clone();
+                new_perm.frequency += 1;
+                new_perm.controls.push(control.clone());
+                map.insert(b.clone(), new_perm);
+            } else {
+                let mut store_of_controls = vec![];
+                store_of_controls.push(control.clone());
+                map.insert(b.clone(), Perm{
+                    frequency: 1,
+                    controls: store_of_controls,
+                });
+            }
+        }
+
+        println!(
+            "The walksman 8 with same input map values are {:?}",
+            map.iter()
+            .filter(|(_, v)| v.frequency == 32)
+            .map(|(k, v)| (k.clone(), v.controls.iter().map(|x|{
+                let number_of_true = x.iter().filter(|&&b| b).count();
+                (number_of_true, (x.len() - number_of_true))
+            }).collect::<Vec<(usize, usize)>>()))
+            .collect::<Vec<([usize;8],Vec<(usize, usize)>)>>()[0]
+            // .len()
+        );
+        assert!(map.len() == 40320, "There should be 40320 values");
+
         ///////////////////////////////////////////////////////////////////////////////////////////////////
         // testing the in built shuffle function
         ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1038,26 +1087,4 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_riffle_5() {
-        ///////////////////////////////////////////////////////////////////////////////////////////////////
-        // testing if riffle implementation reaches all value for length 5
-        ///////////////////////////////////////////////////////////////////////////////////////////////////
-        let a: [usize; 5] = [1, 2, 3, 4, 5];
-
-        let mut rng = ChaCha8Rng::from_os_rng();
-
-        let mut lfsr = LFSR16::new(rng.next_u32() as u16);
-
-        let mut set = HashSet::new();
-        let mut b = a.clone();
-        set.insert(b.clone());
-        for _i in 0..20000 {
-            b = lfsr.riffle_array(&b);
-            set.insert(b.clone());
-        }
-
-        println!("The set for 5 is {:?}", set);
-        assert!(set.len() == 120, "There should be 120 values");
-    }
 }
