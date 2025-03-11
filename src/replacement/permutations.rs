@@ -310,6 +310,64 @@ impl LFSR16 {
     }
 }
 
+pub struct LFSR10 {
+    state: usize
+}
+
+impl LFSR10 {
+    pub fn new(seed: usize) -> Self {
+        Self { state: seed & ((1<< 10) - 1) }
+    }
+
+    #[inline]
+    fn sample(&mut self) -> usize {
+        let old = self.state;
+        let new_bit = ((self.state >> 9) & 1)
+            ^ ((self.state >> 8) & 1)
+            ^ ((self.state >> 6) & 1)
+            ^ ((self.state >> 5) & 1);
+        self.state = (self.state << 1) | new_bit;
+        self.state = self.state & ((1<< 10) - 1);
+        old
+    }
+
+    pub fn sample_mod_11(&mut self) -> usize {
+        self.sample() % 11
+    }
+}
+
+#[inline]
+fn mod_11(value: usize) -> usize {
+    let mut bits: [usize; 10] = [0; 10];
+    let mut val: isize = 0;
+    for i in 0..10 {
+        bits[i] = (value >> i) & 1;
+    }
+    const MOD_VALUES: [isize; 10] = [1, 2, 4, -3, 5, -1, -2, -4, 3, -5];
+
+    for (i, &b) in bits.iter().enumerate() {
+        val += MOD_VALUES[i] * b as isize;
+    }
+
+    println!("The val after adding is {}", val);
+
+    if val <  0 {
+        if val < -11 {
+            val = 22 + val;
+        } else {
+            val = 11 + val;
+        }
+        println!("The val subtraction is {}", val);
+    } else {
+        if val >= 11 {
+            val = val - 11;
+        }
+    }
+
+
+    val as usize
+}
+
 
 
 mod tests {
@@ -324,6 +382,47 @@ mod tests {
 
 
     use super::*;
+
+    #[test]
+    fn test_mod_11() {
+        ///////////////////////////////////////////////////////////////////////////////////////////////////
+        // base test
+        ///////////////////////////////////////////////////////////////////////////////////////////////////
+        let val = mod_11(1023);
+        assert!(val == 0, "1023 % 11 == 0");
+        ///////////////////////////////////////////////////////////////////////////////////////////////////
+        // all values till 1023 test
+        ///////////////////////////////////////////////////////////////////////////////////////////////////
+        for i in 0..1024 {
+            let val = mod_11(i);
+            assert!(val == i % 11, "The mod for {} is worng expected {} / got {}", i, i % 11, val   );
+        }
+    }
+
+    #[test]
+    fn test_lfsr10_mod_11() {
+        let mut lfsr = LFSR10::new(1023);
+        ///////////////////////////////////////////////////////////////////////////////////////////////////
+        // all values till 1023 test
+        ///////////////////////////////////////////////////////////////////////////////////////////////////
+        let mut occurance = HashMap::new();
+        for i in 0..=10 {
+            occurance.insert(i, 0);
+        }
+        for _ in 1..=1023 {
+           let position = lfsr.sample_mod_11();
+           let value = occurance.get_mut(&position).unwrap();
+            *value += 1;
+        }
+
+        const  TOTAL_FREQUENCY: usize =  1023 / 11;
+
+        println!("List - > {:?}", occurance);
+
+        for (k, v) in occurance {
+            assert!(v == TOTAL_FREQUENCY, "The values should have been {} --> {} but is {}.", k, v, TOTAL_FREQUENCY);
+        }
+    }
 
     #[test]
     fn test_permute_10() {
@@ -400,58 +499,11 @@ mod tests {
         assert!(map.len() == 3628800, "There should be 3628800 values");
         }
 
+
         ///////////////////////////////////////////////////////////////////////////////////////////////////
-        // Testing the permutation and shuffle for size 8
+        // testing the frequncy of occurance of each value in the different positions
+        // for riffle with permutation
         ///////////////////////////////////////////////////////////////////////////////////////////////////
-
-        // let mut map: HashMap<[usize;10], Perm> = HashMap::new();
-        // // map.insert(b.clone(), 0);
-        // b = a.clone();
-        // for _i in 0..(1 << 31) {
-        //     let mut control = vec![];
-        //     let seed = rng.next_u64();
-        //     for index in 0..27 {
-        //         control.push((( seed as usize >> index) & 1) == 1);
-        //     }
-        //     b = lfsr.riffle_array(&b);
-        //     b = walksman_permutation_10(&b, &control);
-        //     // b.rotate_right(rng)
-        //     if map.contains_key(&b) {
-        //         let mut new_perm: Perm = map.get(&b).unwrap().clone();
-        //         new_perm.frequency += 1;
-        //         new_perm.controls.push(control.clone());
-        //         map.insert(b.clone(), new_perm);
-        //     } else {
-        //         let mut store_of_controls = vec![];
-        //         store_of_controls.push(control.clone());
-        //         map.insert(b.clone(), Perm{
-        //             frequency: 1,
-        //             controls: store_of_controls,
-        //         });
-        //     }
-        // }
-
-        // // println!(
-        // //     "The walksman 5 with same input map values are {:?}",
-        // //     map
-        // //     .iter()
-        // //     .filter(|(_, v)| v.frequency > 20)
-        // //     .map(|(k,v)| (k.clone(), v.clone()))
-        // //     // .map(|(k, v)| (k.clone(), v.controls.iter().map(|x|{
-        // //     //     let number_of_true = x.iter().filter(|&&b| b).count();
-        // //     //     (number_of_true, (x.len() - number_of_true))
-        // //     // }).collect::<Vec<(usize, usize)>>()))
-        // //     // .collect::<Vec<([usize;8],Vec<(usize, usize)>)>>()
-        // //     .collect::<HashMap<[usize;5], Perm>>()
-        // //     .len()
-        // // );
-        // assert!(map.len() == 3628800, "There should be 3628800 values");
-
-
-        // ///////////////////////////////////////////////////////////////////////////////////////////////////
-        // // testing the frequncy of occurance of each value in the different positions
-        // // for riffle with permutation
-        // ///////////////////////////////////////////////////////////////////////////////////////////////////
         if DUMP {
         
         println!("The walksman 10 with riffle testing uniformity.");
@@ -465,16 +517,16 @@ mod tests {
             // print()
             let mut control = vec![];
             let seed = rng.next_u64();
-            for index in 0..27 {
+            for index in 0..26 {
                 control.push(((seed as usize >> index) & 1) == 1);
             }
             b = lfsr.riffle_array(&b);
             b = walksman_permutation_10(&b, &control);
             for index in 1..=10 {
                 let position = b.iter().position(|&x| x == index).unwrap();
-                let mut values = *occurance.get(&index).unwrap();
+                let values = occurance.get_mut(&index).unwrap();
                 values[position] += 1;
-                occurance.insert(index, values);
+                // occurance.insert(index, values);
             }
             if i == (1<<29) {
                 println!("Reached 2 ** 29");

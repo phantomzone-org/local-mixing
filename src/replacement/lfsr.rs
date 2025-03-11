@@ -12,10 +12,12 @@ use super::{permutations::{LFSR16,walksman_permutation_8}, strategy::ControlFnCh
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // helper functions for lfsr 128
 ///////////////////////////////////////////////////////////////////////////////////////////////////
+#[inline]
 fn get_tap_128(state: u128, n: u128) -> u128 {
     (state & (1 << n)) >> n
 }
 
+#[inline]
 fn get_128_from_u8_array(data: [u8; 16]) -> u128 {
     let mut value: u128 = 0;
     for i in 0..16 {
@@ -24,6 +26,7 @@ fn get_128_from_u8_array(data: [u8; 16]) -> u128 {
     value
 }
 
+#[inline]
 fn get_u8_array_from_u128(value: u128) -> [u8; 16] {
     let mut data = [0; 16];
     for i in 0..16 {
