@@ -32,7 +32,7 @@ Executes the local mixing job based on a configuration file.
 cargo run --release local-mixing <config-dir>
 ```
 
-- `<config_dir>`: Path to the job directory. Should already include `config.json` and `input.bin`.
+- `<config_dir>`: Path to the job directory. Should already include `config.json` and `input.json`.
 
 An example config:
 ```json

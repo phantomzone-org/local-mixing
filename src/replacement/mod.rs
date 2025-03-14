@@ -2,7 +2,7 @@ pub mod strategy;
 pub mod test;
 
 use crate::circuit::{
-    analysis::{active_wires, projection_circuit, truth_table},
+    analysis::{compute_active_wires, projection_circuit, truth_table},
     Gate,
 };
 use rand::{Rng, RngCore, SeedableRng};
@@ -54,9 +54,46 @@ pub fn find_replacement_circuit<
     cf_choice: ControlFnChoice,
     rng: &mut R,
 ) -> Option<([Gate; N_IN], usize)> {
-    let (proj_circuit, mut proj_map) = projection_circuit::<N_OUT, N_PROJ_WIRES>(&circuit);
-    let eval_table = truth_table::<N_OUT, N_PROJ_INPUTS>(&proj_circuit);
-    let active_wires = active_wires(&eval_table);
+    let (proj_circuit, proj_map) = projection_circuit(&circuit.to_vec());
+    let tt = truth_table(proj_map.len(), &proj_circuit);
+    let active_wires_vecs = compute_active_wires(proj_map.len(), &tt);
+
+    let mut num_active_wires = 0;
+    let mut active_wires = [[false; N_PROJ_WIRES]; 2];
+    active_wires_vecs.0.iter().for_each(|&w| {
+        num_active_wires += 1;
+        active_wires[0][w] = true;
+    });
+    active_wires_vecs.1.iter().for_each(|&w| {
+        if !active_wires[1][w] && !active_wires[0][w] {
+            num_active_wires += 1;
+        }
+        active_wires[1][w] = true;
+    });
+
+    if num_active_wires > N_PROJ_WIRES {
+        println!(
+            "num_active_wires > N_PROJ_WIRES: {} > {}",
+            num_active_wires, N_PROJ_WIRES
+        );
+        return None;
+    }
+
+    let eval_table = truth_table(N_PROJ_WIRES, &proj_circuit);
+
+    let mut input_distinct = vec![];
+    proj_circuit.iter().for_each(|g| {
+        g.wires.iter().for_each(|w| {
+            if !input_distinct.contains(w) {
+                input_distinct.push(*w);
+            }
+        })
+    });
+    log::info!(target: "trace", "input_distinct = {:?}", input_distinct);
+    let input_active: Vec<usize> = (0..N_PROJ_WIRES)
+        .filter(|&w| active_wires[0][w] || active_wires[1][w])
+        .collect();
+    log::info!(target: "trace", "input_active = {:?}", input_active);
 
     let max_iterations = num_attempts / current_num_threads();
     let found = AtomicBool::new(false);
@@ -122,24 +159,26 @@ pub fn find_replacement_circuit<
         });
 
     if let Some((mut replacement_circuit, iter)) = res {
-        // replacement_circuit is accepted, map back to original space
+        let mut proj_map_new_wires = vec![];
         replacement_circuit.iter_mut().for_each(|g| {
-            g.wires
-                .iter_mut()
-                .for_each(|w| match proj_map[*w as usize] {
-                    Some(orig_w) => {
-                        *w = orig_w;
-                    }
-                    None => loop {
+            g.wires.iter_mut().for_each(|w| {
+                let w_usize = *w as usize;
+                if w_usize < proj_map.len() {
+                    *w = proj_map[w_usize] as u32;
+                } else if let Some((_, orig_w)) = proj_map_new_wires.iter().find(|(ww, _)| w == ww)
+                {
+                    *w = *orig_w;
+                } else {
+                    loop {
                         let orig_w = rng.random_range(0..num_wires);
-                        let some_orig_w = Some(orig_w as u32);
-                        if !proj_map.contains(&some_orig_w) {
-                            proj_map[*w as usize] = some_orig_w;
-                            *w = orig_w as u32;
+                        if !proj_map.contains(&orig_w) {
+                            proj_map_new_wires.push((w.clone(), orig_w));
+                            *w = orig_w;
                             break;
                         }
-                    },
-                })
+                    }
+                }
+            });
         });
 
         return Some((replacement_circuit, iter));

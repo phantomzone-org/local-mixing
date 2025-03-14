@@ -2,7 +2,7 @@ use crate::circuit::cf::Base2GateControlFunc;
 use rand::Rng;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
-use std::{error::Error, path::Path};
+use std::path::Path;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Gate {
@@ -64,14 +64,8 @@ impl Circuit {
         Self { num_wires, gates }
     }
 
-    pub fn load_from_binary(path: impl AsRef<Path>) -> Result<Self, Box<dyn Error>> {
-        let data: CircuitData = bincode::deserialize(&std::fs::read(path)?)?;
-        Ok(Self::from(data))
-    }
-
-    pub fn save_as_binary(&self, path: impl AsRef<Path>) {
-        let data = CircuitData::from(self.clone());
-        std::fs::write(path, bincode::serialize(&data).unwrap()).unwrap();
+    pub fn subcircuit<const SIZE: usize>(&self, index: usize) -> [Gate; SIZE] {
+        std::array::from_fn(|i| self.gates[index + i])
     }
 
     pub fn load_from_json(path: impl AsRef<Path>) -> Self {

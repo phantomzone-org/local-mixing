@@ -3,6 +3,7 @@ use local_mixing::{
         cf::Base2GateControlFunc,
         circuit::{check_equiv_probabilistic, Circuit},
     },
+    compression::run_compression_strategy_one,
     local_mixing::LocalMixingJob,
     replacement::{
         strategy::{ControlFnChoice, ReplacementStrategy},
@@ -37,7 +38,7 @@ fn run() {
                 .expect("Invalid number of gates");
 
             Circuit::random(num_wires, num_gates, &mut ChaCha8Rng::from_os_rng())
-                .save_as_binary(&save_path);
+                .save_as_json(&save_path);
             println!("Random circuit generated and saved to {}", save_path);
         }
         "local-mixing" => {
@@ -53,8 +54,7 @@ fn run() {
         "json" => {
             let circuit_path = args.next().expect("Missing circuit path");
 
-            let circuit =
-                Circuit::load_from_binary(&circuit_path).expect("Failed to load circuit binary");
+            let circuit = Circuit::load_from_json(&circuit_path);
 
             if let Some(json_path) = args.next() {
                 circuit.save_as_json(&json_path);
@@ -97,10 +97,8 @@ fn run() {
                 .expect("Missing number of sample inputs")
                 .parse()
                 .expect("Invalid input");
-            let circuit_one =
-                Circuit::load_from_binary(circuit_one_path).expect("Failed to load circuit 1");
-            let circuit_two =
-                Circuit::load_from_binary(circuit_two_path).expect("Failed to load circuit 2");
+            let circuit_one = Circuit::load_from_json(circuit_one_path);
+            let circuit_two = Circuit::load_from_json(circuit_two_path);
             let mut rng = ChaCha8Rng::from_os_rng();
 
             let res = check_equiv_probabilistic(&circuit_one, &circuit_two, num_iter, &mut rng);
@@ -111,7 +109,7 @@ fn run() {
         }
         "stats" => {
             let circuit_path = args.next().expect("Missing circuit path");
-            let circuit = Circuit::load_from_binary(circuit_path).expect("Failed to load circuit");
+            let circuit = Circuit::load_from_json(circuit_path);
 
             let mut cf_freq = [0u32; Base2GateControlFunc::COUNT as usize];
             for g in &circuit.gates {
@@ -124,6 +122,12 @@ fn run() {
                 let proportion = count as f32 / total_gates;
                 println!("{}: {:.2}%", i, proportion * 100.0);
             }
+        }
+        "compress" => {
+            let circuit_path = args.next().expect("Missing circuit path");
+            let circuit = Circuit::load_from_json(circuit_path);
+
+            run_compression_strategy_one(&circuit);
         }
         _ => {
             eprintln!("Unknown command: {}", cmd);
