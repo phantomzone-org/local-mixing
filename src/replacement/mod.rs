@@ -333,7 +333,13 @@ mod tests {
                 num_wires: wires,
                 gates: Vec::from(replacement),
             };
-            match check_equiv_probabilistic(&ckt_one, &ckt_two, 1000, &mut rng) {
+            match check_equiv_probabilistic(
+                wires as usize,
+                &ckt_one.gates,
+                &Vec::from(replacement),
+                1000,
+                &mut rng,
+            ) {
                 Ok(()) => continue,
                 _ => {
                     dbg!(ckt_one);

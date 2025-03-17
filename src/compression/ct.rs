@@ -1,6 +1,7 @@
 use crate::circuit::{
     analysis::{optimal_projection_circuit, truth_table_sized},
     cf::Base2GateControlFunc,
+    circuit::check_equiv_probabilistic,
     Gate,
 };
 use std::collections::HashMap;
@@ -42,7 +43,7 @@ impl<const MAX_SIZE: usize, const MAX_WIRES_USED: usize, const TT_SIZE: usize>
 
         let match_circuit = self.ct.get(&truth_table)?;
 
-        let output_circuit = match_circuit
+        let output_circuit: Vec<Gate> = match_circuit
             .iter()
             .map(|g| {
                 let mut wires = [0; 3];
@@ -66,6 +67,30 @@ impl<const MAX_SIZE: usize, const MAX_WIRES_USED: usize, const TT_SIZE: usize>
                 }
             })
             .collect();
+
+        let max_input_wire = circuit
+            .iter()
+            .flat_map(|g| g.wires.iter())
+            .copied()
+            .max()
+            .unwrap_or(0);
+
+        let max_output_wire = output_circuit
+            .iter()
+            .flat_map(|g| g.wires.iter())
+            .copied()
+            .max()
+            .unwrap_or(0);
+
+        let max_wire = max_input_wire.max(max_output_wire) + 1;
+        check_equiv_probabilistic(
+            max_wire as usize,
+            &circuit,
+            &output_circuit,
+            1000,
+            &mut rand::rng(),
+        )
+        .unwrap();
 
         Some(output_circuit)
     }
@@ -259,7 +284,7 @@ mod tests {
 
     use super::{build_compression_table, load_ct_from_file, save_ct_to_file, CompressionTable};
     use crate::{
-        circuit::{analysis::truth_table, circuit::check_equiv_probabilistic, Circuit, Gate},
+        circuit::{analysis::truth_table, circuit::check_equiv_probabilistic, Gate},
         compression::ct::fetch_or_create_compression_table,
     };
 
@@ -340,17 +365,9 @@ mod tests {
         let res = ct.compress_circuit(&circuit);
         assert!(res.is_some());
         let out = res.unwrap();
-        let c1 = Circuit {
-            num_wires: 64,
-            gates: circuit.to_vec(),
-        };
-        let c2 = Circuit {
-            num_wires: 64,
-            gates: out.to_vec(),
-        };
         assert_eq!(
             Ok(()),
-            check_equiv_probabilistic(&c1, &c2, 1000000, &mut ChaCha8Rng::from_os_rng())
+            check_equiv_probabilistic(64, &circuit, &out, 1000000, &mut ChaCha8Rng::from_os_rng())
         );
     }
 }

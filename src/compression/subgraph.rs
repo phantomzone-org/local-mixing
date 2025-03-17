@@ -1,3 +1,5 @@
+use crate::circuit::circuit::check_equiv_probabilistic;
+
 /**
 https://ieeexplore.ieee.org/abstract/document/7811247
 */
@@ -7,12 +9,11 @@ pub fn enumerate_subgraphs(
     gates: &[Gate],
     succ: &Vec<Vec<usize>>,
     pred: &Vec<Vec<usize>>,
-    min_size: usize,
-    max_size: usize,
+    subset_size: usize,
+    slice_size: usize,
     ct: &CompressionTable<4, 4, 16>,
 ) -> Option<(Vec<usize>, Vec<Gate>)> {
     let n = gates.len();
-    let mut subgraphs = vec![];
 
     for i in 0..n {
         let res = df(
@@ -21,9 +22,8 @@ pub fn enumerate_subgraphs(
             &pred,
             &vec![i],
             &mut (i + 1..n).collect(),
-            &mut subgraphs,
-            min_size,
-            max_size,
+            subset_size,
+            slice_size,
             ct,
         );
         if res.is_some() {
@@ -39,22 +39,46 @@ fn df(
     succ: &Vec<Vec<usize>>,
     pred: &Vec<Vec<usize>>,
     x: &Vec<usize>,
-    y: &mut Vec<usize>,
-    subgraphs: &mut Vec<Vec<usize>>,
-    min_size: usize,
-    max_size: usize,
+    y: &Vec<usize>,
+    subset_size: usize,
+    slice_size: usize,
     ct: &CompressionTable<4, 4, 16>,
 ) -> Option<(Vec<usize>, Vec<Gate>)> {
-    if x.len() >= min_size {
-        let res = ct.compress_circuit(&x.iter().map(|&i| gates[i]).collect::<Vec<_>>());
-        if let Some(replacement) = res {
-            return Some((x.to_vec(), replacement));
-        }
-    }
+    if x.len() == subset_size {
+        // return ct
+        //     .compress_circuit(&x.iter().map(|&i| gates[i]).collect::<Vec<_>>())
+        //     .and_then(|replacement| Some((x.to_vec(), replacement)));
 
-    if x.len() > max_size {
+        for index in 0..subset_size - slice_size + 1 {
+            let idx = &x[index..index + slice_size];
+            let subcircuit = idx.iter().map(|&i| gates[i]).collect::<Vec<_>>();
+            if let Some(replacement) = ct.compress_circuit(&subcircuit) {
+                // Found a change, now modify the rest of x and return
+                let mut optimized = x.iter().map(|&i| gates[i]).collect::<Vec<_>>();
+                let replacement_len = replacement.len();
+                optimized.splice(index..index + slice_size, replacement);
+                // let mut new_index = index + replacement_len;
+                // println!("starting while");
+                // while slice_size < optimized.len() && new_index < optimized.len() - slice_size + 1 {
+                //     // dbg!(new_index, optimized.len(), slice_size, optimized.len() - slice_size + 1);
+                //     if let Some(replacement) =
+                //         ct.compress_circuit(&optimized[new_index..new_index + slice_size].to_vec())
+                //     {
+                //         let replacement_len = replacement.len();
+                //         optimized.splice(index..index + slice_size, replacement);
+                //         new_index += replacement_len;
+                //     } else {
+                //         new_index += 1;
+                //     }
+                // }
+                return Some((x.to_vec(), optimized));
+            }
+        }
+
         return None;
     }
+
+    let mut y = y.clone();
 
     // Gates in y and immediate successors of x
     // TODO: add v + 1 to a automatically, so contiguous blocks are also included
@@ -78,9 +102,7 @@ fn df(
 
         y.retain(|&i| i != v);
 
-        let res = df(
-            gates, succ, pred, &new_x, y, subgraphs, min_size, max_size, ct,
-        );
+        let res = df(gates, succ, pred, &new_x, &y, subset_size, slice_size, ct);
         if res.is_some() {
             return res;
         }
@@ -113,9 +135,7 @@ fn df(
 
         y.retain(|&i| i != v);
 
-        let res = df(
-            gates, succ, pred, &new_x, y, subgraphs, min_size, max_size, ct,
-        );
+        let res = df(gates, succ, pred, &new_x, &y, subset_size, slice_size, ct);
         if res.is_some() {
             return res;
         }
@@ -169,7 +189,7 @@ mod test {
         dbg!(&c);
 
         let (succ, pred) = successors_predecessors(&c.gates);
-        let res = super::enumerate_subgraphs(&c.gates, &succ, &pred, 1, 10, &ct);
+        let res = super::enumerate_subgraphs(&c.gates, &succ, &pred, 10, 5, &ct);
         dbg!(res);
     }
 }

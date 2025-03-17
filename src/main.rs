@@ -101,7 +101,7 @@ fn run() {
             let circuit_two = Circuit::load_from_json(circuit_two_path);
             let mut rng = ChaCha8Rng::from_os_rng();
 
-            let res = check_equiv_probabilistic(&circuit_one, &circuit_two, num_iter, &mut rng);
+            let res = check_equiv_probabilistic(circuit_one.num_wires as usize, &circuit_one.gates, &circuit_two.gates, num_iter, &mut rng);
             match res {
                 Ok(()) => println!("func equiv check passes"),
                 Err(e) => println!("func equiv check fails: {}", e),

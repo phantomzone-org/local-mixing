@@ -86,25 +86,38 @@ impl Circuit {
 }
 
 pub fn check_equiv_probabilistic<R: Rng>(
-    ckt_one: &Circuit,
-    ckt_two: &Circuit,
+    num_wires: usize,
+    ckt_one: &Vec<Gate>,
+    ckt_two: &Vec<Gate>,
     num_inputs: usize,
     rng: &mut R,
 ) -> Result<(), String> {
-    if ckt_one.num_wires != ckt_two.num_wires {
-        return Err("Different num wires".to_string());
+    if ckt_one.iter().any(|gate| gate.wires.iter().any(|&wire| wire as usize >= num_wires)) {
+        return Err("Wire labels in ckt_one exceed the number of wires".to_string());
+    }
+    if ckt_two.iter().any(|gate| gate.wires.iter().any(|&wire| wire as usize >= num_wires)) {
+        return Err("Wire labels in ckt_two exceed the number of wires".to_string());
     }
 
     let random_inputs: Vec<Vec<bool>> = (0..num_inputs)
         .map(|_| {
-            (0..ckt_one.num_wires)
+            (0..num_wires)
                 .map(|_| rng.random_bool(0.5))
                 .collect()
         })
         .collect();
 
+    let c1 = Circuit {
+        num_wires: num_wires as u32,
+        gates: ckt_one.clone()
+    };
+    let c2 = Circuit {
+        num_wires: num_wires as u32,
+        gates: ckt_two.clone()
+    };
+
     random_inputs.par_iter().try_for_each(|random_input| {
-        if ckt_one.evaluate(random_input) != ckt_two.evaluate(random_input) {
+        if c1.evaluate(random_input) != c2.evaluate(random_input) {
             return Err("Circuits produce different outputs".to_string());
         }
         Ok(())
@@ -230,7 +243,7 @@ mod tests {
                 },
             ],
         };
-        assert!(check_equiv_probabilistic(&ckt, &equiv_ckt, 1000, &mut rng) == Ok(()));
-        assert!(check_equiv_probabilistic(&ckt, &nequiv_ckt, 1000, &mut rng) != Ok(()));
+        assert!(check_equiv_probabilistic(64, &ckt.gates, &equiv_ckt.gates, 1000, &mut rng) == Ok(()));
+        assert!(check_equiv_probabilistic(64, &ckt.gates, &nequiv_ckt.gates, 1000, &mut rng) != Ok(()));
     }
 }

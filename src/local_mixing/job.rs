@@ -147,8 +147,9 @@ impl LocalMixingJob {
 
                     #[cfg(feature = "correctness")]
                     if check_equiv_probabilistic(
-                        &self.original_circuit,
-                        &self.circuit,
+                        self.original_circuit.num_wires as usize,
+                        &self.original_circuit.gates,
+                        &self.circuit.gates,
                         crate::local_mixing::consts::CORRECTNESS_CHECK_ITER,
                         &mut rng,
                     )
@@ -204,8 +205,9 @@ impl LocalMixingJob {
 
                     #[cfg(feature = "correctness")]
                     if check_equiv_probabilistic(
-                        &self.original_circuit,
-                        &self.circuit,
+                        self.original_circuit.num_wires as usize,
+                        &self.original_circuit.gates,
+                        &self.circuit.gates,
                         crate::local_mixing::consts::CORRECTNESS_CHECK_ITER,
                         &mut rng,
                     )

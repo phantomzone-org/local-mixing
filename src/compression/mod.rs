@@ -1,5 +1,6 @@
 pub mod ct;
 pub mod subgraph;
+pub mod subgraph_new;
 
 use ct::{fetch_or_create_compression_table, CompressionTable};
 use rand::Rng;
@@ -10,6 +11,9 @@ use rayon::{
 use subgraph::{enumerate_subgraphs, successors_predecessors};
 
 use crate::circuit::{circuit::check_equiv_probabilistic, Circuit, Gate};
+use serde_json::json;
+use std::fs::File;
+use std::io::Write;
 
 pub fn run_compression_strategy_one(input: &Circuit) {
     fn split_array_into_approx_chunks<R: Rng>(
@@ -49,20 +53,31 @@ pub fn run_compression_strategy_one(input: &Circuit) {
     let num_threads = current_num_threads();
     let mut chunks = split_array_into_approx_chunks(&input.gates, num_threads, &mut rand::rng());
 
-    chunks.par_iter_mut().for_each(|chunk| {
-        let old_size = chunk.len();
-        StrategyOneRunner::init(chunk.to_vec()).run();
-        let new_size = chunk.len();
-
-        dbg!(old_size, new_size);
-    });
+    let optimized_gates: Vec<Gate> = chunks
+        .par_iter_mut()
+        .map(|chunk| {
+            let mut runner = StrategyOneRunner::init(chunk.to_vec());
+            runner.run();
+            runner.gates
+        })
+        .flatten()
+        .collect();
 
     let output = Circuit {
         num_wires: input.num_wires,
-        gates: chunks.iter().flatten().map(|&g| g).collect(),
+        gates: optimized_gates,
     };
 
-    let equiv_check = check_equiv_probabilistic(&input, &output, 10000, &mut rand::rng()).unwrap();
+    dbg!(output.gates.len());
+
+    let equiv_check = check_equiv_probabilistic(
+        input.num_wires as usize,
+        &input.gates,
+        &output.gates,
+        10000,
+        &mut rand::rng(),
+    )
+    .unwrap();
     dbg!(equiv_check);
 }
 
@@ -89,11 +104,11 @@ impl StrategyOneRunner {
             println!("run() loop");
             shuffle_gates_pairwise(&mut self.gates, 20, &mut rng);
             let mut optimized = self.gates.clone();
-            let chunk_size = 100;
+            let chunk_size = 300;
 
             optimized = optimized
                 .chunks(chunk_size)
-                .map(|chunk| self.optimize_subset(10, 0, chunk))
+                .map(|chunk| self.optimize_subset(10, 10, chunk))
                 .flatten()
                 .collect();
 
@@ -106,23 +121,14 @@ impl StrategyOneRunner {
     fn optimize_subset(
         &mut self,
         subset_size: usize,
-        _max_slice: usize,
+        slice_size: usize,
         gates: &[Gate],
     ) -> Vec<Gate> {
-        println!("optimize_subset()");
         let mut optimized = gates.to_vec();
         loop {
             let (succ, pred) = successors_predecessors(&optimized);
-            let res = enumerate_subgraphs(
-                &optimized,
-                &succ,
-                &pred,
-                subset_size,
-                subset_size,
-                &self.ct,
-            );
-
-            println!("enumerate_subgraphs res: {:?}", res);
+            let res =
+                enumerate_subgraphs(&optimized, &succ, &pred, subset_size, slice_size, &self.ct);
 
             match res {
                 None => {
@@ -133,15 +139,42 @@ impl StrategyOneRunner {
                     let replacement_len = replacement.len();
                     let (mut modified_gates, start_idx) =
                         permute_circuit_with_dependency_data(&optimized, &selected_idx, &succ);
-                    modified_gates.splice(start_idx..start_idx + selected_idx.len(), replacement);
+                    let res = check_equiv_probabilistic(
+                        64,
+                        &optimized,
+                        &modified_gates,
+                        1000,
+                        &mut rand::rng(),
+                    );
+                    if res.is_err() {
+                        dbg!("END");
+                        std::process::exit(1); // Stop all threads
+                    }
+                    modified_gates.splice(
+                        start_idx..start_idx + selected_idx.len(),
+                        replacement.clone(),
+                    );
+                    // ckt check
+                    let res = check_equiv_probabilistic(
+                        64,
+                        &optimized,
+                        &modified_gates,
+                        1000,
+                        &mut rand::rng(),
+                    );
+                    if res.is_err() {
+                        println!("mismatch before optimized = modified_gates");
+                        panic!();
+                    }
                     optimized = modified_gates;
                     println!(
                         "optimized {} gates to {} gates",
                         selected_idx.len(),
                         replacement_len
                     );
+                    return optimized.to_vec();
                 }
-            }
+            };
         }
     }
 }
@@ -193,60 +226,3 @@ fn permute_circuit_with_dependency_data(
 
     (permuted_gates, subgraph_start)
 }
-
-// fn permute_circuit<const N_OUT: usize>(
-//     circuit: &mut Circuit,
-//     selected_gate_idx: &[usize; N_OUT],
-// ) -> usize {
-//     // let selected_gates: [Gate; N_OUT] = std::array::from_fn(|i| circuit.gates[selected_gate_idx[i]]);
-//     let mut to_before = vec![];
-//     let mut to_after = vec![];
-//     let mut path_connected_target_wires = vec![false; circuit.num_wires as usize];
-//     let mut path_connected_control_wires = vec![false; circuit.num_wires as usize];
-
-//     for j in 0..selected_gate_idx.len() - 1 {
-//         for i in selected_gate_idx[j] + 1..selected_gate_idx[j + 1] {
-//             let curr_gate = &circuit.gates[i];
-//             let curr_target = curr_gate.wires[0] as usize;
-//             let curr_control0 = curr_gate.wires[1] as usize;
-//             let curr_control1 = curr_gate.wires[2] as usize;
-
-//             let mut collides_with_prev_selected = false;
-//             for k in 0..=j {
-//                 collides_with_prev_selected = collides_with_prev_selected
-//                     || circuit.gates[selected_gate_idx[k]].collides_with(curr_gate);
-//             }
-
-//             if collides_with_prev_selected
-//                 || path_connected_control_wires[curr_target]
-//                 || path_connected_target_wires[curr_control0]
-//                 || path_connected_target_wires[curr_control1]
-//             {
-//                 to_after.push(*curr_gate);
-
-//                 path_connected_target_wires[curr_target] = true;
-//                 path_connected_control_wires[curr_control0] = true;
-//                 path_connected_control_wires[curr_control1] = true;
-//             } else {
-//                 to_before.push(*curr_gate);
-//             }
-//         }
-//     }
-
-//     let mut write_idx = selected_gate_idx[0];
-//     for i in 0..to_before.len() {
-//         circuit.gates[write_idx] = to_before[i];
-//         write_idx += 1;
-//     }
-//     let c_out_start = write_idx;
-//     for i in 0..N_OUT {
-//         circuit.gates[write_idx] = circuit.gates[selected_gate_idx[i]];
-//         write_idx += 1;
-//     }
-//     for i in 0..to_after.len() {
-//         circuit.gates[write_idx] = to_after[i];
-//         write_idx += 1;
-//     }
-
-//     c_out_start
-// }
