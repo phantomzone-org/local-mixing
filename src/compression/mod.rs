@@ -1,21 +1,23 @@
 pub mod ct;
 pub mod subgraph;
-pub mod subgraph_new;
 
 use ct::{fetch_or_create_compression_table, CompressionTable};
+use log4rs::append::console::ConsoleAppender;
 use rand::Rng;
 use rayon::{
     current_num_threads,
-    iter::{IntoParallelRefMutIterator, ParallelIterator},
+    iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator},
 };
-use subgraph::{enumerate_subgraphs, successors_predecessors};
+use subgraph::{dependency_data, enumerate_subgraphs, permute_around_subgraph};
 
 use crate::circuit::{circuit::check_equiv_probabilistic, Circuit, Gate};
-use serde_json::json;
-use std::fs::File;
-use std::io::Write;
 
-pub fn run_compression_strategy_one(input: &Circuit) {
+pub fn run_compression_strategy_one(circuit_path: &String) {
+    let input = Circuit::load_from_json(circuit_path);
+
+    init_logs();
+
+    // Split input into chunks per worker thread
     fn split_array_into_approx_chunks<R: Rng>(
         gates: &Vec<Gate>,
         n: usize,
@@ -53,10 +55,11 @@ pub fn run_compression_strategy_one(input: &Circuit) {
     let num_threads = current_num_threads();
     let mut chunks = split_array_into_approx_chunks(&input.gates, num_threads, &mut rand::rng());
 
-    let optimized_gates: Vec<Gate> = chunks
+    let optimized_gates = chunks
         .par_iter_mut()
-        .map(|chunk| {
-            let mut runner = StrategyOneRunner::init(chunk.to_vec());
+        .enumerate()
+        .map(|(worker_id, chunk)| {
+            let mut runner = StrategyOneRunner::init(worker_id, chunk.to_vec());
             runner.run();
             runner.gates
         })
@@ -67,8 +70,6 @@ pub fn run_compression_strategy_one(input: &Circuit) {
         num_wires: input.num_wires,
         gates: optimized_gates,
     };
-
-    dbg!(output.gates.len());
 
     let equiv_check = check_equiv_probabilistic(
         input.num_wires as usize,
@@ -82,33 +83,33 @@ pub fn run_compression_strategy_one(input: &Circuit) {
 }
 
 pub struct StrategyOneRunner {
+    id: usize,
     gates: Vec<Gate>,
     ct: CompressionTable<4, 4, { 1 << 4 }>,
 }
 
 impl StrategyOneRunner {
-    fn init(gates: Vec<Gate>) -> Self {
-        println!("StrategyOneRunner init()");
+    fn init(worker_id: usize, gates: Vec<Gate>) -> Self {
         Self {
+            id: worker_id,
             gates,
             ct: fetch_or_create_compression_table(),
         }
     }
 
     fn run(&mut self) {
-        println!("StrategyOneRunner run()");
-
         let mut rng = rand::rng();
 
+        log::info!(target: &format!("thread {}", self.id).to_string(), "thread running");
+
         loop {
-            println!("run() loop");
             shuffle_gates_pairwise(&mut self.gates, 20, &mut rng);
             let mut optimized = self.gates.clone();
             let chunk_size = 300;
 
             optimized = optimized
                 .chunks(chunk_size)
-                .map(|chunk| self.optimize_subset(10, 10, chunk))
+                .map(|chunk| self.optimize_subset(100, 10, chunk))
                 .flatten()
                 .collect();
 
@@ -126,9 +127,9 @@ impl StrategyOneRunner {
     ) -> Vec<Gate> {
         let mut optimized = gates.to_vec();
         loop {
-            let (succ, pred) = successors_predecessors(&optimized);
+            let dependency_data = dependency_data(gates);
             let res =
-                enumerate_subgraphs(&optimized, &succ, &pred, subset_size, slice_size, &self.ct);
+                enumerate_subgraphs(gates, &dependency_data, subset_size, slice_size, &self.ct);
 
             match res {
                 None => {
@@ -138,34 +139,11 @@ impl StrategyOneRunner {
                 Some((selected_idx, replacement)) => {
                     let replacement_len = replacement.len();
                     let (mut modified_gates, start_idx) =
-                        permute_circuit_with_dependency_data(&optimized, &selected_idx, &succ);
-                    let res = check_equiv_probabilistic(
-                        64,
-                        &optimized,
-                        &modified_gates,
-                        1000,
-                        &mut rand::rng(),
-                    );
-                    if res.is_err() {
-                        dbg!("END");
-                        std::process::exit(1); // Stop all threads
-                    }
+                        permute_around_subgraph(&optimized, &selected_idx, &dependency_data);
                     modified_gates.splice(
                         start_idx..start_idx + selected_idx.len(),
                         replacement.clone(),
                     );
-                    // ckt check
-                    let res = check_equiv_probabilistic(
-                        64,
-                        &optimized,
-                        &modified_gates,
-                        1000,
-                        &mut rand::rng(),
-                    );
-                    if res.is_err() {
-                        println!("mismatch before optimized = modified_gates");
-                        panic!();
-                    }
                     optimized = modified_gates;
                     println!(
                         "optimized {} gates to {} gates",
@@ -189,40 +167,32 @@ fn shuffle_gates_pairwise<R: Rng>(gates: &mut Vec<Gate>, iterations: usize, rng:
     }
 }
 
-fn permute_circuit_with_dependency_data(
-    gates: &[Gate],
-    selected_idx: &[usize],
-    succ: &Vec<Vec<usize>>,
-) -> (Vec<Gate>, usize) {
-    let selected_gates: Vec<Gate> = selected_idx.iter().map(|&i| gates[i]).collect();
-    let mut to_before = vec![];
-    let mut to_after = vec![];
+fn init_logs() {
+    let stdout = ConsoleAppender::builder().build();
 
-    for j in 0..selected_idx.len() - 1 {
-        for i in selected_idx[j] + 1..selected_idx[j + 1] {
-            if succ[selected_idx[j]].contains(&i) {
-                to_after.push(gates[i]);
-            } else {
-                to_before.push(gates[i]);
+    let mut config_builder = log4rs::Config::builder();
+
+    config_builder = config_builder
+        .appender(log4rs::config::Appender::builder().build("trace", Box::new(stdout)));
+    config_builder = config_builder.logger(
+        log4rs::config::Logger::builder()
+            .appender("trace")
+            .additive(false)
+            .build("trace", log::LevelFilter::Trace),
+    );
+
+    let mut root_builder = log4rs::config::Root::builder();
+
+    root_builder = root_builder.appender("trace");
+
+    match config_builder.build(root_builder.build(log::LevelFilter::Trace)) {
+        Ok(config) => {
+            if let Err(e) = log4rs::init_config(config) {
+                eprintln!("Failed to initialize logging: {}", e);
             }
         }
+        Err(e) => {
+            eprintln!("Failed to build logging configuration: {}", e);
+        }
     }
-
-    let mut permuted_gates = gates.to_vec();
-    let mut write_idx = selected_idx[0];
-    for g in to_before {
-        permuted_gates[write_idx] = g;
-        write_idx += 1;
-    }
-    let subgraph_start = write_idx;
-    for g in selected_gates {
-        permuted_gates[write_idx] = g;
-        write_idx += 1;
-    }
-    for g in to_after {
-        permuted_gates[write_idx] = g;
-        write_idx += 1;
-    }
-
-    (permuted_gates, subgraph_start)
 }

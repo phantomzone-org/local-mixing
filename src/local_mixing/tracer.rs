@@ -119,7 +119,7 @@ impl Tracer {
     }
 }
 
-pub fn init_logs(dir_path: &String) -> Result<(), Box<dyn std::error::Error>> {
+fn init_logs(dir_path: &String) -> Result<(), Box<dyn std::error::Error>> {
     let trace_file_appender = log4rs::append::file::FileAppender::builder()
         .encoder(Box::new(log4rs::encode::pattern::PatternEncoder::new(
             "{d} - {l} - {m}{n}",
