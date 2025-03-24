@@ -213,7 +213,7 @@ pub fn walksman_permutation_10<T: Default + Copy + Sized>(a: &[T; 10], control: 
 ///   - If `i` is even, it takes the element from the first (either left or right, as determined by `even`)
 ///     slice at index `i/2`.
 ///   - If `i` is odd, it takes the element from the other slice at index `i/2`.
-fn riffle_shuffle<const N_IN: usize, T: Default + Copy>(a: &[T; N_IN], even: bool) -> [T; N_IN] {
+pub fn riffle_shuffle<const N_IN: usize, T: Default + Copy>(a: &[T; N_IN], even: bool) -> [T; N_IN] {
     let mut out = [T::default(); N_IN];
     let half_point: usize = N_IN / 2;
     if N_IN % 2 == 1 {
