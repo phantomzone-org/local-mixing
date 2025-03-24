@@ -87,7 +87,7 @@ pub fn walksman_permutation_8<T: Default + Copy + Sized>(a: &[T; 8], control: Ve
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // functions for permutation networks of size 5
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-fn walksman_permutation_5<T: Default + Copy + Sized>(a: &[T; 5], control: &[bool]) -> [T; 5] {
+pub fn walksman_permutation_5<T: Default + Copy + Sized>(a: &[T; 5], control: &[bool]) -> [T; 5] {
     let mut out = a.clone();
 
     // first layer swaps
@@ -131,7 +131,7 @@ fn walksman_permutation_5<T: Default + Copy + Sized>(a: &[T; 5], control: &[bool
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // functions for permutation networks of size 10
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-fn walksman_permutation_10<T: Default + Copy + Sized>(a: &[T; 10], control: &[bool]) -> [T; 10] {
+pub fn walksman_permutation_10<T: Default + Copy + Sized>(a: &[T; 10], control: &[bool]) -> [T; 10] {
     let mut out = a.clone();
 
     // first layer swaps
