@@ -1,7 +1,6 @@
 use crate::circuit::{
     analysis::{optimal_projection_circuit, truth_table_sized},
     cf::Base2GateControlFunc,
-    circuit::check_equiv_probabilistic,
     Gate,
 };
 use std::collections::HashMap;
@@ -11,7 +10,8 @@ pub struct CompressionTable<
     const MAX_WIRES_USED: usize,
     const TT_SIZE: usize,
 > {
-    ct: HashMap<[u32; TT_SIZE], Vec<Gate>>,
+    ct: HashMap<[usize; TT_SIZE], Vec<Gate>>,
+    cache: HashMap<Vec<Gate>, Vec<Gate>>,
 }
 
 impl<const MAX_SIZE: usize, const MAX_WIRES_USED: usize, const TT_SIZE: usize>
@@ -20,12 +20,14 @@ impl<const MAX_SIZE: usize, const MAX_WIRES_USED: usize, const TT_SIZE: usize>
     pub fn new() -> Self {
         Self {
             ct: build_compression_table::<MAX_SIZE, MAX_WIRES_USED, TT_SIZE>(),
+            cache: HashMap::new(),
         }
     }
 
     pub fn from_file(path: &String) -> Self {
         Self {
             ct: load_ct_from_file(path),
+            cache: HashMap::new(),
         }
     }
 
@@ -33,7 +35,10 @@ impl<const MAX_SIZE: usize, const MAX_WIRES_USED: usize, const TT_SIZE: usize>
         save_ct_to_file(&self.ct, path);
     }
 
-    pub fn compress_circuit(&self, circuit: &Vec<Gate>) -> Option<Vec<Gate>> {
+    pub fn compress_circuit(&mut self, circuit: &Vec<Gate>) -> Option<Vec<Gate>> {
+        if let Some(saved) = self.cache.get(circuit) {
+            return Some(saved.to_vec());
+        }
         let (proj_circuit, proj_map, _, num_active_wires) = optimal_projection_circuit(circuit);
         if num_active_wires > MAX_WIRES_USED {
             return None;
@@ -47,14 +52,8 @@ impl<const MAX_SIZE: usize, const MAX_WIRES_USED: usize, const TT_SIZE: usize>
             .iter()
             .map(|g| {
                 let mut wires = [0; 3];
-                // for i in 0..3 {
-                //     wires[i] = match proj_map[g.wires[i] as usize] {
-                //         Some(label) => label,
-                //         None => g.wires[i],
-                //     }
-                // }
                 for i in 0..3 {
-                    let match_wire = g.wires[i] as usize;
+                    let match_wire = g.wires[i];
                     wires[i] = if match_wire < proj_map.len() {
                         proj_map[match_wire]
                     } else {
@@ -64,34 +63,12 @@ impl<const MAX_SIZE: usize, const MAX_WIRES_USED: usize, const TT_SIZE: usize>
                 Gate {
                     wires,
                     control_func: g.control_func,
+                    generation: 0,
                 }
             })
             .collect();
 
-        let max_input_wire = circuit
-            .iter()
-            .flat_map(|g| g.wires.iter())
-            .copied()
-            .max()
-            .unwrap_or(0);
-
-        let max_output_wire = output_circuit
-            .iter()
-            .flat_map(|g| g.wires.iter())
-            .copied()
-            .max()
-            .unwrap_or(0);
-
-        let max_wire = max_input_wire.max(max_output_wire) + 1;
-        check_equiv_probabilistic(
-            max_wire as usize,
-            &circuit,
-            &output_circuit,
-            1000,
-            &mut rand::rng(),
-        )
-        .unwrap();
-
+        self.cache.insert(circuit.to_vec(), output_circuit.clone());
         Some(output_circuit)
     }
 }
@@ -122,12 +99,12 @@ pub fn build_compression_table<
     const MAX_SIZE: usize,
     const MAX_WIRES_USED: usize,
     const TT_SIZE: usize,
->() -> HashMap<[u32; TT_SIZE], Vec<Gate>> {
+>() -> HashMap<[usize; TT_SIZE], Vec<Gate>> {
     assert!(MAX_SIZE >= 1);
 
     let mut ct = HashMap::new();
     // Identity gate
-    ct.insert(std::array::from_fn(|i| i as u32), vec![]);
+    ct.insert(std::array::from_fn(|i| i), vec![]);
 
     let mut current_circuit = [Gate::default(); MAX_SIZE];
     current_circuit[0].wires = [0, 1, 2];
@@ -152,20 +129,20 @@ fn build_compression_table_recursive<
 >(
     current_size: usize,
     current_circuit: &mut [Gate; MAX_SIZE],
-    wires_used: u32,
-    ct: &mut HashMap<[u32; TT_SIZE], Vec<Gate>>,
+    wires_used: usize,
+    ct: &mut HashMap<[usize; TT_SIZE], Vec<Gate>>,
 ) {
-    if wires_used as usize > MAX_WIRES_USED {
+    if wires_used > MAX_WIRES_USED {
         return;
     }
 
-    let tt: [u32; TT_SIZE] = std::array::from_fn(|i| {
-        let mut input = i as u32;
+    let tt: [usize; TT_SIZE] = std::array::from_fn(|i| {
+        let mut input = i;
         current_circuit.iter().take(current_size).for_each(|g| {
             let a = (input & (1 << g.wires[1])) != 0;
             let b = (input & (1 << g.wires[2])) != 0;
             let x = g.evaluate_cf(a, b);
-            input ^= (x as u32) << g.wires[0];
+            input ^= (x as usize) << g.wires[0];
         });
         input
     });
@@ -177,7 +154,7 @@ fn build_compression_table_recursive<
         })
         .or_insert(current_circuit[0..current_size].to_vec());
 
-    if current_size == MAX_SIZE || wires_used as usize == MAX_WIRES_USED {
+    if current_size == MAX_SIZE || wires_used == MAX_WIRES_USED {
         return;
     }
 
@@ -252,10 +229,10 @@ const fn other_two_wire_pos(wire_pos: usize) -> [usize; 2] {
 }
 
 pub fn save_ct_to_file<const TT_SIZE: usize>(
-    ct: &HashMap<[u32; TT_SIZE], Vec<Gate>>,
+    ct: &HashMap<[usize; TT_SIZE], Vec<Gate>>,
     path: &String,
 ) {
-    let data: HashMap<Vec<u32>, Vec<Gate>> =
+    let data: HashMap<Vec<usize>, Vec<Gate>> =
         ct.iter().map(|(tt, v)| (tt.to_vec(), v.clone())).collect();
     let serialized_data = bincode::serialize(&data).unwrap();
     std::fs::write(&path, serialized_data).unwrap();
@@ -263,12 +240,12 @@ pub fn save_ct_to_file<const TT_SIZE: usize>(
 
 pub fn load_ct_from_file<const TT_SIZE: usize>(
     path: &String,
-) -> HashMap<[u32; TT_SIZE], Vec<Gate>> {
-    let data: HashMap<Vec<u32>, Vec<Gate>> =
+) -> HashMap<[usize; TT_SIZE], Vec<Gate>> {
+    let data: HashMap<Vec<usize>, Vec<Gate>> =
         bincode::deserialize(&std::fs::read(&path).unwrap()).unwrap();
     data.into_iter()
         .map(|(tt, v)| {
-            let mut key_array = [0u32; TT_SIZE];
+            let mut key_array = [0; TT_SIZE];
             key_array.copy_from_slice(&tt);
             (key_array, v)
         })
@@ -293,7 +270,7 @@ mod tests {
         let ct = build_compression_table::<3, 9, { 1 << 9 }>();
         for (tt, ckt_vec) in ct {
             match ckt_vec.len() {
-                0 => assert_eq!(tt, std::array::from_fn(|i| i as u32)),
+                0 => assert_eq!(tt, std::array::from_fn(|i| i)),
                 1 => assert_eq!(tt.to_vec(), truth_table(9, &vec![ckt_vec[0]])),
                 2 => assert_eq!(tt.to_vec(), truth_table(9, &vec![ckt_vec[0], ckt_vec[1]])),
                 3 => assert_eq!(
@@ -315,7 +292,7 @@ mod tests {
         for (tt, ckt_vec) in ct.ct.clone() {
             let tt_vec = tt.to_vec();
             match ckt_vec.len() {
-                0 => assert_eq!(tt, std::array::from_fn(|i| i as u32)),
+                0 => assert_eq!(tt, std::array::from_fn(|i| i)),
                 1 => assert_eq!(tt_vec, truth_table(4, &vec![ckt_vec[0]])),
                 2 => assert_eq!(tt_vec, truth_table(4, &vec![ckt_vec[0], ckt_vec[1]])),
                 3 => assert_eq!(
@@ -343,23 +320,27 @@ mod tests {
 
     #[test]
     fn test_ct_compress() {
-        let ct = fetch_or_create_compression_table::<3, 9, { 1 << 9 }>();
+        let mut ct = fetch_or_create_compression_table::<3, 9, { 1 << 9 }>();
         let circuit = vec![
             Gate {
                 wires: [33, 22, 60],
                 control_func: 15,
+                generation: 0,
             },
             Gate {
                 wires: [33, 2, 22],
                 control_func: 3,
+                generation: 0,
             },
             Gate {
                 wires: [33, 22, 2],
                 control_func: 9,
+                generation: 0,
             },
             Gate {
                 wires: [55, 12, 24],
                 control_func: 15,
+                generation: 0,
             },
         ];
         let res = ct.compress_circuit(&circuit);

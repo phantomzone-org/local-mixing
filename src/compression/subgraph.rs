@@ -2,28 +2,37 @@ use crate::circuit::Gate;
 
 use super::ct::CompressionTable;
 
-pub type DependencyData = Vec<Vec<bool>>;
+pub struct DependencyData {
+    successors: Vec<Vec<usize>>,
+    predecessors: Vec<Vec<usize>>,
+}
 
 pub fn dependency_data(gates: &[Gate]) -> DependencyData {
     let n = gates.len();
-    let mut dependency_data = vec![vec![false; n]; n];
+    let mut successors = vec![vec![]; n];
+    let mut predecessors = vec![vec![]; n];
 
     for i in 0..n {
         for j in i + 1..n {
             if gates[i].collides_with(&gates[j]) {
-                dependency_data[i][j] = true;
+                successors[i].push(j);
+                predecessors[j].push(i);
                 continue;
             }
-            for k in i + 1..j {
-                if dependency_data[i][k] && gates[k].collides_with(&gates[j]) {
-                    dependency_data[i][j] = true;
+            for k in &successors[i] {
+                if gates[*k].collides_with(&gates[j]) {
+                    successors[i].push(j);
+                    predecessors[j].push(i);
                     break;
                 }
             }
         }
     }
 
-    dependency_data
+    DependencyData {
+        successors,
+        predecessors,
+    }
 }
 
 pub fn enumerate_subgraphs(
@@ -31,7 +40,7 @@ pub fn enumerate_subgraphs(
     dependency_data: &DependencyData,
     subset_size: usize,
     slice_size: usize,
-    ct: &CompressionTable<4, 4, 16>,
+    ct: &mut CompressionTable<4, 4, 16>,
 ) -> Option<(Vec<usize>, Vec<Gate>)> {
     let n = gates.len();
 
@@ -54,34 +63,39 @@ fn df(
     y: &Vec<usize>,
     subset_size: usize,
     slice_size: usize,
-    ct: &CompressionTable<4, 4, 16>,
+    ct: &mut CompressionTable<4, 4, 16>,
 ) -> Option<(Vec<usize>, Vec<Gate>)> {
+    // if x.len() == subset_size {
+    //     // dbg!(x);
+    //     for index in 0..subset_size - slice_size + 1 {
+    //         let idx = &x[index..index + slice_size];
+    //         let subcircuit = idx.iter().map(|&i| gates[i]).collect();
+    //         if let Some(replacement) = ct.compress_circuit(&subcircuit) {
+    //             let mut optimized: Vec<Gate> = x.iter().map(|&i| gates[i]).collect();
+    //             let replacement_len = replacement.len();
+    //             optimized.splice(index..index + slice_size, replacement);
+    //             let mut new_index = index + replacement_len;
+    //             while slice_size < optimized.len() && new_index < optimized.len() - slice_size + 1 {
+    //                 if let Some(replacement) =
+    //                     ct.compress_circuit(&optimized[new_index..new_index + slice_size].to_vec())
+    //                 {
+    //                     let replacement_len = replacement.len();
+    //                     optimized.splice(new_index..new_index + slice_size, replacement);
+    //                     new_index += replacement_len;
+    //                 } else {
+    //                     new_index += 1;
+    //                 }
+    //             }
+
+    //             return Some((x.to_vec(), optimized));
+    //         }
+    //     }
+
+    //     return None;
+    // }
+
     if x.len() == subset_size {
-        for index in 0..subset_size - slice_size + 1 {
-            let idx = &x[index..index + slice_size];
-            let subcircuit = idx.iter().map(|&i| gates[i]).collect();
-            if let Some(replacement) = ct.compress_circuit(&subcircuit) {
-                let mut optimized: Vec<Gate> = x.iter().map(|&i| gates[i]).collect();
-                let replacement_len = replacement.len();
-                optimized.splice(index..index + slice_size, replacement);
-                let mut new_index = index + replacement_len;
-                while slice_size < optimized.len() && new_index < optimized.len() - slice_size + 1 {
-                    if let Some(replacement) =
-                        ct.compress_circuit(&optimized[new_index..new_index + slice_size].to_vec())
-                    {
-                        let replacement_len = replacement.len();
-                        optimized.splice(new_index..new_index + slice_size, replacement);
-                        new_index += replacement_len;
-                    } else {
-                        new_index += 1;
-                    }
-                }
-
-                return Some((x.to_vec(), optimized));
-            }
-        }
-
-        return None;
+        return Some((x.to_vec(), x.iter().map(|&i| gates[i]).collect()));
     }
 
     let mut y = y.clone();
@@ -106,10 +120,9 @@ fn df(
         let pos = eval_x.binary_search(&v).unwrap_or_else(|e| e);
         eval_x.insert(pos, v);
 
-        let mut eval_y = y.clone();
-        for i in 0..eval_y.len() {
-            if eval_y[i] == v {
-                eval_y.remove(i);
+        for i in 0..y.len() {
+            if y[i] == v {
+                y.remove(i);
                 break;
             }
         }
@@ -118,7 +131,7 @@ fn df(
             gates,
             dependency_data,
             &eval_x,
-            &eval_y,
+            &y,
             subset_size,
             slice_size,
             ct,
@@ -127,8 +140,8 @@ fn df(
             return res;
         }
 
-        a.retain(|&i| !dependency_data[v][i]);
-        y.retain(|&i| !dependency_data[v][i]);
+        a.retain(|&i| !dependency_data.successors[v].contains(&i));
+        y.retain(|&i| !dependency_data.successors[v].contains(&i));
 
         a_ctr += 1;
     }
@@ -153,10 +166,9 @@ fn df(
         let pos = eval_x.binary_search(&v).unwrap_or_else(|e| e);
         eval_x.insert(pos, v);
 
-        let mut eval_y = y.clone();
-        for i in 0..eval_y.len() {
-            if eval_y[i] == v {
-                eval_y.remove(i);
+        for i in 0..y.len() {
+            if y[i] == v {
+                y.remove(i);
                 break;
             }
         }
@@ -165,7 +177,7 @@ fn df(
             gates,
             dependency_data,
             &eval_x,
-            &eval_y,
+            &y,
             subset_size,
             slice_size,
             ct,
@@ -174,8 +186,8 @@ fn df(
             return res;
         }
 
-        b.retain(|&i| !dependency_data[i][v]);
-        y.retain(|&i| !dependency_data[i][v]);
+        b.retain(|&i| !dependency_data.predecessors[v].contains(&i));
+        y.retain(|&i| !dependency_data.predecessors[v].contains(&i));
 
         b_ctr += 1;
     }
@@ -189,19 +201,14 @@ pub fn permute_around_subgraph(
     dependency_data: &DependencyData,
 ) -> (Vec<Gate>, usize) {
     let mut permuted = gates.to_vec();
+    let selected_gates: Vec<Gate> = subgraph.iter().map(|&i| gates[i]).collect();
 
     let mut to_before = vec![];
     let mut to_after = vec![];
 
     for i in 0..subgraph.len() - 1 {
         for j in subgraph[i] + 1..subgraph[i + 1] {
-            // if dependency_data[i][j] {
-            //     to_after.push(gates[j]);
-            // } else {
-            //     to_before.push(gates[j]);
-            // }
-
-            if (0..=i).any(|id| dependency_data[subgraph[id]][j]) {
+            if (0..=i).any(|id| dependency_data.predecessors[j].contains(&subgraph[id])) {
                 to_after.push(gates[j]);
             } else {
                 to_before.push(gates[j]);
@@ -215,8 +222,8 @@ pub fn permute_around_subgraph(
         index += 1;
     }
 
-    for &subgraph_gate_index in subgraph {
-        permuted[index] = gates[subgraph_gate_index];
+    for gate in selected_gates {
+        permuted[index] = gate;
         index += 1;
     }
 
@@ -236,9 +243,9 @@ mod test {
 
     #[test]
     fn test_enumerate_subgraph() {
-        let ct = fetch_or_create_compression_table();
+        let mut ct = fetch_or_create_compression_table();
         let c = Circuit::random(64, 20, &mut rand::rng()).gates;
         let dd = dependency_data(&c);
-        enumerate_subgraphs(&c, &dd, 10, 10, &ct);
+        enumerate_subgraphs(&c, &dd, 10, 10, &mut ct);
     }
 }

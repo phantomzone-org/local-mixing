@@ -15,10 +15,12 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         Gate {
             wires: [0, 1, 2],
             control_func: 3,
+            generation: 0,
         },
         Gate {
             wires: [1, 3, 4],
             control_func: 9,
+            generation: 0,
         },
     ];
 

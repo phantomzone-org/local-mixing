@@ -6,15 +6,17 @@ use std::path::Path;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Gate {
-    pub wires: [u32; 3],
+    pub wires: [usize; 3],
     pub control_func: u8,
+    pub generation: usize,
 }
 
 impl Gate {
-    pub fn new(target: u32, control1: u32, control2: u32, control_func: u8) -> Self {
+    pub fn new(target: usize, control1: usize, control2: usize, control_func: u8) -> Self {
         Self {
             wires: [target, control1, control2],
             control_func,
+            generation: 0,
         }
     }
 
@@ -31,19 +33,18 @@ impl Gate {
     }
 
     pub fn evaluate(&self, x: &mut Vec<bool>) {
-        x[self.wires[0] as usize] ^=
-            self.evaluate_cf(x[self.wires[1] as usize], x[self.wires[2] as usize]);
+        x[self.wires[0]] ^= self.evaluate_cf(x[self.wires[1]], x[self.wires[2]]);
     }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct Circuit {
-    pub num_wires: u32,
+    pub num_wires: usize,
     pub gates: Vec<Gate>,
 }
 
 impl Circuit {
-    pub fn random<R: Rng>(num_wires: u32, num_gates: usize, rng: &mut R) -> Self {
+    pub fn random<R: Rng>(num_wires: usize, num_gates: usize, rng: &mut R) -> Self {
         let mut gates = vec![];
         for _ in 0..num_gates {
             loop {
@@ -55,6 +56,7 @@ impl Circuit {
                     gates.push(Gate {
                         wires: [target, control_one, control_two],
                         control_func: rng.random_range(1..Base2GateControlFunc::COUNT),
+                        generation: 0,
                     });
                     break;
                 }
@@ -83,6 +85,18 @@ impl Circuit {
         self.gates.iter().for_each(|g| g.evaluate(&mut data));
         data
     }
+
+    pub fn evaluate_evolution(&self, input: &Vec<bool>) -> Vec<Vec<bool>> {
+        let mut data = input.clone();
+        let mut evolution = vec![data.clone()];
+
+        self.gates.iter().for_each(|g| {
+            g.evaluate(&mut data);
+            evolution.push(data.clone());
+        });
+
+        evolution
+    }
 }
 
 pub fn check_equiv_probabilistic<R: Rng>(
@@ -92,28 +106,30 @@ pub fn check_equiv_probabilistic<R: Rng>(
     num_inputs: usize,
     rng: &mut R,
 ) -> Result<(), String> {
-    if ckt_one.iter().any(|gate| gate.wires.iter().any(|&wire| wire as usize >= num_wires)) {
+    if ckt_one
+        .iter()
+        .any(|gate| gate.wires.iter().any(|&wire| wire >= num_wires))
+    {
         return Err("Wire labels in ckt_one exceed the number of wires".to_string());
     }
-    if ckt_two.iter().any(|gate| gate.wires.iter().any(|&wire| wire as usize >= num_wires)) {
+    if ckt_two
+        .iter()
+        .any(|gate| gate.wires.iter().any(|&wire| wire >= num_wires))
+    {
         return Err("Wire labels in ckt_two exceed the number of wires".to_string());
     }
 
     let random_inputs: Vec<Vec<bool>> = (0..num_inputs)
-        .map(|_| {
-            (0..num_wires)
-                .map(|_| rng.random_bool(0.5))
-                .collect()
-        })
+        .map(|_| (0..num_wires).map(|_| rng.random_bool(0.5)).collect())
         .collect();
 
     let c1 = Circuit {
-        num_wires: num_wires as u32,
-        gates: ckt_one.clone()
+        num_wires,
+        gates: ckt_one.clone(),
     };
     let c2 = Circuit {
-        num_wires: num_wires as u32,
-        gates: ckt_two.clone()
+        num_wires,
+        gates: ckt_two.clone(),
     };
 
     random_inputs.par_iter().try_for_each(|random_input| {
@@ -127,7 +143,7 @@ pub fn check_equiv_probabilistic<R: Rng>(
 /// Structs for saving to file
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
-pub struct GateData(u32, u32, u32, u8);
+pub struct GateData(usize, usize, usize, u8);
 
 impl From<Gate> for GateData {
     fn from(value: Gate) -> Self {
@@ -145,6 +161,7 @@ impl From<GateData> for Gate {
         Self {
             wires: [value.2, value.0, value.1],
             control_func: value.3,
+            generation: 0,
         }
     }
 }
@@ -159,7 +176,7 @@ pub struct CircuitData {
 impl From<Circuit> for CircuitData {
     fn from(value: Circuit) -> Self {
         Self {
-            wire_count: value.num_wires as usize,
+            wire_count: value.num_wires,
             gate_count: value.gates.len(),
             gates: value.gates.iter().map(|g| GateData::from(*g)).collect(),
         }
@@ -169,7 +186,7 @@ impl From<Circuit> for CircuitData {
 impl From<CircuitData> for Circuit {
     fn from(value: CircuitData) -> Self {
         Self {
-            num_wires: value.wire_count as u32,
+            num_wires: value.wire_count,
             gates: value.gates.iter().map(|g| Gate::from(*g)).collect(),
         }
     }
@@ -193,10 +210,12 @@ mod tests {
                 Gate {
                     wires: [0, 1, 2],
                     control_func: 4,
+                    generation: 0,
                 },
                 Gate {
                     wires: [3, 0, 4],
                     control_func: 9,
+                    generation: 0,
                 },
             ],
         };
@@ -207,18 +226,22 @@ mod tests {
                 Gate {
                     wires: [3, 4, 0],
                     control_func: 12,
+                    generation: 0,
                 },
                 Gate {
                     wires: [0, 2, 1],
                     control_func: 3,
+                    generation: 0,
                 },
                 Gate {
                     wires: [0, 2, 1],
                     control_func: 1,
+                    generation: 0,
                 },
                 Gate {
                     wires: [3, 0, 34],
                     control_func: 3,
+                    generation: 0,
                 },
             ],
         };
@@ -228,22 +251,30 @@ mod tests {
                 Gate {
                     wires: [3, 4, 0],
                     control_func: 12,
+                    generation: 0,
                 },
                 Gate {
                     wires: [0, 2, 1],
                     control_func: 7,
+                    generation: 0,
                 },
                 Gate {
                     wires: [0, 2, 1],
                     control_func: 1,
+                    generation: 0,
                 },
                 Gate {
                     wires: [3, 0, 34],
                     control_func: 3,
+                    generation: 0,
                 },
             ],
         };
-        assert!(check_equiv_probabilistic(64, &ckt.gates, &equiv_ckt.gates, 1000, &mut rng) == Ok(()));
-        assert!(check_equiv_probabilistic(64, &ckt.gates, &nequiv_ckt.gates, 1000, &mut rng) != Ok(()));
+        assert!(
+            check_equiv_probabilistic(64, &ckt.gates, &equiv_ckt.gates, 1000, &mut rng) == Ok(())
+        );
+        assert!(
+            check_equiv_probabilistic(64, &ckt.gates, &nequiv_ckt.gates, 1000, &mut rng) != Ok(())
+        );
     }
 }

@@ -13,6 +13,8 @@ use subgraph::{dependency_data, enumerate_subgraphs, permute_around_subgraph};
 use crate::circuit::{circuit::check_equiv_probabilistic, Circuit, Gate};
 
 pub fn run_compression_strategy_one(circuit_path: &String) {
+    let parallel = true;
+
     let input = Circuit::load_from_json(circuit_path);
 
     init_logs();
@@ -55,16 +57,31 @@ pub fn run_compression_strategy_one(circuit_path: &String) {
     let num_threads = current_num_threads();
     let mut chunks = split_array_into_approx_chunks(&input.gates, num_threads, &mut rand::rng());
 
-    let optimized_gates = chunks
-        .par_iter_mut()
-        .enumerate()
-        .map(|(worker_id, chunk)| {
-            let mut runner = StrategyOneRunner::init(worker_id, chunk.to_vec());
-            runner.run();
-            runner.gates
-        })
-        .flatten()
-        .collect();
+    let optimized_gates;
+
+    if parallel {
+        optimized_gates = chunks
+            .par_iter_mut()
+            .enumerate()
+            .map(|(worker_id, chunk)| {
+                let mut runner =
+                    StrategyOneRunner::init(worker_id, chunk.to_vec(), input.num_wires);
+                runner.run();
+                runner.gates
+            })
+            .flatten()
+            .collect();
+    } else {
+        optimized_gates = chunks
+            .iter_mut()
+            .map(|chunk| {
+                let mut runner = StrategyOneRunner::init(0, chunk.to_vec(), input.num_wires);
+                runner.run();
+                runner.gates
+            })
+            .flatten()
+            .collect();
+    }
 
     let output = Circuit {
         num_wires: input.num_wires,
@@ -72,7 +89,7 @@ pub fn run_compression_strategy_one(circuit_path: &String) {
     };
 
     let equiv_check = check_equiv_probabilistic(
-        input.num_wires as usize,
+        input.num_wires,
         &input.gates,
         &output.gates,
         10000,
@@ -85,19 +102,25 @@ pub fn run_compression_strategy_one(circuit_path: &String) {
 pub struct StrategyOneRunner {
     id: usize,
     gates: Vec<Gate>,
+    num_wires: usize,
     ct: CompressionTable<4, 4, { 1 << 4 }>,
 }
 
 impl StrategyOneRunner {
-    fn init(worker_id: usize, gates: Vec<Gate>) -> Self {
+    fn init(worker_id: usize, gates: Vec<Gate>, num_wires: usize) -> Self {
         Self {
             id: worker_id,
             gates,
+            num_wires,
             ct: fetch_or_create_compression_table(),
         }
     }
 
     fn run(&mut self) {
+        let chunk_size = 64;
+        let subset_size = 10;
+        let slice_size = 5;
+
         let mut rng = rand::rng();
 
         log::info!(target: &format!("thread {}", self.id).to_string(), "thread running");
@@ -105,11 +128,10 @@ impl StrategyOneRunner {
         loop {
             shuffle_gates_pairwise(&mut self.gates, 20, &mut rng);
             let mut optimized = self.gates.clone();
-            let chunk_size = 300;
 
             optimized = optimized
                 .chunks(chunk_size)
-                .map(|chunk| self.optimize_subset(100, 10, chunk))
+                .map(|chunk| self.optimize_subset(subset_size, slice_size, chunk))
                 .flatten()
                 .collect();
 
@@ -125,11 +147,19 @@ impl StrategyOneRunner {
         slice_size: usize,
         gates: &[Gate],
     ) -> Vec<Gate> {
+        #[cfg(feature = "correctness")]
+        let mut rng = rand::rng();
+
         let mut optimized = gates.to_vec();
         loop {
             let dependency_data = dependency_data(gates);
-            let res =
-                enumerate_subgraphs(gates, &dependency_data, subset_size, slice_size, &self.ct);
+            let res = enumerate_subgraphs(
+                gates,
+                &dependency_data,
+                subset_size,
+                slice_size,
+                &mut self.ct,
+            );
 
             match res {
                 None => {
@@ -140,16 +170,37 @@ impl StrategyOneRunner {
                     let replacement_len = replacement.len();
                     let (mut modified_gates, start_idx) =
                         permute_around_subgraph(&optimized, &selected_idx, &dependency_data);
+                    #[cfg(feature = "correctness")]
+                    {
+                        let res = check_equiv_probabilistic(
+                            self.num_wires,
+                            &optimized,
+                            &modified_gates,
+                            crate::local_mixing::consts::CORRECTNESS_CHECK_ITER,
+                            &mut rng,
+                        );
+                        assert!(res.is_ok());
+                    }
                     modified_gates.splice(
                         start_idx..start_idx + selected_idx.len(),
                         replacement.clone(),
                     );
+
+                    #[cfg(feature = "correctness")]
+                    {
+                        let res = check_equiv_probabilistic(
+                            self.num_wires,
+                            &optimized,
+                            &modified_gates,
+                            crate::local_mixing::consts::CORRECTNESS_CHECK_ITER,
+                            &mut rng,
+                        );
+                        assert!(res.is_ok());
+                    }
                     optimized = modified_gates;
-                    println!(
-                        "optimized {} gates to {} gates",
+                    log::info!(target: &format!("thread {}", self.id).to_string(), "optimized {} gates to {} gates",
                         selected_idx.len(),
-                        replacement_len
-                    );
+                        replacement_len);
                     return optimized.to_vec();
                 }
             };

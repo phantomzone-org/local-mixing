@@ -33,6 +33,7 @@ pub enum ControlFnChoice {
     NoIdentity,
     OnlyUnique,
     UniqueNo0Bit,
+    TwoBit,
 }
 
 impl ControlFnChoice {
@@ -43,6 +44,7 @@ impl ControlFnChoice {
             Self::NoIdentity => rng.random_range(1..Base2GateControlFunc::COUNT),
             Self::OnlyUnique => *[15, 3, 12, 1, 4, 7, 13, 6, 9, 14, 8].choose(rng).unwrap(),
             Self::UniqueNo0Bit => *[3, 12, 1, 4, 7, 13, 6, 9, 14, 8].choose(rng).unwrap(),
+            Self::TwoBit => *[1, 2, 4, 6, 7, 8, 9, 11, 13, 14].choose(rng).unwrap(),
         }
     }
 

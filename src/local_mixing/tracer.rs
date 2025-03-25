@@ -2,11 +2,20 @@ use serde::{Deserialize, Serialize};
 use std::{error::Error, fs::File, time::Duration};
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, Default)]
+pub struct ReplacementTraceFields {
+    pub num_input_wires: usize,
+    pub num_output_wires: usize,
+    pub num_active_wires: usize,
+    pub min_generation: usize,
+    pub num_circuits_sampled: usize,
+}
+
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, Default)]
 pub struct SearchTraceFields {
     n_gates: usize,
-    n_circuits_sampled: usize,
     max_candidate_dist: usize,
     time: Duration,
+    replacement_fields: ReplacementTraceFields,
 }
 
 pub enum Stage {
@@ -38,10 +47,32 @@ impl ReplacementTimes {
         }
     }
 
-    fn add_entry(&mut self, stage: Stage, duration: Duration) {
+    fn add_entry(&mut self, stage: &Stage, duration: Duration) {
         match stage {
             Stage::Inflationary => self.inflationary_stage.push(duration),
             Stage::Kneading => self.kneading_stage.push(duration),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct ReplacementInfo {
+    inflationary_stage: Vec<ReplacementTraceFields>,
+    kneading_stage: Vec<ReplacementTraceFields>,
+}
+
+impl ReplacementInfo {
+    fn new(inf_steps: usize, kneading_steps: usize) -> Self {
+        Self {
+            inflationary_stage: Vec::with_capacity(inf_steps),
+            kneading_stage: Vec::with_capacity(kneading_steps),
+        }
+    }
+
+    fn add_entry(&mut self, stage: &Stage, replacement_fields: ReplacementTraceFields) {
+        match stage {
+            Stage::Inflationary => self.inflationary_stage.push(replacement_fields),
+            Stage::Kneading => self.kneading_stage.push(replacement_fields),
         }
     }
 }
@@ -56,6 +87,7 @@ pub struct TracerStash {
 pub struct Tracer {
     dir_path: String,
     pub replacement_times: ReplacementTimes,
+    pub replacement_info: ReplacementInfo,
     pub stash: TracerStash,
 }
 
@@ -70,6 +102,7 @@ impl Tracer {
         Ok(Self {
             dir_path: dir_path.clone(),
             replacement_times: ReplacementTimes::new(inf_steps, kneading_steps),
+            replacement_info: ReplacementInfo::new(inf_steps, kneading_steps),
             stash: TracerStash::default(),
         })
     }
@@ -77,16 +110,16 @@ impl Tracer {
     pub fn add_search_entry(
         &mut self,
         n_gates: usize,
-        n_circuits_sampled: usize,
         max_candidate_dist: usize,
         time: Duration,
+        replacement_fields: ReplacementTraceFields,
     ) {
         assert!(self.stash.search.is_none());
         self.stash.search = Some(SearchTraceFields {
             n_gates,
-            n_circuits_sampled,
             max_candidate_dist,
             time,
+            replacement_fields,
         });
     }
 
@@ -98,11 +131,14 @@ impl Tracer {
     pub fn flush_stash(&mut self, stage: Stage, step: usize) {
         if let Some(search) = self.stash.search {
             log::info!(target: "trace", "{}", format!("{} step={}, SUCCESS: n_gates = {}, n_circuits_sampled = {}, max_candidate_dist = {}, time = {:?}", 
-            stage, step, search.n_gates, search.n_circuits_sampled, search.max_candidate_dist, search.time));
+            stage, step, search.n_gates, search.replacement_fields.num_circuits_sampled, search.max_candidate_dist, search.time));
+
+            self.replacement_info
+                .add_entry(&stage, search.replacement_fields);
         }
 
         if let Some(duration) = self.stash.replacement {
-            self.replacement_times.add_entry(stage, duration);
+            self.replacement_times.add_entry(&stage, duration);
         }
 
         self.stash = TracerStash::default();
@@ -112,9 +148,12 @@ impl Tracer {
         self.stash = TracerStash::default();
     }
 
-    pub fn save_replacement_time(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let file = File::create(format!("{}/logs/replacement.json", self.dir_path)).unwrap();
+    pub fn save_replacement_data(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let file = File::create(format!("{}/logs/replacement_times.json", self.dir_path)).unwrap();
         serde_json::to_writer_pretty(file, &self.replacement_times)?;
+
+        let file = File::create(format!("{}/logs/replacement_fields.json", self.dir_path)).unwrap();
+        serde_json::to_writer_pretty(file, &self.replacement_info)?;
         Ok(())
     }
 }

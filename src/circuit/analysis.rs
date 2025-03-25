@@ -1,8 +1,8 @@
 use super::Gate;
 
 type Circuit = Vec<Gate>;
-type ProjMap = Vec<u32>;
-type TruthTable = Vec<u32>;
+type ProjMap = Vec<usize>;
+type TruthTable = Vec<usize>;
 type ActiveWires = Vec<usize>;
 
 pub fn projection_circuit(circuit: &Circuit) -> (Circuit, ProjMap) {
@@ -14,10 +14,10 @@ pub fn projection_circuit(circuit: &Circuit) -> (Circuit, ProjMap) {
         for w in 0..3 {
             let wire = circuit[i].wires[w];
             if let Some(pos) = proj_map.iter().position(|&x| x == wire) {
-                proj_circuit[i].wires[w] = pos as u32;
+                proj_circuit[i].wires[w] = pos;
             } else {
                 proj_map.push(wire);
-                proj_circuit[i].wires[w] = proj_ctr as u32;
+                proj_circuit[i].wires[w] = proj_ctr;
                 proj_ctr += 1;
             }
         }
@@ -35,26 +35,26 @@ pub fn projection_circuit(circuit: &Circuit) -> (Circuit, ProjMap) {
 pub fn truth_table(num_wires: usize, proj_circuit: &Circuit) -> TruthTable {
     let mut tt = vec![];
     for i in 0..1 << num_wires {
-        let mut input = i as u32;
+        let mut input = i;
         proj_circuit.iter().for_each(|g| {
             let a = (input & (1 << g.wires[1])) != 0;
             let b = (input & (1 << g.wires[2])) != 0;
             let x = g.evaluate_cf(a, b);
-            input ^= (x as u32) << g.wires[0];
+            input ^= (x as usize) << g.wires[0];
         });
         tt.push(input);
     }
     tt
 }
 
-pub fn truth_table_sized<const TT_SIZE: usize>(proj_circuit: &Circuit) -> [u32; TT_SIZE] {
+pub fn truth_table_sized<const TT_SIZE: usize>(proj_circuit: &Circuit) -> [usize; TT_SIZE] {
     std::array::from_fn(|i| {
-        let mut input = i as u32;
+        let mut input = i;
         proj_circuit.iter().for_each(|g| {
             let a = (input & (1 << g.wires[1])) != 0;
             let b = (input & (1 << g.wires[2])) != 0;
             let x = g.evaluate_cf(a, b);
-            input ^= (x as u32) << g.wires[0];
+            input ^= (x as usize) << g.wires[0];
         });
         input
     })
@@ -66,7 +66,7 @@ pub fn compute_active_wires(num_wires: usize, tt: &TruthTable) -> (ActiveWires, 
         let eval_i = tt[i];
         for w in 0..num_wires {
             // active target wires
-            if (eval_i & (1 << w)) != (i & (1 << w)) as u32 {
+            if (eval_i & (1 << w)) != (i & (1 << w)) {
                 active_wires[w][0] = true;
             }
 
@@ -74,7 +74,7 @@ pub fn compute_active_wires(num_wires: usize, tt: &TruthTable) -> (ActiveWires, 
             let bit_mask = 1 << w;
             let i_flipped = i ^ bit_mask;
             let eval_i_flipped = tt[i_flipped];
-            let disagreement_bits = (eval_i ^ eval_i_flipped) & !(bit_mask as u32);
+            let disagreement_bits = (eval_i ^ eval_i_flipped) & !bit_mask;
             if disagreement_bits != 0 {
                 active_wires[w][1] = true;
             }
@@ -112,9 +112,9 @@ pub fn optimal_projection_circuit(circuit: &Circuit) -> (Circuit, ProjMap, Truth
             let wire = circuit[i].wires[w];
             let proj_wire = proj_circuit[i].wires[w];
             if let Some(pos) = updated_proj_map.iter().position(|&x| x == wire) {
-                updated_proj_circuit[i].wires[w] = pos as u32;
-            } else if active_wires.0.contains(&(proj_wire as usize))
-                || active_wires.1.contains(&(proj_wire as usize))
+                updated_proj_circuit[i].wires[w] = pos;
+            } else if active_wires.0.contains(&(proj_wire))
+                || active_wires.1.contains(&(proj_wire))
             {
                 updated_proj_circuit[i].wires[w] = proj_ctr;
                 updated_proj_map.push(wire);
@@ -130,7 +130,7 @@ pub fn optimal_projection_circuit(circuit: &Circuit) -> (Circuit, ProjMap, Truth
     non_active_pos.iter().for_each(|&(i, w)| {
         let wire = circuit[i].wires[w];
         if let Some(pos) = updated_proj_map.iter().position(|&x| x == wire) {
-            updated_proj_circuit[i].wires[w] = pos as u32;
+            updated_proj_circuit[i].wires[w] = pos;
         } else {
             updated_proj_circuit[i].wires[w] = proj_ctr;
             updated_proj_map.push(wire);
@@ -153,20 +153,24 @@ mod tests {
             Gate {
                 wires: [41, 42, 43],
                 control_func: 3,
+                generation: 0,
             },
             Gate {
                 wires: [43, 40, 41],
                 control_func: 9,
+                generation: 0,
             },
         ];
         let expected_proj_circuit = [
             Gate {
                 wires: [0, 1, 2],
                 control_func: 3,
+                generation: 0,
             },
             Gate {
                 wires: [2, 3, 0],
                 control_func: 9,
+                generation: 0,
             },
         ];
         let expected_proj_map = [41, 42, 43, 40];
@@ -181,10 +185,12 @@ mod tests {
             Gate {
                 wires: [0, 1, 2],
                 control_func: 3,
+                generation: 0,
             },
             Gate {
                 wires: [1, 3, 4],
                 control_func: 9,
+                generation: 0,
             },
         ];
         let expected_tt = [
@@ -202,10 +208,12 @@ mod tests {
             Gate {
                 wires: [0, 1, 2],
                 control_func: 3,
+                generation: 0,
             },
             Gate {
                 wires: [1, 3, 4],
                 control_func: 9,
+                generation: 0,
             },
         ];
         let expected_active_wires = (vec![0, 1], vec![1, 3, 4]);
@@ -220,18 +228,22 @@ mod tests {
             Gate {
                 wires: [33, 22, 60],
                 control_func: 15,
+                generation: 0,
             },
             Gate {
                 wires: [33, 2, 22],
                 control_func: 3,
+                generation: 0,
             },
             Gate {
                 wires: [33, 22, 2],
                 control_func: 9,
+                generation: 0,
             },
             Gate {
                 wires: [55, 12, 24],
                 control_func: 15,
+                generation: 0,
             },
         ];
         dbg!(&circuit);

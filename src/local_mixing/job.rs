@@ -17,7 +17,7 @@ use super::tracer::Tracer;
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct LocalMixingJob {
     /// Number of wires in circuit
-    pub wires: u32,
+    pub wires: usize,
     /// Number of inflationary steps
     pub inflationary_stage_steps: usize,
     /// Number of kneading steps
@@ -60,7 +60,7 @@ pub struct LocalMixingJob {
 
 impl LocalMixingJob {
     pub fn new(
-        wires: u32,
+        wires: usize,
         inflationary_stage_steps: usize,
         kneading_stage_steps: usize,
         max_replacement_samples: usize,
@@ -147,7 +147,7 @@ impl LocalMixingJob {
 
                     #[cfg(feature = "correctness")]
                     if check_equiv_probabilistic(
-                        self.original_circuit.num_wires as usize,
+                        self.original_circuit.num_wires,
                         &self.original_circuit.gates,
                         &self.circuit.gates,
                         crate::local_mixing::consts::CORRECTNESS_CHECK_ITER,
@@ -189,7 +189,7 @@ impl LocalMixingJob {
         }
 
         #[cfg(feature = "trace")]
-        let _ = self.tracer.save_replacement_time().inspect_err(
+        let _ = self.tracer.save_replacement_data().inspect_err(
             |e| log::warn!(target: "trace", "{}, Failed to store replacement times with error: {}", crate::local_mixing::tracer::Stage::Inflationary, e),
         );
 
@@ -205,7 +205,7 @@ impl LocalMixingJob {
 
                     #[cfg(feature = "correctness")]
                     if check_equiv_probabilistic(
-                        self.original_circuit.num_wires as usize,
+                        self.original_circuit.num_wires,
                         &self.original_circuit.gates,
                         &self.circuit.gates,
                         crate::local_mixing::consts::CORRECTNESS_CHECK_ITER,
@@ -253,7 +253,7 @@ impl LocalMixingJob {
         }
 
         #[cfg(feature = "trace")]
-        let _ = self.tracer.save_replacement_time().inspect_err(
+        let _ = self.tracer.save_replacement_data().inspect_err(
             |e| log::warn!(target: "trace", "{}, Failed to store replacement times with error: {}", crate::local_mixing::tracer::Stage::Kneading, e),
         );
 

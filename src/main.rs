@@ -1,16 +1,16 @@
 use local_mixing::{
+    cc::run_compression_strategy_one,
     circuit::{
         cf::Base2GateControlFunc,
         circuit::{check_equiv_probabilistic, Circuit},
     },
-    compression::run_compression_strategy_one,
     local_mixing::LocalMixingJob,
     replacement::{
         strategy::{ControlFnChoice, ReplacementStrategy},
         test::test_num_samples,
     },
 };
-use rand::SeedableRng;
+use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::{env::args, error::Error};
 
@@ -26,7 +26,7 @@ fn run() {
     match cmd.as_str() {
         "random-circuit" => {
             let save_path = args.next().expect("Missing circuit path");
-            let num_wires: u32 = args
+            let num_wires = args
                 .next()
                 .expect("Missing number of wires")
                 .parse()
@@ -102,7 +102,7 @@ fn run() {
             let mut rng = ChaCha8Rng::from_os_rng();
 
             let res = check_equiv_probabilistic(
-                circuit_one.num_wires as usize,
+                circuit_one.num_wires,
                 &circuit_one.gates,
                 &circuit_two.gates,
                 num_iter,
@@ -132,6 +132,60 @@ fn run() {
         "compress" => {
             let circuit_path = args.next().expect("Missing circuit path");
             run_compression_strategy_one(&circuit_path);
+        }
+        "correlate" => {
+            let circuit_one_path = args.next().unwrap();
+            let circuit_two_path = args.next().unwrap();
+            let circuit_one = Circuit::load_from_json(&circuit_one_path);
+            let circuit_two = Circuit::load_from_json(&circuit_two_path);
+
+            let mut rng = ChaCha8Rng::from_os_rng();
+            let input: Vec<bool> = (0..circuit_one.num_wires)
+                .map(|_| rng.random_bool(0.5))
+                .collect();
+            let ev_one = circuit_one.evaluate_evolution(&input);
+            let ev_two = circuit_two.evaluate_evolution(&input);
+
+            let max_len = ev_one.len().max(ev_two.len());
+            for i in 0..max_len {
+                let ev_one_str = ev_one.get(i).map_or_else(
+                    || "N/A".to_string(),
+                    |entry| entry.iter().map(|&b| if b { '1' } else { '0' }).collect(),
+                );
+                let ev_two_str = ev_two.get(i).map_or_else(
+                    || "N/A".to_string(),
+                    |entry| entry.iter().map(|&b| if b { '1' } else { '0' }).collect(),
+                );
+                println!(
+                    "ev_one[{}]: {:<20} | ev_two[{}]: {}",
+                    i, ev_one_str, i, ev_two_str
+                );
+            }
+
+            for i in 0..ev_one.len() {
+                let ev_one_str: String = ev_one[i]
+                    .iter()
+                    .map(|&b| if b { '1' } else { '0' })
+                    .collect();
+                let ev_two_str: String = ev_two[i]
+                    .iter()
+                    .map(|&b| if b { '1' } else { '0' })
+                    .collect();
+
+                let hamming_weight_one = ev_one[i].iter().filter(|&&b| b).count();
+                let hamming_weight_two = ev_two[i].iter().filter(|&&b| b).count();
+
+                let hamming_distance = ev_one[i]
+                    .iter()
+                    .zip(&ev_two[i])
+                    .filter(|(&b1, &b2)| b1 != b2)
+                    .count();
+
+                println!(
+                    "Index {}: ev_one: {}, Hamming weight: {}, ev_two: {}, Hamming weight: {}, Hamming distance: {}",
+                    i, ev_one_str, hamming_weight_one, ev_two_str, hamming_weight_two, hamming_distance
+                );
+            }
         }
         _ => {
             eprintln!("Unknown command: {}", cmd);
