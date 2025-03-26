@@ -16,7 +16,7 @@ use crate::{
 };
 
 pub fn run_compression_strategy_one(circuit_path: &String) {
-    let original = Circuit::load_from_json(circuit_path);
+    let original = Circuit::load_from_json(circuit_path, false);
 
     init_logs();
 

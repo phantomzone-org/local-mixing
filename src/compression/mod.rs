@@ -15,7 +15,7 @@ use crate::circuit::{circuit::check_equiv_probabilistic, Circuit, Gate};
 pub fn run_compression_strategy_one(circuit_path: &String) {
     let parallel = true;
 
-    let input = Circuit::load_from_json(circuit_path);
+    let input = Circuit::load_from_json(circuit_path, false);
 
     init_logs();
 

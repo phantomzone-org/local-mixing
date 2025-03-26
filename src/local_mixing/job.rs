@@ -101,12 +101,13 @@ impl LocalMixingJob {
         } else {
             "input.json"
         };
-        job.circuit = Circuit::load_from_json(format!("{}/{}", dir_path, circuit_file_name));
+        job.circuit = Circuit::load_from_json(format!("{}/{}", dir_path, circuit_file_name), false);
         assert!(job.circuit.num_wires == job.wires);
 
         #[cfg(feature = "correctness")]
         {
-            job.original_circuit = Circuit::load_from_json(format!("{}/input.json", dir_path));
+            job.original_circuit =
+                Circuit::load_from_json(format!("{}/input.json", dir_path), false);
             assert!(job.original_circuit.num_wires == job.wires);
         }
 
@@ -123,7 +124,8 @@ impl LocalMixingJob {
     }
 
     pub fn save(&self, dir_path: &String) {
-        self.circuit.save_as_json(format!("{}/save.json", dir_path));
+        self.circuit
+            .save_as_json(format!("{}/save.json", dir_path), true);
         let file = File::create(format!("{}/config.json", dir_path)).unwrap();
         serde_json::to_writer_pretty(file, &self).unwrap();
     }
@@ -156,7 +158,7 @@ impl LocalMixingJob {
                     .is_err()
                     {
                         self.circuit
-                            .save_as_json(format!("{}/error.json", dir_path,));
+                            .save_as_json(format!("{}/error.json", dir_path), true);
                         let error_str = format!("{} step={}, Obfuscated circuit is functionally not equivalent to original input circuit", crate::local_mixing::tracer::Stage::Inflationary, self.curr_inflationary_step);
                         log::error!(target: "trace", "{error_str}");
                         panic!("{error_str}");
@@ -214,7 +216,7 @@ impl LocalMixingJob {
                     .is_err()
                     {
                         self.circuit
-                            .save_as_json(format!("{}/error.json", dir_path,));
+                            .save_as_json(format!("{}/error.json", dir_path), true);
                         let error_str = format!("{} step={}, Obfuscated circuit is functionally not equivalent to original input circuit", crate::local_mixing::tracer::Stage::Kneading, self.curr_kneading_step);
                         log::error!(target: "trace", "{error_str}");
                         panic!("{error_str}");
@@ -247,7 +249,7 @@ impl LocalMixingJob {
 
         // Local mixing successful
         self.circuit
-            .save_as_json(format!("{}/target.json", dir_path));
+            .save_as_json(format!("{}/target.json", dir_path), true);
         if self.save {
             self.save(dir_path);
         }
