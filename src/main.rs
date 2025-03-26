@@ -38,7 +38,7 @@ fn run() {
                 .expect("Invalid number of gates");
 
             Circuit::random(num_wires, num_gates, &mut ChaCha8Rng::from_os_rng())
-                .save_as_json(&save_path);
+                .save_as_json(&save_path, false);
             println!("Random circuit generated and saved to {}", save_path);
         }
         "local-mixing" => {
@@ -54,10 +54,10 @@ fn run() {
         "json" => {
             let circuit_path = args.next().expect("Missing circuit path");
 
-            let circuit = Circuit::load_from_json(&circuit_path);
+            let circuit = Circuit::load_from_json(&circuit_path, false);
 
             if let Some(json_path) = args.next() {
-                circuit.save_as_json(&json_path);
+                circuit.save_as_json(&json_path, false);
                 println!("Circuit JSON saved to {}", json_path);
             } else {
                 println!("{:#?}", circuit);
@@ -97,8 +97,8 @@ fn run() {
                 .expect("Missing number of sample inputs")
                 .parse()
                 .expect("Invalid input");
-            let circuit_one = Circuit::load_from_json(circuit_one_path);
-            let circuit_two = Circuit::load_from_json(circuit_two_path);
+            let circuit_one = Circuit::load_from_json(circuit_one_path, false);
+            let circuit_two = Circuit::load_from_json(circuit_two_path, false);
             let mut rng = ChaCha8Rng::from_os_rng();
 
             let res = check_equiv_probabilistic(
@@ -115,7 +115,7 @@ fn run() {
         }
         "stats" => {
             let circuit_path = args.next().expect("Missing circuit path");
-            let circuit = Circuit::load_from_json(circuit_path);
+            let circuit = Circuit::load_from_json(circuit_path, false);
 
             let mut cf_freq = [0u32; Base2GateControlFunc::COUNT as usize];
             for g in &circuit.gates {
@@ -136,8 +136,8 @@ fn run() {
         "correlate" => {
             let circuit_one_path = args.next().unwrap();
             let circuit_two_path = args.next().unwrap();
-            let circuit_one = Circuit::load_from_json(&circuit_one_path);
-            let circuit_two = Circuit::load_from_json(&circuit_two_path);
+            let circuit_one = Circuit::load_from_json(&circuit_one_path, false);
+            let circuit_two = Circuit::load_from_json(&circuit_two_path, false);
 
             let mut rng = ChaCha8Rng::from_os_rng();
             let input: Vec<bool> = (0..circuit_one.num_wires)
