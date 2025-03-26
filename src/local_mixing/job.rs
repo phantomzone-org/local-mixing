@@ -101,13 +101,13 @@ impl LocalMixingJob {
         } else {
             "input.json"
         };
-        job.circuit = Circuit::load_from_json(format!("{}/{}", dir_path, circuit_file_name), false);
+        job.circuit = Circuit::load_from_json(format!("{}/{}", dir_path, circuit_file_name), true);
         assert!(job.circuit.num_wires == job.wires);
 
         #[cfg(feature = "correctness")]
         {
             job.original_circuit =
-                Circuit::load_from_json(format!("{}/input.json", dir_path), false);
+                Circuit::load_from_json(format!("{}/input.json", dir_path), true);
             assert!(job.original_circuit.num_wires == job.wires);
         }
 
