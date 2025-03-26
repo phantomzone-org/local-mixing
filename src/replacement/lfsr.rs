@@ -118,8 +118,8 @@ impl SeedableRng for LFSR128 {
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 #[derive(Debug, Clone, Copy)]
 pub struct WireEntries {
-    position: u8,
-    present: bool,
+    pub position: u8,
+    pub present: bool,
 }
 
 impl Default for WireEntries {
