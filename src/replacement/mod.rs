@@ -1,7 +1,7 @@
 pub mod lfsr;
 pub mod strategy;
 pub mod test;
-mod permutations;
+pub mod permutations;
 
 use crate::{
     circuit::Gate,
