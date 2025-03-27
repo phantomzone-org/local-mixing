@@ -16,7 +16,10 @@ use rayon::{
 use std::{
     array::from_fn,
     iter::repeat_with,
-    sync::atomic::{AtomicBool, Ordering::Relaxed},
+    sync::{
+        atomic::{AtomicBool, Ordering::Relaxed},
+        Arc, OnceLock,
+    },
 };
 use strategy::{ControlFnChoice, ReplacementStrategy};
 
@@ -93,9 +96,6 @@ pub fn find_replacement_circuit<
         })
     });
 
-    let max_iterations = num_attempts / current_num_threads();
-    let found = AtomicBool::new(false);
-
     let sample_function: Box<
         dyn Fn(&mut [Gate; N_IN], &[[bool; N_PROJ_WIRES]; 2], &mut R) + Send + Sync,
     > = match strategy {
@@ -112,15 +112,20 @@ pub fn find_replacement_circuit<
         _ => todo!(),
     };
 
-    let res = (0..current_num_threads())
+    let num_threads = current_num_threads();
+    let max_iterations = num_attempts / num_threads;
+
+    let found = AtomicBool::new(false);
+    let replacement_res = Arc::new(OnceLock::new());
+    let sample_count_res = (0..num_threads)
         .map(|_| R::from_rng(rng))
         .par_bridge()
-        .find_map_any(|mut rng| {
+        .map(|mut rng| {
             let epoch_size = rng.random_range(10..20);
             let mut replacement_circuit = [Gate::default(); N_IN];
             for iter in 1..=max_iterations {
                 if iter % epoch_size == 0 && found.load(Relaxed) {
-                    return None;
+                    return iter;
                 }
 
                 sample_function(&mut replacement_circuit, &active_wires, &mut rng);
@@ -149,16 +154,20 @@ pub fn find_replacement_circuit<
                     continue;
                 }
 
-                found.store(true, Relaxed);
-                return Some((replacement_circuit, iter));
+                if replacement_res.set(replacement_circuit).is_ok() {
+                    found.store(true, Relaxed);
+                    return iter;
+                }
             }
 
-            None
-        });
+            max_iterations
+        })
+        .sum();
 
-    if let Some((mut replacement_circuit, iter)) = res {
+    if let Some(replacement_circuit) = replacement_res.get() {
+        let mut output_circuit = replacement_circuit.clone();
         let mut proj_map_new_wires = vec![];
-        replacement_circuit.iter_mut().for_each(|g| {
+        output_circuit.iter_mut().for_each(|g| {
             g.wires.iter_mut().for_each(|w| {
                 let w_usize = *w;
                 if w_usize < proj_map.len() {
@@ -184,13 +193,13 @@ pub fn find_replacement_circuit<
         // update gate generation
         let min_generation = circuit.iter().map(|g| g.generation).min().unwrap_or(0);
         let new_generation = min_generation + 1;
-        replacement_circuit
+        output_circuit
             .iter_mut()
             .for_each(|g| g.generation = new_generation);
 
         // output distinct wires
         let mut output_distinct = vec![];
-        replacement_circuit.iter().for_each(|g| {
+        output_circuit.iter().for_each(|g| {
             g.wires.iter().for_each(|w| {
                 if !output_distinct.contains(w) {
                     output_distinct.push(*w);
@@ -199,13 +208,13 @@ pub fn find_replacement_circuit<
         });
 
         return Some((
-            replacement_circuit,
+            output_circuit,
             ReplacementTraceFields {
                 num_input_wires: input_distinct.len(),
                 num_output_wires: output_distinct.len(),
                 num_active_wires,
                 min_generation,
-                num_circuits_sampled: iter,
+                num_circuits_sampled: sample_count_res,
             },
         ));
     }
