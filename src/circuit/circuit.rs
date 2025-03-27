@@ -70,26 +70,14 @@ impl Circuit {
         std::array::from_fn(|i| self.gates[index + i])
     }
 
-    pub fn load_from_json(path: impl AsRef<Path>, with_generation: bool) -> Self {
-        if with_generation {
-            let data: CircuitData<GateDataWithGeneration> =
-                serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
-            Self::from(data)
-        } else {
-            let data: CircuitData<GateData> =
-                serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
-            Self::from(data)
-        }
+    pub fn load_from_json(path: impl AsRef<Path>) -> Self {
+        let data: CircuitData = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        Self::from(data)
     }
 
-    pub fn save_as_json(&self, path: impl AsRef<Path>, with_generation: bool) {
-        if with_generation {
-            let data: CircuitData<GateDataWithGeneration> = CircuitData::from(self.clone());
-            std::fs::write(path, serde_json::to_vec_pretty(&data).unwrap()).unwrap();
-        } else {
-            let data: CircuitData<GateData> = CircuitData::from(self.clone());
-            std::fs::write(path, serde_json::to_vec_pretty(&data).unwrap()).unwrap();
-        }
+    pub fn save_as_json(&self, path: impl AsRef<Path>) {
+        let data: CircuitData = CircuitData::from(self.clone());
+        std::fs::write(path, serde_json::to_vec_pretty(&data).unwrap()).unwrap();
     }
 
     pub fn evaluate(&self, input: &Vec<bool>) -> Vec<bool> {
@@ -178,39 +166,14 @@ impl From<GateData> for Gate {
     }
 }
 
-#[derive(Clone, Copy, Serialize, Deserialize)]
-pub struct GateDataWithGeneration(usize, usize, usize, usize, u8);
-
-impl From<Gate> for GateDataWithGeneration {
-    fn from(value: Gate) -> Self {
-        Self(
-            value.wires[1],
-            value.wires[2],
-            value.wires[0],
-            value.generation,
-            value.control_func,
-        )
-    }
-}
-
-impl From<GateDataWithGeneration> for Gate {
-    fn from(value: GateDataWithGeneration) -> Self {
-        Self {
-            wires: [value.2, value.0, value.1],
-            generation: value.3,
-            control_func: value.4,
-        }
-    }
-}
-
 #[derive(Serialize, Deserialize)]
-pub struct CircuitData<GateFormat> {
+pub struct CircuitData {
     wire_count: usize,
     gate_count: usize,
-    gates: Vec<GateFormat>,
+    gates: Vec<GateData>,
 }
 
-impl From<Circuit> for CircuitData<GateData> {
+impl From<Circuit> for CircuitData {
     fn from(value: Circuit) -> Self {
         Self {
             wire_count: value.num_wires,
@@ -220,31 +183,8 @@ impl From<Circuit> for CircuitData<GateData> {
     }
 }
 
-impl From<CircuitData<GateData>> for Circuit {
-    fn from(value: CircuitData<GateData>) -> Self {
-        Self {
-            num_wires: value.wire_count,
-            gates: value.gates.iter().map(|g| Gate::from(*g)).collect(),
-        }
-    }
-}
-
-impl From<Circuit> for CircuitData<GateDataWithGeneration> {
-    fn from(value: Circuit) -> Self {
-        Self {
-            wire_count: value.num_wires,
-            gate_count: value.gates.len(),
-            gates: value
-                .gates
-                .iter()
-                .map(|g| GateDataWithGeneration::from(*g))
-                .collect(),
-        }
-    }
-}
-
-impl From<CircuitData<GateDataWithGeneration>> for Circuit {
-    fn from(value: CircuitData<GateDataWithGeneration>) -> Self {
+impl From<CircuitData> for Circuit {
+    fn from(value: CircuitData) -> Self {
         Self {
             num_wires: value.wire_count,
             gates: value.gates.iter().map(|g| Gate::from(*g)).collect(),

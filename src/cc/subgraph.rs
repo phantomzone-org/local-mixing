@@ -286,7 +286,7 @@ mod test {
     fn test_dependency_sort() {
         let mut rng = rand::rng();
         // let c = Circuit::random(20, 100, &mut rng).gates;
-        let c = Circuit::load_from_json("bin/killari/json/random-64-1000-kneading.json", false).gates;
+        let c = Circuit::load_from_json("bin/killari/json/random-64-1000-kneading.json").gates;
 
         let mut dg = create_dependency_graph(&c);
         let d_map = dependency_graph_to_map(&dg);

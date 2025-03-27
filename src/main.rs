@@ -12,6 +12,10 @@ use local_mixing::{
 };
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
+use serde_json::json;
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::Write;
 use std::{env::args, error::Error};
 
 fn main() {
@@ -38,7 +42,7 @@ fn run() {
                 .expect("Invalid number of gates");
 
             Circuit::random(num_wires, num_gates, &mut ChaCha8Rng::from_os_rng())
-                .save_as_json(&save_path, false);
+                .save_as_json(&save_path);
             println!("Random circuit generated and saved to {}", save_path);
         }
         "local-mixing" => {
@@ -54,10 +58,10 @@ fn run() {
         "json" => {
             let circuit_path = args.next().expect("Missing circuit path");
 
-            let circuit = Circuit::load_from_json(&circuit_path, false);
+            let circuit = Circuit::load_from_json(&circuit_path);
 
             if let Some(json_path) = args.next() {
-                circuit.save_as_json(&json_path, false);
+                circuit.save_as_json(&json_path);
                 println!("Circuit JSON saved to {}", json_path);
             } else {
                 println!("{:#?}", circuit);
@@ -97,8 +101,8 @@ fn run() {
                 .expect("Missing number of sample inputs")
                 .parse()
                 .expect("Invalid input");
-            let circuit_one = Circuit::load_from_json(circuit_one_path, false);
-            let circuit_two = Circuit::load_from_json(circuit_two_path, false);
+            let circuit_one = Circuit::load_from_json(circuit_one_path);
+            let circuit_two = Circuit::load_from_json(circuit_two_path);
             let mut rng = ChaCha8Rng::from_os_rng();
 
             let res = check_equiv_probabilistic(
@@ -115,7 +119,7 @@ fn run() {
         }
         "stats" => {
             let circuit_path = args.next().expect("Missing circuit path");
-            let circuit = Circuit::load_from_json(circuit_path, false);
+            let circuit = Circuit::load_from_json(circuit_path);
 
             let mut cf_freq = [0u32; Base2GateControlFunc::COUNT as usize];
             for g in &circuit.gates {
@@ -133,59 +137,65 @@ fn run() {
             let circuit_path = args.next().expect("Missing circuit path");
             run_compression_strategy_one(&circuit_path);
         }
-        "correlate" => {
+        "distinguisher" => {
+            // cargo run distinguisher <circuit_one_path> <circuit_two_path> <num_inputs> <save_path>
             let circuit_one_path = args.next().unwrap();
             let circuit_two_path = args.next().unwrap();
-            let circuit_one = Circuit::load_from_json(&circuit_one_path, false);
-            let circuit_two = Circuit::load_from_json(&circuit_two_path, false);
+            let num_inputs = args.next().unwrap().parse().unwrap();
+            let save_path = args.next().unwrap();
+            let circuit_one = Circuit::load_from_json(&circuit_one_path);
+            let circuit_two = Circuit::load_from_json(&circuit_two_path);
+            let mut file = File::create(save_path).expect("Failed to create save file");
 
-            let mut rng = ChaCha8Rng::from_os_rng();
-            let input: Vec<bool> = (0..circuit_one.num_wires)
-                .map(|_| rng.random_bool(0.5))
-                .collect();
-            let ev_one = circuit_one.evaluate_evolution(&input);
-            let ev_two = circuit_two.evaluate_evolution(&input);
+            assert_eq!(
+                circuit_one.num_wires, circuit_two.num_wires,
+                "Circuits have different sets of wires"
+            );
 
-            let max_len = ev_one.len().max(ev_two.len());
-            for i in 0..max_len {
-                let ev_one_str = ev_one.get(i).map_or_else(
-                    || "N/A".to_string(),
-                    |entry| entry.iter().map(|&b| if b { '1' } else { '0' }).collect(),
-                );
-                let ev_two_str = ev_two.get(i).map_or_else(
-                    || "N/A".to_string(),
-                    |entry| entry.iter().map(|&b| if b { '1' } else { '0' }).collect(),
-                );
-                println!(
-                    "ev_one[{}]: {:<20} | ev_two[{}]: {}",
-                    i, ev_one_str, i, ev_two_str
-                );
-            }
+            let mut rng = rand::rng();
+            let mut results = HashMap::new();
 
-            for i in 0..ev_one.len() {
-                let ev_one_str: String = ev_one[i]
-                    .iter()
-                    .map(|&b| if b { '1' } else { '0' })
-                    .collect();
-                let ev_two_str: String = ev_two[i]
-                    .iter()
-                    .map(|&b| if b { '1' } else { '0' })
-                    .collect();
+            (0..num_inputs)
+                .map(|_| {
+                    (0..circuit_one.num_wires)
+                        .map(|_| rng.random_bool(0.5))
+                        .collect::<Vec<bool>>()
+                })
+                .for_each(|input| {
+                    let evolution_one = circuit_one.evaluate_evolution(&input);
+                    let evolution_two = circuit_two.evaluate_evolution(&input);
 
-                let hamming_weight_one = ev_one[i].iter().filter(|&&b| b).count();
-                let hamming_weight_two = ev_two[i].iter().filter(|&&b| b).count();
+                    assert_eq!(
+                        evolution_one.last(),
+                        evolution_two.last(),
+                        "Final states of the circuits do not match"
+                    );
 
-                let hamming_distance = ev_one[i]
-                    .iter()
-                    .zip(&ev_two[i])
-                    .filter(|(&b1, &b2)| b1 != b2)
-                    .count();
+                    let hamming_weights_one: Vec<usize> = evolution_one
+                        .iter()
+                        .map(|state| state.iter().filter(|&&bit| bit).count())
+                        .collect();
 
-                println!(
-                    "Index {}: ev_one: {}, Hamming weight: {}, ev_two: {}, Hamming weight: {}, Hamming distance: {}",
-                    i, ev_one_str, hamming_weight_one, ev_two_str, hamming_weight_two, hamming_distance
-                );
-            }
+                    let hamming_weights_two: Vec<usize> = evolution_two
+                        .iter()
+                        .map(|state| state.iter().filter(|&&bit| bit).count())
+                        .collect();
+
+                    let input_binary: String = input
+                        .iter()
+                        .map(|&bit| if bit { '1' } else { '0' })
+                        .collect();
+                    results.insert(input_binary, (hamming_weights_one, hamming_weights_two));
+                });
+
+            let output_json = json!({
+                "circuit-one": circuit_one_path,
+                "circuit-two": circuit_two_path,
+                "results": results
+            });
+
+            file.write_all(output_json.to_string().as_bytes())
+                .expect("Failed to write to output file");
         }
         _ => {
             eprintln!("Unknown command: {}", cmd);
