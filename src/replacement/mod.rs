@@ -169,7 +169,9 @@ pub fn find_replacement_circuit<
                 } else {
                     loop {
                         let orig_w = rng.random_range(0..num_wires);
-                        if !proj_map.contains(&orig_w) {
+                        if !proj_map.contains(&orig_w)
+                            && !proj_map_new_wires.iter().any(|(_, ww)| *ww == orig_w)
+                        {
                             proj_map_new_wires.push((w.clone(), orig_w));
                             *w = orig_w;
                             break;
