@@ -337,7 +337,7 @@ impl LFSR10 {
 }
 
 #[inline]
-fn mod_11(value: usize) -> usize {
+pub fn mod_11(value: usize) -> usize {
     let mut bits: [usize; 10] = [0; 10];
     let mut val: isize = 0;
     for i in 0..10 {
