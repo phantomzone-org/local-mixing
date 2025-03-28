@@ -106,8 +106,7 @@ impl LocalMixingJob {
 
         #[cfg(feature = "correctness")]
         {
-            job.original_circuit =
-                Circuit::load_from_json(format!("{}/input.json", dir_path));
+            job.original_circuit = Circuit::load_from_json(format!("{}/input.json", dir_path));
             assert!(job.original_circuit.num_wires == job.wires);
         }
 
@@ -124,15 +123,15 @@ impl LocalMixingJob {
     }
 
     pub fn save(&self, dir_path: &String) {
-        self.circuit
-            .save_as_json(format!("{}/save.json", dir_path));
+        self.circuit.save_as_json(format!("{}/save.json", dir_path));
         let file = File::create(format!("{}/config.json", dir_path)).unwrap();
         serde_json::to_writer_pretty(file, &self).unwrap();
     }
 
     pub fn execute(&mut self, dir_path: &String) -> bool {
-        let mut iter = 1;
-        let mut fail_ctr = 0;
+        let mut step = 1;
+        let mut iter = 0;
+        let mut num_fail = 0;
         let mut rng = ChaCha8Rng::from_os_rng();
 
         self.in_progress = true;
@@ -167,12 +166,11 @@ impl LocalMixingJob {
                     self.curr_inflationary_step += 1;
 
                     // Save snapshot every epoch
-                    if self.save && iter % self.epoch_size == 0 {
+                    if self.save && step % self.epoch_size == 0 {
                         self.save(dir_path);
                     }
 
-                    iter += 1;
-                    fail_ctr = 0;
+                    step += 1;
                 }
                 Err(_e) => {
                     #[cfg(feature = "trace")]
@@ -182,18 +180,24 @@ impl LocalMixingJob {
                         self.tracer.empty_stash();
                     }
 
-                    fail_ctr += 1;
-                    if fail_ctr == self.max_attempts_without_success {
-                        return false;
-                    }
+                    num_fail += 1;
                 }
             }
+
+            iter += 1;
         }
 
         #[cfg(feature = "trace")]
-        let _ = self.tracer.save_replacement_data().inspect_err(
+        {
+            let _ = self.tracer.save_replacement_data().inspect_err(
             |e| log::warn!(target: "trace", "{}, Failed to store replacement times with error: {}", crate::local_mixing::tracer::Stage::Inflationary, e),
         );
+            log::info!(target: "trace", "Total number of iterations: {}", iter);
+            log::info!(target: "trace", "Number of failed attempts: {}", num_fail);
+        }
+
+        iter = 0;
+        num_fail = 0;
 
         while self.in_kneading_stage() {
             let success = self.execute_step::<_, N_OUT_KND>(&mut rng);
@@ -224,12 +228,11 @@ impl LocalMixingJob {
 
                     self.curr_kneading_step += 1;
 
-                    if self.save && iter % self.epoch_size == 0 {
+                    if self.save && step % self.epoch_size == 0 {
                         self.save(&dir_path);
                     }
 
-                    iter += 1;
-                    fail_ctr = 0;
+                    step += 1;
                 }
                 Err(_e) => {
                     #[cfg(feature = "trace")]
@@ -239,12 +242,10 @@ impl LocalMixingJob {
                         self.tracer.empty_stash();
                     }
 
-                    fail_ctr += 1;
-                    if fail_ctr == self.max_attempts_without_success {
-                        return false;
-                    }
+                    num_fail += 1;
                 }
             }
+            iter += 1;
         }
 
         // Local mixing successful
@@ -255,9 +256,13 @@ impl LocalMixingJob {
         }
 
         #[cfg(feature = "trace")]
-        let _ = self.tracer.save_replacement_data().inspect_err(
+        {
+            let _ = self.tracer.save_replacement_data().inspect_err(
             |e| log::warn!(target: "trace", "{}, Failed to store replacement times with error: {}", crate::local_mixing::tracer::Stage::Kneading, e),
         );
+            log::info!(target: "trace", "Total number of iterations: {}", iter);
+            log::info!(target: "trace", "Number of failed attempts: {}", num_fail);
+        }
 
         return true;
     }
