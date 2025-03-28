@@ -1,8 +1,12 @@
 use serde::{Deserialize, Serialize};
 use std::{error::Error, fs::File, time::Duration};
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize, Default)]
+use crate::circuit::Gate;
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct ReplacementTraceFields {
+    pub input_circuit: Vec<Gate>,
+    pub output_circuit: Vec<Gate>,
     pub num_input_wires: usize,
     pub num_output_wires: usize,
     pub num_active_wires: usize,
@@ -10,7 +14,7 @@ pub struct ReplacementTraceFields {
     pub num_circuits_sampled: usize,
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct SearchTraceFields {
     n_gates: usize,
     max_candidate_dist: usize,
@@ -77,7 +81,7 @@ impl ReplacementInfo {
     }
 }
 
-#[derive(Copy, Clone, Serialize, Deserialize, Debug, Default)]
+#[derive(Clone, Serialize, Deserialize, Debug, Default)]
 pub struct TracerStash {
     search: Option<SearchTraceFields>,
     replacement: Option<Duration>,
@@ -129,12 +133,12 @@ impl Tracer {
     }
 
     pub fn flush_stash(&mut self, stage: Stage, step: usize) {
-        if let Some(search) = self.stash.search {
-            log::info!(target: "trace", "{}", format!("{} step={}, SUCCESS: n_gates = {}, n_circuits_sampled = {}, max_candidate_dist = {}, time = {:?}", 
-            stage, step, search.n_gates, search.replacement_fields.num_circuits_sampled, search.max_candidate_dist, search.time));
+        if let Some(search) = &self.stash.search {
+            log::info!(target: "trace", "{}", format!("{} step={}, SUCCESS: n_gates = {}, n_circuits_sampled = {}, max_candidate_dist = {}, time = {:?}, c_in = {:?}, c_out = {:?}", 
+            stage, step, search.n_gates, search.replacement_fields.num_circuits_sampled, search.max_candidate_dist, search.time, search.replacement_fields.input_circuit, search.replacement_fields.output_circuit));
 
             self.replacement_info
-                .add_entry(&stage, search.replacement_fields);
+                .add_entry(&stage, search.replacement_fields.clone());
         }
 
         if let Some(duration) = self.stash.replacement {

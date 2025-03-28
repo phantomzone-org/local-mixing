@@ -96,17 +96,15 @@ pub fn find_replacement_circuit<
         })
     });
 
-    let sample_function: Box<
-        dyn Fn(&mut [Gate; N_IN], &[[bool; N_PROJ_WIRES]; 2], &mut R) + Send + Sync,
-    > = match strategy {
-        ReplacementStrategy::SampleUnguided => Box::new(|replacement_circuit, _, rng| {
+    let sample_function: Box<dyn Fn(&mut [Gate; N_IN], &mut R) + Send + Sync> = match strategy {
+        ReplacementStrategy::SampleUnguided => Box::new(|replacement_circuit, rng| {
             sample_random_circuit_unguided::<N_IN, N_PROJ_WIRES, _>(
                 replacement_circuit,
                 cf_choice,
                 rng,
             );
         }),
-        ReplacementStrategy::SampleActive0 => Box::new(|replacement_circuit, active_wires, rng| {
+        ReplacementStrategy::SampleActive0 => Box::new(|replacement_circuit, rng| {
             sample_random_circuit(replacement_circuit, &active_wires, cf_choice, rng);
         }),
         _ => todo!(),
@@ -128,7 +126,7 @@ pub fn find_replacement_circuit<
                     return iter;
                 }
 
-                sample_function(&mut replacement_circuit, &active_wires, &mut rng);
+                sample_function(&mut replacement_circuit, &mut rng);
 
                 // functional equivalence
                 let mut func_equiv = true;
@@ -210,6 +208,8 @@ pub fn find_replacement_circuit<
         return Some((
             output_circuit,
             ReplacementTraceFields {
+                input_circuit: circuit.to_vec(),
+                output_circuit: output_circuit.to_vec(),
                 num_input_wires: input_distinct.len(),
                 num_output_wires: output_distinct.len(),
                 num_active_wires,
