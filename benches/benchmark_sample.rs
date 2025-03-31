@@ -15,7 +15,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     ];
     let cf_choice = ControlFnChoice::OnlyUnique;
 
-    c.bench_function("sample circuit guided", |b| {
+    c.bench_function("sample-circuit", |b| {
         b.iter(|| {
             black_box(sample_random_circuit(
                 &mut circuit,
