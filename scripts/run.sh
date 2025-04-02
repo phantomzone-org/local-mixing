@@ -20,7 +20,6 @@ for i in {1..5}; do
     CURR_DIR="$BASE_DIR/$i"
     mkdir -p $CURR_DIR
     cp $SCRIPT_DIR/template-config.json "$CURR_DIR/config.json"
-    cargo run --release random-circuit $CURR_DIR/input.json $WIRES 1000
     cargo run --release --features="correctness,trace" local-mixing $CURR_DIR
     echo "Completed iteration $i."
 done

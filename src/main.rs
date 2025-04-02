@@ -1,5 +1,4 @@
 use local_mixing::{
-    cc::run_compression_strategy_one,
     circuit::{
         cf::Base2GateControlFunc,
         circuit::{check_equiv_probabilistic, Circuit},
@@ -132,10 +131,6 @@ fn run() {
                 let proportion = count as f32 / total_gates;
                 println!("{}: {:.2}%", i, proportion * 100.0);
             }
-        }
-        "compress" => {
-            let circuit_path = args.next().expect("Missing circuit path");
-            run_compression_strategy_one(&circuit_path);
         }
         "distinguisher" => {
             // cargo run distinguisher <circuit_one_path> <circuit_two_path> <num_inputs> <save_path>

@@ -2,13 +2,10 @@ use super::tracer::ReplacementTraceFields;
 use std::error::Error;
 use std::time::Instant;
 
-use super::{
-    consts::{N_IN, N_PROJ_INPUTS, N_PROJ_WIRES},
-    LocalMixingJob,
-};
+use super::{consts::N_IN, LocalMixingJob};
 use crate::{
     circuit::{Circuit, Gate},
-    replacement::{find_replacement_circuit, strategy::ReplacementStrategy},
+    replacement::{replace_ct::find_replacement, strategy::ReplacementStrategy},
 };
 use rand::{Rng, RngCore, SeedableRng};
 
@@ -161,7 +158,6 @@ fn permute_circuit<const N_OUT: usize>(
     circuit: &mut Circuit,
     selected_gate_idx: &[usize; N_OUT],
 ) -> usize {
-    // let selected_gates: [Gate; N_OUT] = std::array::from_fn(|i| circuit.gates[selected_gate_idx[i]]);
     let mut to_before = vec![];
     let mut to_after = vec![];
     let mut path_connected_target_wires = vec![false; circuit.num_wires];
@@ -226,19 +222,31 @@ impl LocalMixingJob {
             find_convex_gate_ids::<N_OUT, _>(&self.circuit, rng);
 
         // replacement step
-        let selected_gates = std::array::from_fn(|i| self.circuit.gates[selected_gate_idx[i]]);
+        let selected_gates: [Gate; N_OUT] =
+            std::array::from_fn(|i| self.circuit.gates[selected_gate_idx[i]]);
         let replacement_res = match self.replacement_strategy == ReplacementStrategy::Dummy {
-            true => Some(([Gate::default(); N_IN], ReplacementTraceFields::default())),
+            true => Some((
+                vec![Gate::default(); N_IN],
+                ReplacementTraceFields::default(),
+            )),
             false => {
                 #[cfg(feature = "trace")]
                 let repl_start = Instant::now();
 
-                let res = find_replacement_circuit::<N_OUT, N_IN, N_PROJ_WIRES, N_PROJ_INPUTS, _>(
-                    &selected_gates,
+                // let res = find_replacement_circuit::<N_OUT, N_IN, N_PROJ_WIRES, N_PROJ_INPUTS, _>(
+                //     &selected_gates,
+                //     self.wires,
+                //     self.max_replacement_samples,
+                //     self.replacement_strategy,
+                //     self.cf_choice,
+                //     rng,
+                // );
+                let res = find_replacement(
+                    &selected_gates.to_vec(),
                     self.wires,
-                    self.max_replacement_samples,
-                    self.replacement_strategy,
-                    self.cf_choice,
+                    4,
+                    &self.cf_choice.cfs(),
+                    &mut self.ct,
                     rng,
                 );
 

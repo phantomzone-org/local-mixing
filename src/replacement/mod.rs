@@ -1,5 +1,6 @@
 pub mod strategy;
 pub mod test;
+pub mod replace_ct;
 
 use crate::{
     circuit::{

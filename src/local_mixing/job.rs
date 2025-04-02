@@ -1,6 +1,7 @@
 use crate::{
     circuit::Circuit,
-    local_mixing::consts::{N_OUT_INF, N_OUT_KND},
+    compression::ct::CompressionTable,
+    local_mixing::consts::{N_OUT_INF, N_OUT_KND, DEFAULT_NUM_GATES},
     replacement::strategy::{ControlFnChoice, ReplacementStrategy},
 };
 use rand::SeedableRng;
@@ -56,6 +57,9 @@ pub struct LocalMixingJob {
     #[cfg(feature = "trace")]
     #[serde(default, skip_serializing)]
     pub tracer: Tracer,
+    /// Compression Table
+    #[serde(skip_serializing, skip_deserializing)]
+    pub ct: CompressionTable,
 }
 
 impl LocalMixingJob {
@@ -69,6 +73,8 @@ impl LocalMixingJob {
         cf_choice: ControlFnChoice,
         circuit: Circuit,
     ) -> Self {
+        println!("Loading compression table");
+        let ct = CompressionTable::from_file("bin/table.db");
         Self {
             wires,
             inflationary_stage_steps,
@@ -87,6 +93,7 @@ impl LocalMixingJob {
             original_circuit: circuit,
             #[cfg(feature = "trace")]
             tracer: Tracer::default(),
+            ct,
         }
     }
 
@@ -99,10 +106,24 @@ impl LocalMixingJob {
         let circuit_file_name = if job.in_progress {
             "save.json"
         } else {
+            if !std::path::Path::new(&format!("{}/input.json", dir_path)).exists() {
+                let mut rng = rand::rng();
+                let default_circuit = Circuit::random_with_cf(
+                    job.wires,
+                    DEFAULT_NUM_GATES,
+                    &job.cf_choice.cfs(),
+                    &mut rng,
+                );
+                default_circuit.save_as_json(format!("{}/input.json", dir_path));
+            }
             "input.json"
         };
         job.circuit = Circuit::load_from_json(format!("{}/{}", dir_path, circuit_file_name));
         assert!(job.circuit.num_wires == job.wires);
+
+        println!("Loading compression table");
+        job.ct = CompressionTable::from_file("bin/table.db");
+        assert!(job.cf_choice.cfs() == job.ct.cf_choice);
 
         #[cfg(feature = "correctness")]
         {
