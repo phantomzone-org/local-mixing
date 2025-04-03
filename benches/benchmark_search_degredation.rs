@@ -13,7 +13,6 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     for gates in [10_000, 100_000, 1_000_000, 10_000_000] {
         let circuit = Circuit::random(100, gates, &mut rng);
         let job = LocalMixingJob::new(
-            100,
             0,
             100,
             1,

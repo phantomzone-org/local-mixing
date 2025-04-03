@@ -1,7 +1,7 @@
 use crate::{
     circuit::Circuit,
     compression::ct::CompressionTable,
-    local_mixing::consts::{N_OUT_INF, N_OUT_KND, DEFAULT_NUM_GATES},
+    local_mixing::consts::{N_OUT_INF, N_OUT_KND, DEFAULT_NUM_GATES, DEFAULT_NUM_WIRES},
     replacement::strategy::{ControlFnChoice, ReplacementStrategy},
 };
 use rand::SeedableRng;
@@ -17,8 +17,6 @@ use super::tracer::Tracer;
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct LocalMixingJob {
-    /// Number of wires in circuit
-    pub wires: usize,
     /// Number of inflationary steps
     pub inflationary_stage_steps: usize,
     /// Number of kneading steps
@@ -64,7 +62,6 @@ pub struct LocalMixingJob {
 
 impl LocalMixingJob {
     pub fn new(
-        wires: usize,
         inflationary_stage_steps: usize,
         kneading_stage_steps: usize,
         max_replacement_samples: usize,
@@ -76,7 +73,6 @@ impl LocalMixingJob {
         println!("Loading compression table");
         let ct = CompressionTable::from_file("bin/table.db");
         Self {
-            wires,
             inflationary_stage_steps,
             kneading_stage_steps,
             max_replacement_samples,
@@ -109,7 +105,7 @@ impl LocalMixingJob {
             if !std::path::Path::new(&format!("{}/input.json", dir_path)).exists() {
                 let mut rng = rand::rng();
                 let default_circuit = Circuit::random_with_cf(
-                    job.wires,
+                    DEFAULT_NUM_WIRES,
                     DEFAULT_NUM_GATES,
                     &job.cf_choice.cfs(),
                     &mut rng,
@@ -119,7 +115,6 @@ impl LocalMixingJob {
             "input.json"
         };
         job.circuit = Circuit::load_from_json(format!("{}/{}", dir_path, circuit_file_name));
-        assert!(job.circuit.num_wires == job.wires);
 
         println!("Loading compression table");
         job.ct = CompressionTable::from_file("bin/table.db");
@@ -128,7 +123,7 @@ impl LocalMixingJob {
         #[cfg(feature = "correctness")]
         {
             job.original_circuit = Circuit::load_from_json(format!("{}/input.json", dir_path));
-            assert!(job.original_circuit.num_wires == job.wires);
+            assert!(job.original_circuit.num_wires == job.circuit.num_wires);
         }
 
         #[cfg(feature = "trace")]

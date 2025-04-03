@@ -235,7 +235,7 @@ impl LocalMixingJob {
 
                 // let res = find_replacement_circuit::<N_OUT, N_IN, N_PROJ_WIRES, N_PROJ_INPUTS, _>(
                 //     &selected_gates,
-                //     self.wires,
+                //     self.circuit.num_wires,
                 //     self.max_replacement_samples,
                 //     self.replacement_strategy,
                 //     self.cf_choice,
@@ -243,8 +243,8 @@ impl LocalMixingJob {
                 // );
                 let res = find_replacement(
                     &selected_gates.to_vec(),
-                    self.wires,
-                    4,
+                    self.circuit.num_wires,
+                    N_IN,
                     &self.cf_choice.cfs(),
                     &mut self.ct,
                     rng,

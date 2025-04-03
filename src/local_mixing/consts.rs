@@ -9,8 +9,10 @@ pub const N_PROJ_WIRES: usize = N_IN * 2 + 1;
 /// 2 ^ # projection wires
 pub const N_PROJ_INPUTS: usize = 1 << N_PROJ_WIRES;
 
-/// Default number of gates for new circuits
+/// Default number of gates for auto-gen circuits
 pub const DEFAULT_NUM_GATES: usize = 1000;
+/// Default number of wires for auto-gen circuits
+pub const DEFAULT_NUM_WIRES: usize = 64;
 
 #[cfg(feature = "correctness")]
 /// Correctness check iternations
