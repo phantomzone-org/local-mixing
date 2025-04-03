@@ -32,6 +32,10 @@ harness = false
 name = "benchmark_search_degredation"
 harness = false
 
+[[bench]]
+name = "benchmark_evaluate_circuit"
+harness = false
+
 [profile.release]
 codegen-units = 1
 
