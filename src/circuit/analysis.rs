@@ -95,6 +95,24 @@ pub fn compute_active_wires(num_wires: usize, tt: &TruthTable) -> (ActiveWires, 
     (active_target, active_control)
 }
 
+pub fn num_active_wires(num_wires: usize, active_wires_vec: (ActiveWires, ActiveWires)) -> usize {
+    let mut active_wires = vec![false; num_wires];
+    let mut num_active_wires = 0;
+    for w in active_wires_vec.0 {
+        if !active_wires[w] {
+            active_wires[w] = true;
+            num_active_wires += 1;
+        }
+    }
+    for w in active_wires_vec.1 {
+        if !active_wires[w] {
+            active_wires[w] = true;
+            num_active_wires += 1;
+        }
+    }
+    num_active_wires
+}
+
 pub fn optimal_projection_circuit(circuit: &Circuit) -> (Circuit, ProjMap, TruthTable, usize) {
     let (proj_circuit, proj_map) = projection_circuit(&circuit);
     let num_wires = proj_map.len();
