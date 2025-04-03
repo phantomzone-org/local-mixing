@@ -38,6 +38,21 @@ impl CompressionTable {
         std::fs::write(path, data).expect("Failed to write file");
     }
 
+    pub fn lookup_cxity(&self, circuit: &Vec<Gate>) -> Option<usize> {
+        if let Some(saved) = self.cache.get(circuit) {
+            return Some(saved.len());
+        }
+        let (proj_circuit, _, _, num_active_wires) = optimal_projection_circuit(circuit);
+        if num_active_wires > self.max_wires_supported {
+            return None;
+        }
+
+        let truth_table = truth_table(self.max_wires_supported, &proj_circuit);
+
+        // let match_circuit = self.ct.get(&truth_table.to_vec())?;
+        Some(self.ct.get(&truth_table)?.len())
+    }
+
     pub fn compress_circuit(&mut self, circuit: &Vec<Gate>) -> Option<Vec<Gate>> {
         if let Some(saved) = self.cache.get(circuit) {
             return Some(saved.to_vec());

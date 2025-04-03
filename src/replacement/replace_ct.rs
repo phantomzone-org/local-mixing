@@ -46,8 +46,8 @@ pub fn find_replacement<R: Rng>(
             num_samples[replacement_idx] += 1;
             let mut new_lhs = lhs_circuit.clone();
             new_lhs.push(g);
-            if let Some(res) = ct.compress_circuit(&new_lhs) {
-                if res.len() <= replacement_size - replacement_idx - 1 {
+            if let Some(res) = ct.lookup_cxity(&new_lhs) {
+                if res <= replacement_size - replacement_idx - 1 {
                     lhs_circuit = new_lhs;
                     replacement_circuit[replacement_size - replacement_idx - 1] = g;
                     replacement_idx += 1;
