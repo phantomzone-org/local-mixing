@@ -176,11 +176,26 @@ fn run() {
                         .map(|state| state.iter().filter(|&&bit| bit).count())
                         .collect();
 
+                    let hamming_distances: Vec<usize> = evolution_one
+                        .iter()
+                        .zip(evolution_two.iter())
+                        .map(|(state_one, state_two)| {
+                            state_one
+                                .iter()
+                                .zip(state_two.iter())
+                                .filter(|(&bit_one, &bit_two)| bit_one != bit_two)
+                                .count()
+                        })
+                        .collect();
+
                     let input_binary: String = input
                         .iter()
                         .map(|&bit| if bit { '1' } else { '0' })
                         .collect();
-                    results.insert(input_binary, (hamming_weights_one, hamming_weights_two));
+                    results.insert(
+                        input_binary,
+                        (hamming_weights_one, hamming_weights_two, hamming_distances),
+                    );
                 });
 
             let output_json = json!({

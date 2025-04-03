@@ -7,6 +7,7 @@ def plot_hamming_weights(data, output_folder):
     """
     Plots the data produced from 'cargo run distinguisher'. 
     Plot is x = gate index, y = hamming weight. Red is "circuit_one", blue is "circuit_two".
+    Also plots the Hamming distance in purple.
 
     python hamming_weight.py <input_file> <output_dir>
     """
@@ -15,9 +16,10 @@ def plot_hamming_weights(data, output_folder):
     # Ensure the output folder exists
     os.makedirs(output_folder, exist_ok=True)
 
-    for input_binary, (hamming_weights_one, hamming_weights_two) in results.items():
+    for input_binary, (hamming_weights_one, hamming_weights_two, hamming_distances) in results.items():
         plt.figure(figsize=(10, 6))  # Adjust figure size for individual plots
 
+        # Plot Hamming weights for circuit 1
         plt.plot(
             range(len(hamming_weights_one)),
             hamming_weights_one,
@@ -27,6 +29,8 @@ def plot_hamming_weights(data, output_folder):
             alpha=0.5,
             label="circuit 1",
         )
+
+        # Plot Hamming weights for circuit 2
         plt.plot(
             range(len(hamming_weights_two)),
             hamming_weights_two,
@@ -37,8 +41,19 @@ def plot_hamming_weights(data, output_folder):
             label="circuit 2",
         )
 
+        # Plot Hamming distances
+        plt.plot(
+            range(len(hamming_distances)),
+            hamming_distances,
+            color="purple",
+            marker="o",
+            linestyle="-",
+            alpha=0.5,
+            label="hamming distance",
+        )
+
         plt.xlabel("Index", fontsize=14)
-        plt.ylabel("Hamming Weight", fontsize=14)
+        plt.ylabel("Hamming Weight / Distance", fontsize=14)
         plt.legend(loc="upper right", fontsize=10)
         plt.grid(True, which="both", axis="x", linestyle="--", linewidth=0.5)
 
@@ -49,7 +64,7 @@ def plot_hamming_weights(data, output_folder):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Plot Hamming weights from JSON data.")
+    parser = argparse.ArgumentParser(description="Plot Hamming weights and distances from JSON data.")
     parser.add_argument("input_file", help="Path to the input JSON file (e.g., d.json).")
     parser.add_argument("output_folder", help="Path to the folder to save the output plot images.")
     args = parser.parse_args()
