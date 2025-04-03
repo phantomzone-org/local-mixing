@@ -6,13 +6,9 @@ import numpy as np
 
 def parse_log_file(file_path):
     """
-    Parses a log file and extracts n_circuits_sampled for inflationary and kneading steps.
+    Plots replacement_times reading replacement_times.json
 
-    Args:
-        file_path (str): Path to the log file.
-
-    Returns:
-        dict: A dictionary with n_circuits_sampled data for inflationary and kneading steps.
+    python replacement_times.py <input.logs> <output_dir>
     """
     data = {
         "inflationary": [],
@@ -52,7 +48,7 @@ def parse_log_file(file_path):
 
 def count_outliers(data):
     """
-    Counts the number of outliers in the data using the 1.5×IQR rule.
+    Counts the number of outliers in the data using the 1.5 x IQR rule.
 
     Args:
         data (list): List of numerical values.
@@ -71,13 +67,6 @@ def count_outliers(data):
 
 
 def plot_data(data, output_dir):
-    """
-    Generates and saves separate plots for inflationary and kneading stages.
-
-    Args:
-        data (dict): Dictionary containing n_circuits_sampled for inflationary and kneading steps.
-        output_dir (str): Directory where the plots will be saved.
-    """
     # Ensure the output directory exists
     os.makedirs(output_dir, exist_ok=True)
 

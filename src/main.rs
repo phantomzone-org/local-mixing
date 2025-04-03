@@ -133,7 +133,7 @@ fn run() {
             }
         }
         "distinguisher" => {
-            // cargo run distinguisher <circuit_one_path> <circuit_two_path> <num_inputs> <save_path>
+            // cargo run distinguisher <circuit_one_path> <circuit_two_path> <num_inputs> <save_json_path>
             let circuit_one_path = args.next().unwrap();
             let circuit_two_path = args.next().unwrap();
             let num_inputs = args.next().unwrap().parse().unwrap();

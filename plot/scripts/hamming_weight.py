@@ -5,11 +5,10 @@ import matplotlib.pyplot as plt
 
 def plot_hamming_weights(data, output_folder):
     """
-    Plots the Hamming weights for each n-bit string and for each circuit.
+    Plots the data produced from 'cargo run distinguisher'. 
+    Plot is x = gate index, y = hamming weight. Red is "circuit_one", blue is "circuit_two".
 
-    Args:
-        data (dict): The parsed JSON data from the input file.
-        output_folder (str): The folder to save the plot images.
+    python hamming_weight.py <input_file> <output_dir>
     """
     results = data["results"]
 
