@@ -33,9 +33,20 @@ pub enum ControlFnChoice {
     NoIdentity,
     OnlyUnique,
     UniqueNo0Bit,
+    TwoBit,
 }
 
 impl ControlFnChoice {
+    pub fn cfs(&self) -> Vec<u8> {
+        match self {
+            Self::All => (0..Base2GateControlFunc::COUNT).collect(),
+            Self::NoIdentity => (1..Base2GateControlFunc::COUNT).collect(),
+            Self::OnlyUnique => vec![15, 3, 12, 1, 4, 7, 13, 6, 9, 14, 8],
+            Self::UniqueNo0Bit => vec![3, 12, 1, 4, 7, 13, 6, 9, 14, 8],
+            Self::TwoBit => vec![1, 2, 4, 6, 7, 8, 9, 11, 13, 14]
+        }
+    }
+
     #[inline]
     pub fn random_cf<R: Rng>(&self, rng: &mut R) -> u8 {
         match self {
@@ -43,6 +54,7 @@ impl ControlFnChoice {
             Self::NoIdentity => rng.random_range(1..Base2GateControlFunc::COUNT),
             Self::OnlyUnique => *[15, 3, 12, 1, 4, 7, 13, 6, 9, 14, 8].choose(rng).unwrap(),
             Self::UniqueNo0Bit => *[3, 12, 1, 4, 7, 13, 6, 9, 14, 8].choose(rng).unwrap(),
+            Self::TwoBit => *[1, 2, 4, 6, 7, 8, 9, 11, 13, 14].choose(rng).unwrap(),
         }
     }
 

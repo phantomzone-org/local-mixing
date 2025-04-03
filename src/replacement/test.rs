@@ -19,10 +19,12 @@ pub fn test_num_samples(strategy: ReplacementStrategy, cf_choice: ControlFnChoic
         Gate {
             wires: [0, 1, 2],
             control_func: 4,
+            generation: 0,
         },
         Gate {
             wires: [3, 0, 4],
             control_func: 9,
+            generation: 0,
         },
     ];
     log::info!("input circuit = {:?}", circuit);
@@ -41,11 +43,11 @@ pub fn test_num_samples(strategy: ReplacementStrategy, cf_choice: ControlFnChoic
         let d = Instant::now() - s;
         match res {
             None => log::error!("replacement failed, n_sampled = 1000000000, time = {:?}", d),
-            Some((replacement, n_sampled)) => {
-                avg += n_sampled;
+            Some((replacement, replacement_fields)) => {
+                avg += replacement_fields.num_circuits_sampled;
                 log::info!(
                     "n_sampled = {}, replacement = {:?}, time = {:?}",
-                    n_sampled,
+                    replacement_fields.num_circuits_sampled,
                     replacement,
                     d
                 );

@@ -1,4 +1,5 @@
 /target
 /bin
 /.vscode
+/venv
 .test_outputs
