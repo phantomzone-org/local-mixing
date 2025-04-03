@@ -1,4 +1,6 @@
-use crate::circuit::analysis::projection_circuit;
+use crate::circuit::analysis::{
+    compute_active_wires, num_active_wires, projection_circuit, truth_table,
+};
 use crate::circuit::Gate;
 use crate::compression::ct::CompressionTable;
 use crate::local_mixing::tracer::ReplacementTraceFields;
@@ -14,9 +16,13 @@ pub fn find_replacement<R: Rng>(
     rng: &mut R,
 ) -> Option<(Vec<Gate>, ReplacementTraceFields)> {
     let (proj_circuit, proj_map) = projection_circuit(circuit);
-    let circuit_num_wires = proj_map.len();
-    if circuit_num_wires > 9 {
-        dbg!("circuit_num_wires > 9");
+    let tt = truth_table(proj_map.len(), &proj_circuit);
+    let active_wires_vecs = compute_active_wires(proj_map.len(), &tt);
+    let num_active_wires = num_active_wires(proj_map.len(), active_wires_vecs);
+
+    // Search input CC set will always have <= 9 active wires
+    if num_active_wires > 9 {
+        dbg!("num_active_wires > 9");
         return None;
     }
 
@@ -29,6 +35,15 @@ pub fn find_replacement<R: Rng>(
         dbg!("replacement_size > 4");
         return None;
     }
+
+    let mut input_distinct = vec![];
+    proj_circuit.iter().for_each(|g| {
+        g.wires.iter().for_each(|w| {
+            if !input_distinct.contains(w) {
+                input_distinct.push(*w);
+            }
+        })
+    });
 
     let mut num_samples = vec![];
 
@@ -103,12 +118,12 @@ pub fn find_replacement<R: Rng>(
         output_circuit.clone(),
         ReplacementTraceFields {
             input_circuit: circuit.clone(),
-            output_circuit: output_circuit,
-            num_input_wires: 0,
-            num_output_wires: 0,
-            num_active_wires: 0,
-            min_generation: 0,
-            num_circuits_sampled: 0,
+            output_circuit,
+            num_input_wires: input_distinct.len(),
+            num_output_wires: output_distinct.len(),
+            num_active_wires,
+            min_generation,
+            num_circuits_sampled: num_samples.iter().sum(),
         },
     ))
 }
