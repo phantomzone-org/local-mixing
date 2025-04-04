@@ -1,7 +1,7 @@
 use crate::{
     circuit::Circuit,
     compression::ct::CompressionTable,
-    local_mixing::consts::{N_OUT_INF, N_OUT_KND, DEFAULT_NUM_GATES, DEFAULT_NUM_WIRES},
+    local_mixing::consts::{DEFAULT_NUM_GATES, DEFAULT_NUM_WIRES, N_OUT_INF, N_OUT_KND},
     replacement::strategy::{ControlFnChoice, ReplacementStrategy},
 };
 use rand::SeedableRng;
@@ -14,6 +14,11 @@ use crate::circuit::circuit::check_equiv_probabilistic;
 
 #[cfg(feature = "trace")]
 use super::tracer::Tracer;
+
+pub enum LocalMixingStage {
+    Inflationary,
+    Kneading,
+}
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct LocalMixingJob {
@@ -71,7 +76,7 @@ impl LocalMixingJob {
         circuit: Circuit,
     ) -> Self {
         println!("Loading compression table");
-        let ct = CompressionTable::from_file("bin/table.db");
+        let ct = CompressionTable::from_file("bin/table-twobit.db");
         Self {
             inflationary_stage_steps,
             kneading_stage_steps,
@@ -117,7 +122,7 @@ impl LocalMixingJob {
         job.circuit = Circuit::load_from_json(format!("{}/{}", dir_path, circuit_file_name));
 
         println!("Loading compression table");
-        job.ct = CompressionTable::from_file("bin/table.db");
+        job.ct = CompressionTable::from_file("bin/table-twobit.db");
         assert!(job.cf_choice.cfs() == job.ct.cf_choice);
 
         #[cfg(feature = "correctness")]
