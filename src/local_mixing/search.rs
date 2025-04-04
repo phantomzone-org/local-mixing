@@ -9,7 +9,7 @@ use crate::{
 };
 use rand::{Rng, RngCore, SeedableRng};
 
-fn find_convex_gate_ids<const N_OUT: usize, R: RngCore>(
+pub fn find_convex_gate_ids<const N_OUT: usize, R: RngCore>(
     circuit: &Circuit,
     rng: &mut R,
 ) -> ([usize; N_OUT], usize) {
@@ -154,7 +154,7 @@ fn find_convex_gate_ids<const N_OUT: usize, R: RngCore>(
     (selected_gate_idx, max_candidate_dist)
 }
 
-fn permute_circuit<const N_OUT: usize>(
+pub fn permute_circuit<const N_OUT: usize>(
     circuit: &mut Circuit,
     selected_gate_idx: &[usize; N_OUT],
 ) -> usize {
@@ -245,7 +245,6 @@ impl LocalMixingJob {
                     &selected_gates.to_vec(),
                     self.circuit.num_wires,
                     N_IN,
-                    &self.cf_choice.cfs(),
                     &mut self.ct,
                     rng,
                 );

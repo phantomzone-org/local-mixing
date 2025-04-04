@@ -11,7 +11,6 @@ pub fn find_replacement<R: Rng>(
     circuit: &Vec<Gate>,
     num_wires: usize,
     replacement_size: usize,
-    cf_choice: &Vec<u8>,
     ct: &mut CompressionTable,
     rng: &mut R,
 ) -> Option<(Vec<Gate>, ReplacementTraceFields)> {
@@ -57,7 +56,7 @@ pub fn find_replacement<R: Rng>(
                 );
                 return None;
             }
-            let g = sample_gate(9, cf_choice, rng);
+            let g = sample_gate(9, &ct.cf_choice, rng);
             num_samples[replacement_idx] += 1;
             let mut new_lhs = lhs_circuit.clone();
             new_lhs.push(g);
@@ -153,7 +152,7 @@ mod test {
     #[test]
     fn test_replacement_with_ct() {
         println!("loading ct");
-        let mut ct = CompressionTable::from_file("bin/table.db");
+        let mut ct = CompressionTable::from_file("bin/table-twobit.db");
         println!("done loading ct");
         let mut rng = ChaCha8Rng::from_os_rng();
         let circuit = vec![
@@ -178,11 +177,10 @@ mod test {
                 generation: 0,
             },
         ];
-        let cf_choice = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
         let replacement_size = 4;
 
         let s = Instant::now();
-        let res = find_replacement(&circuit, 9, replacement_size, &cf_choice, &mut ct, &mut rng);
+        let res = find_replacement(&circuit, 9, replacement_size, &mut ct, &mut rng);
         let d = Instant::now() - s;
         dbg!(res, d);
     }
