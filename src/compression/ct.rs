@@ -258,13 +258,12 @@ mod tests {
     use crate::{circuit::Circuit, replacement::strategy::ControlFnChoice};
 
     #[test]
-    fn test_ct_real() {
+    fn test_compression_table() {
         let mut ct = CompressionTable::from_file("bin/table-twobit.db");
 
         let mut rng = rand::rng();
         for _ in 0..1000000 {
-            let circuit =
-                Circuit::random_with_cf(9, 3, &ControlFnChoice::TwoBit.cfs(), &mut rng).gates;
+            let circuit = Circuit::random_with_cf(9, 3, &ControlFnChoice::TwoBit, &mut rng).gates;
 
             let res = ct.compress_circuit(&circuit);
             if res.is_none() {

@@ -1,13 +1,5 @@
-use super::tracer::ReplacementTraceFields;
-use std::error::Error;
-use std::time::Instant;
-
-use super::{consts::N_IN, LocalMixingJob};
-use crate::{
-    circuit::{Circuit, Gate},
-    replacement::{replace_ct::find_replacement, strategy::ReplacementStrategy},
-};
-use rand::{Rng, RngCore, SeedableRng};
+use crate::circuit::Circuit;
+use rand::{Rng, RngCore};
 
 pub fn find_convex_gate_ids<const N_OUT: usize, R: RngCore>(
     circuit: &Circuit,
@@ -208,78 +200,6 @@ pub fn permute_circuit<const N_OUT: usize>(
     }
 
     c_out_start
-}
-
-impl LocalMixingJob {
-    pub fn execute_step<R: Send + Sync + RngCore + SeedableRng, const N_OUT: usize>(
-        &mut self,
-        rng: &mut R,
-    ) -> Result<(), Box<dyn Error>> {
-        #[cfg(feature = "trace")]
-        let start_time = Instant::now();
-
-        let (selected_gate_idx, _max_candidate_dist) =
-            find_convex_gate_ids::<N_OUT, _>(&self.circuit, rng);
-
-        // replacement step
-        let selected_gates: [Gate; N_OUT] =
-            std::array::from_fn(|i| self.circuit.gates[selected_gate_idx[i]]);
-        let replacement_res = match self.replacement_strategy == ReplacementStrategy::Dummy {
-            true => Some((
-                vec![Gate::default(); N_IN],
-                ReplacementTraceFields::default(),
-            )),
-            false => {
-                #[cfg(feature = "trace")]
-                let repl_start = Instant::now();
-
-                // let res = find_replacement_circuit::<N_OUT, N_IN, N_PROJ_WIRES, N_PROJ_INPUTS, _>(
-                //     &selected_gates,
-                //     self.circuit.num_wires,
-                //     self.max_replacement_samples,
-                //     self.replacement_strategy,
-                //     self.cf_choice,
-                //     rng,
-                // );
-                let res = find_replacement(
-                    &selected_gates.to_vec(),
-                    self.circuit.num_wires,
-                    N_IN,
-                    &mut self.ct,
-                    rng,
-                );
-
-                #[cfg(feature = "trace")]
-                self.tracer
-                    .add_replacement_time(Instant::now() - repl_start);
-
-                res
-            }
-        };
-        if let Some((c_in, replacement_fields)) = replacement_res {
-            // permute step
-            let c_out_start = permute_circuit(&mut self.circuit, &selected_gate_idx);
-            self.circuit
-                .gates
-                .splice(c_out_start..c_out_start + N_OUT, c_in);
-
-            #[cfg(feature = "trace")]
-            self.tracer.add_search_entry(
-                self.circuit.gates.len(),
-                _max_candidate_dist,
-                Instant::now() - start_time,
-                replacement_fields,
-            );
-
-            return Ok(());
-        }
-
-        Err(format!(
-            "Failed to find replacement for c_out = {:?}",
-            selected_gates
-        )
-        .into())
-    }
 }
 
 #[cfg(test)]

@@ -341,7 +341,7 @@ mod tests {
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 
-    use crate::circuit::{circuit::check_equiv_probabilistic, Circuit};
+    use crate::circuit::{circuit::par_check_equiv_probabilistic, Circuit};
 
     use super::{
         find_replacement_circuit,
@@ -369,7 +369,7 @@ mod tests {
                 num_wires: wires,
                 gates: Vec::from(replacement),
             };
-            match check_equiv_probabilistic(
+            match par_check_equiv_probabilistic(
                 wires,
                 &ckt_one.gates,
                 &Vec::from(replacement),

@@ -1,7 +1,7 @@
 use local_mixing::{
     circuit::{
         cf::Base2GateControlFunc,
-        circuit::{check_equiv_probabilistic, Circuit},
+        circuit::{par_check_equiv_probabilistic, Circuit},
     },
     local_mixing::LocalMixingJob,
     replacement::{
@@ -47,12 +47,7 @@ fn run() {
         "local-mixing" => {
             let job_dir = args.next().expect("Missing job directory");
             let mut job = LocalMixingJob::load(&job_dir).expect("Failed to load job");
-            let _success = job.execute(&job_dir);
-            #[cfg(feature = "trace")]
-            {
-                let status = if _success { "SUCCESS" } else { "FAIL" };
-                log::info!(target: "trace", "Local mixing finished, status = {}", status);
-            }
+            job.run();
         }
         "json" => {
             let circuit_path = args.next().expect("Missing circuit path");
@@ -104,7 +99,7 @@ fn run() {
             let circuit_two = Circuit::load_from_json(circuit_two_path);
             let mut rng = ChaCha8Rng::from_os_rng();
 
-            let res = check_equiv_probabilistic(
+            let res = par_check_equiv_probabilistic(
                 circuit_one.num_wires,
                 &circuit_one.gates,
                 &circuit_two.gates,

@@ -1,4 +1,4 @@
-use crate::circuit::cf::Base2GateControlFunc;
+use crate::{circuit::cf::Base2GateControlFunc, replacement::strategy::ControlFnChoice};
 use rand::{seq::IndexedRandom, Rng};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
@@ -66,7 +66,12 @@ impl Circuit {
         Self { num_wires, gates }
     }
 
-    pub fn random_with_cf<R: Rng>(num_wires: usize, num_gates: usize, cf_choice: &Vec<u8>, rng: &mut R) -> Self {
+    pub fn random_with_cf<R: Rng>(
+        num_wires: usize,
+        num_gates: usize,
+        cf_choice: &ControlFnChoice,
+        rng: &mut R,
+    ) -> Self {
         let mut gates = vec![];
         for _ in 0..num_gates {
             loop {
@@ -77,7 +82,7 @@ impl Circuit {
                 if target != control_one && target != control_two && control_one != control_two {
                     gates.push(Gate {
                         wires: [target, control_one, control_two],
-                        control_func: *cf_choice.choose(rng).unwrap(),
+                        control_func: *cf_choice.cfs().choose(rng).unwrap(),
                         generation: 0,
                     });
                     break;
@@ -86,6 +91,35 @@ impl Circuit {
         }
 
         Self { num_wires, gates }
+    }
+
+    pub fn split_into_chunks(&self, num_chunks: usize, offset: usize) -> Vec<Self> {
+        let mut chunks = vec![];
+        let chunk_size = self.gates.len() / num_chunks;
+
+        let idx: Vec<usize> = (0..num_chunks)
+            .map(|i| if i == 0 { 0 } else { i * chunk_size + offset })
+            .chain(std::iter::once(self.gates.len()))
+            .collect();
+
+        for i in 0..num_chunks {
+            let c = Circuit {
+                num_wires: self.num_wires,
+                gates: self.gates[idx[i]..idx[i + 1]].to_vec(),
+            };
+            chunks.push(c);
+        }
+
+        chunks
+    }
+
+    pub fn combine_circuits(ckts: Vec<Self>) -> Self {
+        let num_wires = ckts[0].num_wires;
+        let combined_gates = ckts.into_iter().flat_map(|ckt| ckt.gates).collect();
+        Self {
+            num_wires,
+            gates: combined_gates,
+        }
     }
 
     pub fn subcircuit<const SIZE: usize>(&self, index: usize) -> [Gate; SIZE] {
@@ -122,6 +156,47 @@ impl Circuit {
 }
 
 pub fn check_equiv_probabilistic<R: Rng>(
+    num_wires: usize,
+    ckt_one: &Vec<Gate>,
+    ckt_two: &Vec<Gate>,
+    num_inputs: usize,
+    rng: &mut R,
+) -> Result<(), String> {
+    if ckt_one
+        .iter()
+        .any(|gate| gate.wires.iter().any(|&wire| wire >= num_wires))
+    {
+        return Err("Wire labels in ckt_one exceed the number of wires".to_string());
+    }
+    if ckt_two
+        .iter()
+        .any(|gate| gate.wires.iter().any(|&wire| wire >= num_wires))
+    {
+        return Err("Wire labels in ckt_two exceed the number of wires".to_string());
+    }
+
+    let random_inputs: Vec<Vec<bool>> = (0..num_inputs)
+        .map(|_| (0..num_wires).map(|_| rng.random_bool(0.5)).collect())
+        .collect();
+
+    let c1 = Circuit {
+        num_wires,
+        gates: ckt_one.clone(),
+    };
+    let c2 = Circuit {
+        num_wires,
+        gates: ckt_two.clone(),
+    };
+
+    random_inputs.iter().try_for_each(|random_input| {
+        if c1.evaluate(random_input) != c2.evaluate(random_input) {
+            return Err("Circuits produce different outputs".to_string());
+        }
+        Ok(())
+    })
+}
+
+pub fn par_check_equiv_probabilistic<R: Rng>(
     num_wires: usize,
     ckt_one: &Vec<Gate>,
     ckt_two: &Vec<Gate>,
@@ -219,7 +294,7 @@ mod tests {
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 
-    use crate::circuit::circuit::check_equiv_probabilistic;
+    use crate::circuit::circuit::par_check_equiv_probabilistic;
 
     use super::{Circuit, Gate};
 
@@ -293,10 +368,12 @@ mod tests {
             ],
         };
         assert!(
-            check_equiv_probabilistic(64, &ckt.gates, &equiv_ckt.gates, 1000, &mut rng) == Ok(())
+            par_check_equiv_probabilistic(64, &ckt.gates, &equiv_ckt.gates, 1000, &mut rng)
+                == Ok(())
         );
         assert!(
-            check_equiv_probabilistic(64, &ckt.gates, &nequiv_ckt.gates, 1000, &mut rng) != Ok(())
+            par_check_equiv_probabilistic(64, &ckt.gates, &nequiv_ckt.gates, 1000, &mut rng)
+                != Ok(())
         );
     }
 }
