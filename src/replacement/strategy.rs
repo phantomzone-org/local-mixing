@@ -1,3 +1,5 @@
+use std::error::Error;
+
 use rand::{seq::IndexedRandom, Rng};
 use serde::{Deserialize, Serialize};
 
@@ -64,6 +66,17 @@ impl ControlFnChoice {
             1 => Some(Self::NoIdentity),
             2 => Some(Self::OnlyUnique),
             _ => None,
+        }
+    }
+
+    pub fn from_str(raw_cf_choice: &str) -> Result<Self, Box<dyn Error>> {
+        match raw_cf_choice {
+            "All" => Ok(Self::All),
+            "NoIdentity" => Ok(Self::NoIdentity),
+            "OnlyUnique" => Ok(Self::OnlyUnique),
+            "UniqueNo0Bit" => Ok(Self::UniqueNo0Bit),
+            "TwoBit" => Ok(Self::TwoBit),
+            _ => Err(Box::<dyn Error>::from(format!("Cannot parse '{}'", raw_cf_choice))),
         }
     }
 }

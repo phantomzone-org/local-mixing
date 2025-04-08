@@ -3,6 +3,7 @@ use local_mixing::{
         cf::Base2GateControlFunc,
         circuit::{par_check_equiv_probabilistic, Circuit},
     },
+    compression::ct::CompressionTable,
     local_mixing::LocalMixingJob,
     replacement::{
         strategy::{ControlFnChoice, ReplacementStrategy},
@@ -48,6 +49,27 @@ fn run() {
             let job_dir = args.next().expect("Missing job directory");
             let mut job = LocalMixingJob::load(&job_dir).expect("Failed to load job");
             job.run();
+        }
+        "build-compression-table" => {
+            let save_path = args.next().expect("Missing compression table save path");
+            let raw_cf_choice = args.next().expect("Missing cf choice");
+            let cf_choice = ControlFnChoice::from_str(&raw_cf_choice).unwrap_or_else(|e| {
+                panic!("Failed to parse cf choice: {}", e);
+            });
+            let max_gates_supported: usize = args
+                .next()
+                .expect("Missing number of gates suppported")
+                .parse()
+                .expect("Invalid num gates");
+            let max_wires_supported: usize = args
+                .next()
+                .expect("Missing number of wires suppported")
+                .parse()
+                .expect("Invalid num wires");
+
+            let ct =
+                CompressionTable::new(max_gates_supported, max_wires_supported, cf_choice.cfs());
+            ct.save_to_file(&save_path);
         }
         "json" => {
             let circuit_path = args.next().expect("Missing circuit path");
