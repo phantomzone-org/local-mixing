@@ -136,6 +136,11 @@ impl Circuit {
         std::fs::write(path, serde_json::to_vec_pretty(&data).unwrap()).unwrap();
     }
 
+    pub fn save_generation_data(&self, path: impl AsRef<Path>) {
+        let data = serde_json::to_vec(&self.gates.iter().map(|g| g.generation).collect::<Vec<_>>()).unwrap();
+        std::fs::write(path, data).unwrap();
+    }
+
     pub fn evaluate(&self, input: &Vec<bool>) -> Vec<bool> {
         let mut data = input.clone();
         self.gates.iter().for_each(|g| g.evaluate(&mut data));

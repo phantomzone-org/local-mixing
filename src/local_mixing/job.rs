@@ -150,7 +150,12 @@ impl LocalMixingJob {
             .save_as_json(format!("{}/target.json", self.dir_path));
 
         #[cfg(feature = "trace")]
-        worker.save_trace(&self.dir_path);
+        {
+            worker
+                .get_current_circuit()
+                .save_generation_data(format!("{}/generation.json", self.dir_path));
+            worker.save_trace(&self.dir_path);
+        }
     }
 
     pub fn run_multiple_threads(&mut self) {
@@ -269,6 +274,9 @@ impl LocalMixingJob {
 
         #[cfg(feature = "trace")]
         {
+            self.circuit
+                .save_generation_data(format!("{}/generation.json", self.dir_path));
+
             let tracer = Tracer::collect(workers.iter().map(|worker| worker.tracer()));
             tracer.save_to_file(&self.dir_path).unwrap();
         }
