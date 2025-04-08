@@ -113,11 +113,9 @@ impl LocalMixingJob {
     }
 
     pub fn run_one_thread(&mut self) {
-        let ct_clone = self.ct.clone();
         let mut worker = Worker::new(
             0,
             self.gate_sample_limit,
-            ct_clone,
             self.inflationary_stage_steps,
             self.kneading_stage_steps,
         );
@@ -127,6 +125,7 @@ impl LocalMixingJob {
             &LocalMixingStage::Inflationary,
             self.inflationary_stage_steps,
             self.circuit.clone(),
+            &self.ct,
         );
         println!("-- Inflationary stage: done");
 
@@ -142,6 +141,7 @@ impl LocalMixingJob {
             &LocalMixingStage::Kneading,
             self.kneading_stage_steps,
             inflationary_circuit,
+            &self.ct,
         );
         println!("-- Kneading stage: done");
 
@@ -159,11 +159,9 @@ impl LocalMixingJob {
     }
 
     pub fn run_multiple_threads(&mut self) {
-        let ct_clone = self.ct.clone();
         let mut inf_worker = Worker::new(
             0,
             self.gate_sample_limit,
-            ct_clone,
             self.inflationary_stage_steps,
             self.kneading_stage_steps,
         );
@@ -173,6 +171,7 @@ impl LocalMixingJob {
             &LocalMixingStage::Inflationary,
             self.inflationary_stage_steps,
             self.circuit.clone(),
+            &self.ct,
         );
         println!("-- Inflationary stage: done");
 
@@ -193,11 +192,9 @@ impl LocalMixingJob {
 
         let mut workers: Vec<Worker<ChaCha8Rng>> = (0..num_search_workers)
             .map(|worker_id| {
-                let ct_clone = self.ct.clone();
                 Worker::new(
                     worker_id,
                     self.gate_sample_limit,
-                    ct_clone,
                     0,
                     self.kneading_stage_steps,
                 )
@@ -226,7 +223,7 @@ impl LocalMixingJob {
             workers.par_iter_mut().enumerate().for_each(|(i, worker)| {
                 let steps = phase1_steps[i];
                 let ckt = phase1_circuits[i].clone();
-                worker.run_task(&LocalMixingStage::Kneading, steps, ckt);
+                worker.run_task(&LocalMixingStage::Kneading, steps, ckt, &self.ct);
             });
 
             self.circuit.gates = workers
@@ -257,7 +254,7 @@ impl LocalMixingJob {
             workers.par_iter_mut().enumerate().for_each(|(i, worker)| {
                 let steps = phase2_steps[i];
                 let ckt = phase2_circuits[i].clone();
-                worker.run_task(&LocalMixingStage::Kneading, steps, ckt);
+                worker.run_task(&LocalMixingStage::Kneading, steps, ckt, &self.ct);
             });
 
             self.circuit.gates = workers

@@ -12,7 +12,7 @@ pub fn find_replacement<R: Rng>(
     num_wires: usize,
     replacement_size: usize,
     gate_sample_limit: usize,
-    ct: &mut CompressionTable,
+    ct: &CompressionTable,
     rng: &mut R,
 ) -> Option<(Vec<Gate>, ReplacementTraceFields)> {
     let (proj_circuit, proj_map) = projection_circuit(circuit);

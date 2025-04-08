@@ -21,7 +21,6 @@ use super::{
 
 pub struct Worker<R: Rng> {
     id: usize,
-    ct: CompressionTable,
     rng: R,
     gate_sample_limit: usize,
     circuit: Circuit,
@@ -32,11 +31,15 @@ pub struct Worker<R: Rng> {
 }
 
 impl Worker<ChaCha8Rng> {
-    pub fn new(id: usize, gate_sample_limit: usize, ct: CompressionTable, inf_capacity: usize, knd_capacity: usize) -> Self {
+    pub fn new(
+        id: usize,
+        gate_sample_limit: usize,
+        inf_capacity: usize,
+        knd_capacity: usize,
+    ) -> Self {
         let rng = ChaCha8Rng::from_os_rng();
         Self {
             id,
-            ct,
             rng,
             gate_sample_limit,
             circuit: Circuit::default(),
@@ -51,7 +54,13 @@ impl Worker<ChaCha8Rng> {
         self.circuit.clone()
     }
 
-    pub fn run_task(&mut self, stage: &LocalMixingStage, num_steps: usize, input_circuit: Circuit) {
+    pub fn run_task(
+        &mut self,
+        stage: &LocalMixingStage,
+        num_steps: usize,
+        input_circuit: Circuit,
+        ct: &CompressionTable,
+    ) {
         #[cfg(feature = "correctness")]
         {
             self.original_circuit = input_circuit.clone();
@@ -61,10 +70,10 @@ impl Worker<ChaCha8Rng> {
 
         match stage {
             LocalMixingStage::Inflationary => {
-                self.run_stage_specific_task::<N_OUT_INF>(stage, num_steps);
+                self.run_stage_specific_task::<N_OUT_INF>(stage, num_steps, ct);
             }
             LocalMixingStage::Kneading => {
-                self.run_stage_specific_task::<N_OUT_KND>(stage, num_steps);
+                self.run_stage_specific_task::<N_OUT_KND>(stage, num_steps, ct);
             }
         }
     }
@@ -73,6 +82,7 @@ impl Worker<ChaCha8Rng> {
         &mut self,
         stage: &LocalMixingStage,
         num_steps: usize,
+        ct: &CompressionTable,
     ) {
         let mut current_step = 1;
 
@@ -95,7 +105,7 @@ impl Worker<ChaCha8Rng> {
                 self.circuit.num_wires,
                 N_IN,
                 self.gate_sample_limit,
-                &mut self.ct,
+                ct,
                 &mut self.rng,
             );
 
