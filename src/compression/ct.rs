@@ -9,6 +9,8 @@ use crate::circuit::{
     Gate,
 };
 use std::collections::HashMap;
+use std::fs;
+use std::path::Path;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct CompressionTable {
@@ -37,8 +39,12 @@ impl CompressionTable {
     }
 
     pub fn save_to_file(&self, path: &str) {
+        let path_obj = Path::new(path);
+        if let Some(parent_dir) = path_obj.parent() {
+            fs::create_dir_all(parent_dir).expect("Failed to create directory");
+        }
         let data = bincode::serialize(self).expect("Failed to serialize compression table");
-        std::fs::write(path, data).expect("Failed to write file");
+        fs::write(path, data).expect("Failed to write file");
     }
 
     pub fn lookup_cxity(&self, circuit: &Vec<Gate>) -> Option<usize> {
