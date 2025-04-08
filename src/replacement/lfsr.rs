@@ -116,7 +116,7 @@ impl SeedableRng for LFSR128 {
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // Struct for handling wire permutations
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Eq, Hash, PartialEq)]
 pub struct WireEntries {
     pub position: u8,
     pub present: bool,
@@ -489,3 +489,16 @@ impl RngCore for LFSRShuffle {
     }
 }
 
+#[cfg(test)]
+mod test {
+    use std::collections::HashMap;
+
+    use super::*;
+
+    #[test]
+    fn test_hashing_of_wires(){
+        let mut set: HashMap<WireEntries,bool> = HashMap::new();
+
+        set.insert(WireEntries{present: false, position: 0}, false);
+    }
+}
