@@ -11,6 +11,7 @@ pub fn find_replacement<R: Rng>(
     circuit: &Vec<Gate>,
     num_wires: usize,
     replacement_size: usize,
+    gate_sample_limit: usize,
     ct: &mut CompressionTable,
     rng: &mut R,
 ) -> Option<(Vec<Gate>, ReplacementTraceFields)> {
@@ -49,7 +50,7 @@ pub fn find_replacement<R: Rng>(
     while replacement_idx < replacement_size {
         num_samples.push(0);
         loop {
-            if num_samples[replacement_idx] >= 100000 {
+            if num_samples[replacement_idx] >= gate_sample_limit {
                 println!(
                     "exited early, proj_circuit = {:?}, replacement_circuit = {:?}",
                     proj_circuit, replacement_circuit
@@ -180,7 +181,7 @@ mod test {
         let replacement_size = 4;
 
         let s = Instant::now();
-        let res = find_replacement(&circuit, 9, replacement_size, &mut ct, &mut rng);
+        let res = find_replacement(&circuit, 9, replacement_size, 100000, &mut ct, &mut rng);
         let d = Instant::now() - s;
         dbg!(res, d);
     }

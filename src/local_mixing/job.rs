@@ -116,6 +116,7 @@ impl LocalMixingJob {
         let ct_clone = self.ct.clone();
         let mut worker = Worker::new(
             0,
+            self.gate_sample_limit,
             ct_clone,
             self.inflationary_stage_steps,
             self.kneading_stage_steps,
@@ -156,6 +157,7 @@ impl LocalMixingJob {
         let ct_clone = self.ct.clone();
         let mut inf_worker = Worker::new(
             0,
+            self.gate_sample_limit,
             ct_clone,
             self.inflationary_stage_steps,
             self.kneading_stage_steps,
@@ -187,7 +189,13 @@ impl LocalMixingJob {
         let mut workers: Vec<Worker<ChaCha8Rng>> = (0..num_search_workers)
             .map(|worker_id| {
                 let ct_clone = self.ct.clone();
-                Worker::new(worker_id, ct_clone, 0, self.kneading_stage_steps)
+                Worker::new(
+                    worker_id,
+                    self.gate_sample_limit,
+                    ct_clone,
+                    0,
+                    self.kneading_stage_steps,
+                )
             })
             .collect();
 

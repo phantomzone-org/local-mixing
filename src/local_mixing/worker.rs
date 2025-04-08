@@ -23,6 +23,7 @@ pub struct Worker<R: Rng> {
     id: usize,
     ct: CompressionTable,
     rng: R,
+    gate_sample_limit: usize,
     circuit: Circuit,
     #[cfg(feature = "trace")]
     tracer: Tracer,
@@ -31,12 +32,13 @@ pub struct Worker<R: Rng> {
 }
 
 impl Worker<ChaCha8Rng> {
-    pub fn new(id: usize, ct: CompressionTable, inf_capacity: usize, knd_capacity: usize) -> Self {
+    pub fn new(id: usize, gate_sample_limit: usize, ct: CompressionTable, inf_capacity: usize, knd_capacity: usize) -> Self {
         let rng = ChaCha8Rng::from_os_rng();
         Self {
             id,
             ct,
             rng,
+            gate_sample_limit,
             circuit: Circuit::default(),
             #[cfg(feature = "trace")]
             tracer: Tracer::new(inf_capacity, knd_capacity),
@@ -92,6 +94,7 @@ impl Worker<ChaCha8Rng> {
                 &selected_gates,
                 self.circuit.num_wires,
                 N_IN,
+                self.gate_sample_limit,
                 &mut self.ct,
                 &mut self.rng,
             );

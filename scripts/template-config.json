@@ -3,6 +3,6 @@
   "kneading_stage_steps": 100,
   "cf_choice": "TwoBit",
   "run_parallel": true,
-  "gate_sample_limit": 0,
+  "gate_sample_limit": 100000,
   "save_inflationary": true
 }
