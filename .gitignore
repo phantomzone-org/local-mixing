@@ -3,3 +3,4 @@
 /.vscode
 /venv
 .test_outputs
+.experiments
