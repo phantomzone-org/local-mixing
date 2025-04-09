@@ -132,8 +132,8 @@ impl Worker<ChaCha8Rng> {
                         replacement_time,
                     );
 
-                    log::info!(target: "trace", "{}", format!("{}, worker = {}, step={}, SUCCESS: n_gates = {}, n_circuits_sampled = {}, max_candidate_dist = {}, time = {:?}, c_in = {:?}, c_out = {:?}", 
-                    stage, self.id, current_step, search_fields.n_gates, _replacement_fields.num_circuits_sampled, search_fields.max_candidate_dist, search_fields.time, _replacement_fields.input_circuit, _replacement_fields.output_circuit));
+                    log::info!(target: "trace", "{}", format!("{}, worker = {}, step={}, SUCCESS: n_gates = {}, n_circuits_sampled = {}, max_candidate_dist = {}, time = {:?}", 
+                    stage, self.id, current_step, search_fields.n_gates, _replacement_fields.num_circuits_sampled, search_fields.max_candidate_dist, search_fields.time));
                 }
 
                 #[cfg(feature = "correctness")]

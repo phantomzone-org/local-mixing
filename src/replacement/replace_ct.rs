@@ -115,10 +115,8 @@ pub fn find_replacement<R: Rng>(
     });
 
     Some((
-        output_circuit.clone(),
+        output_circuit,
         ReplacementTraceFields {
-            input_circuit: circuit.clone(),
-            output_circuit,
             num_input_wires: input_distinct.len(),
             num_output_wires: output_distinct.len(),
             num_active_wires,

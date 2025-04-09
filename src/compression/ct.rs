@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::circuit::{
     analysis::{
-        compute_active_wires, num_active_wires, optimal_projection_circuit, projection_circuit,
+        compute_active_wires, num_active_wires, projection_circuit,
         truth_table,
     },
     cf::Base2GateControlFunc,
@@ -276,7 +276,7 @@ mod tests {
 
     #[test]
     fn test_compression_table() {
-        let mut ct = CompressionTable::from_file("bin/table-twobit.db");
+        let ct = CompressionTable::from_file("bin/table-twobit.db");
 
         let mut rng = rand::rng();
         for _ in 0..1000000 {

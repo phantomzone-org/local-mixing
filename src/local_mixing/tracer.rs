@@ -2,14 +2,10 @@ use std::{error::Error, fs::File, time::Duration};
 
 use serde::{Deserialize, Serialize};
 
-use crate::circuit::Gate;
-
 use super::job::LocalMixingStage;
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct ReplacementTraceFields {
-    pub input_circuit: Vec<Gate>,
-    pub output_circuit: Vec<Gate>,
     pub num_input_wires: usize,
     pub num_output_wires: usize,
     pub num_active_wires: usize,
