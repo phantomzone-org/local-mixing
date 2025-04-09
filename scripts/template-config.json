@@ -2,7 +2,7 @@
   "inflationary_stage_steps": 100,
   "kneading_stage_steps": 100,
   "cf_choice": "TwoBit",
-  "run_parallel": true,
+  "search_threads": 1,
   "gate_sample_limit": 100000,
   "save_inflationary": true
 }

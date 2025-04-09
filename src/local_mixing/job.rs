@@ -46,7 +46,7 @@ pub struct LocalMixingJob {
     /// Control function choice in replacement
     cf_choice: ControlFnChoice,
     /// Number of worker-threads for search
-    run_parallel: bool,
+    search_threads: usize,
     /// Max number of samples allowed during replacement
     gate_sample_limit: usize,
     /// Save circuit after inflationary stage
@@ -103,7 +103,7 @@ impl LocalMixingJob {
     pub fn run(&mut self) {
         println!("-- Running");
         let start = Instant::now();
-        if self.run_parallel {
+        if self.search_threads > 1 {
             self.run_multiple_threads();
         } else {
             self.run_one_thread();
@@ -184,7 +184,7 @@ impl LocalMixingJob {
 
         println!("-- Kneading stage");
 
-        let num_search_workers = current_num_threads();
+        let num_search_workers = min(self.search_threads, current_num_threads());
         println!(
             "-- Initializing search workers. {} threads available",
             num_search_workers
