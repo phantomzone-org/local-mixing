@@ -48,6 +48,9 @@ pub struct LocalMixingJob {
     gate_sample_limit: usize,
     /// Save circuit after inflationary stage
     save_inflationary: bool,
+    /// Number of wires in auto-generated circuit
+    #[serde(default)]
+    num_wires: usize,
     /// Circuit
     #[serde(default, skip_serializing)]
     circuit: Circuit,
@@ -79,7 +82,11 @@ impl LocalMixingJob {
             println!("-- No input circuit found, generating");
             let mut rng = ChaCha8Rng::from_os_rng();
             job.circuit = Circuit::random_with_cf(
-                DEFAULT_NUM_WIRES,
+                if job.num_wires == 0 {
+                    DEFAULT_NUM_WIRES
+                } else {
+                    job.num_wires
+                },
                 DEFAULT_NUM_GATES,
                 &job.cf_choice,
                 &mut rng,

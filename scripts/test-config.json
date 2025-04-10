@@ -1,4 +1,5 @@
 {
+  "num_wires": 64,
   "inflationary_stage_steps": 100,
   "kneading_stage_steps": 100,
   "cf_choice": "TwoBit",
