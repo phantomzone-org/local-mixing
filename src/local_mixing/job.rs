@@ -129,12 +129,13 @@ impl LocalMixingJob {
         );
         println!("-- Inflationary stage: done");
 
-        let inflationary_circuit = worker.get_current_circuit();
+        let mut inflationary_circuit = worker.get_current_circuit();
         if self.save_inflationary && self.inflationary_stage_steps > 0 {
             let inflationary_path = format!("{}/inflationary.json", self.dir_path);
             inflationary_circuit.save_as_json(inflationary_path.clone());
             println!("-- Saved inflationary stage to {}", inflationary_path);
         }
+        inflationary_circuit.reset_generations();
 
         println!("-- Kneading stage");
         worker.run_task(
@@ -181,6 +182,7 @@ impl LocalMixingJob {
             self.circuit.save_as_json(inflationary_path.clone());
             println!("-- Saved inflationary stage to {}", inflationary_path);
         }
+        self.circuit.reset_generations();
 
         println!("-- Kneading stage");
 

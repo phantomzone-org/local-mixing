@@ -136,8 +136,13 @@ impl Circuit {
         std::fs::write(path, serde_json::to_vec_pretty(&data).unwrap()).unwrap();
     }
 
+    pub fn reset_generations(&mut self) {
+        self.gates.iter_mut().for_each(|g| g.generation = 0);
+    }
+
     pub fn save_generation_data(&self, path: impl AsRef<Path>) {
-        let data = serde_json::to_vec(&self.gates.iter().map(|g| g.generation).collect::<Vec<_>>()).unwrap();
+        let data = serde_json::to_vec(&self.gates.iter().map(|g| g.generation).collect::<Vec<_>>())
+            .unwrap();
         std::fs::write(path, data).unwrap();
     }
 
