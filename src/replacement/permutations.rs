@@ -220,11 +220,12 @@ pub fn riffle_shuffle<const N_IN: usize, T: Default + Copy>(a: &[T; N_IN], even:
         if even {
             let left = &a[0..=half_point];
             let right = &a[(half_point + 1)..];
-            for i in 0..N_IN {
-                if i % 2 == 0 {
-                    out[i] = left[i / 2];
+            for i in 0..=half_point {
+                if i == half_point {
+                    out[2*i] = left [i];
                 } else {
-                    out[i] = right[i / 2];
+                    out[2*i] = left[i];
+                    out[2*i + 1] = right[i];
                 }
             }
         } else {
