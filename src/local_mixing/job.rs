@@ -4,10 +4,7 @@ use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use rayon::{
     current_num_threads,
-    iter::{
-        IndexedParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator,
-        ParallelIterator,
-    },
+    iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator},
 };
 use serde::{Deserialize, Serialize};
 
@@ -206,65 +203,36 @@ impl LocalMixingJob {
         let chunk_size = self.circuit.gates.len() / num_search_workers;
         let mut steps_completed = 0;
         while steps_completed < self.kneading_stage_steps {
-            let phase1_total_steps = min(10000, self.kneading_stage_steps - steps_completed);
-            let phase1_base_steps = phase1_total_steps / num_search_workers;
-            let mut phase1_extra = phase1_total_steps % num_search_workers;
-            let phase1_steps: Vec<usize> = (0..num_search_workers)
-                .map(|_| {
-                    if phase1_extra != 0 {
-                        let steps = phase1_base_steps + 1;
-                        phase1_extra -= 1;
-                        return steps;
-                    }
-                    phase1_base_steps
-                })
-                .collect();
-
             let phase1_circuits = self.circuit.split_into_chunks(num_search_workers, 0);
-
-            workers.par_iter_mut().enumerate().for_each(|(i, worker)| {
-                let steps = phase1_steps[i];
-                let ckt = phase1_circuits[i].clone();
-                worker.run_task(&LocalMixingStage::Kneading, steps, ckt, &self.ct);
-            });
-
             self.circuit.gates = workers
-                .par_iter()
-                .map(|w| w.get_current_circuit())
-                .flat_map(|ckt| ckt.gates)
-                .collect();
-            steps_completed += phase1_total_steps;
+                .par_iter_mut()
+                .enumerate()
+                .map(|(i, worker)| {
+                    let ckt = phase1_circuits[i].clone();
+                    worker.run_task(&LocalMixingStage::Kneading, 1, ckt, &self.ct);
 
-            let phase2_total_steps = min(10000, self.kneading_stage_steps - steps_completed);
-            let phase2_base_steps = phase2_total_steps / num_search_workers;
-            let mut phase2_extra = phase2_total_steps % num_search_workers;
-            let phase2_steps: Vec<usize> = (0..num_search_workers)
-                .map(|_| {
-                    if phase2_extra != 0 {
-                        let steps = phase2_base_steps + 1;
-                        phase2_extra -= 1;
-                        return steps;
-                    }
-                    phase2_base_steps
+                    worker.get_current_circuit()
                 })
+                .flat_map(|ckt| ckt.gates)
                 .collect();
 
             let phase2_circuits = self
                 .circuit
                 .split_into_chunks(num_search_workers, chunk_size / 2);
 
-            workers.par_iter_mut().enumerate().for_each(|(i, worker)| {
-                let steps = phase2_steps[i];
-                let ckt = phase2_circuits[i].clone();
-                worker.run_task(&LocalMixingStage::Kneading, steps, ckt, &self.ct);
-            });
-
             self.circuit.gates = workers
-                .par_iter()
-                .map(|w| w.get_current_circuit())
+                .par_iter_mut()
+                .enumerate()
+                .map(|(i, worker)| {
+                    let ckt = phase2_circuits[i].clone();
+                    worker.run_task(&LocalMixingStage::Kneading, 1, ckt, &self.ct);
+
+                    worker.get_current_circuit()
+                })
                 .flat_map(|ckt| ckt.gates)
                 .collect();
-            steps_completed += phase2_total_steps;
+
+            steps_completed += 2 * num_search_workers;
         }
         println!("-- Kneading stage: done");
 
