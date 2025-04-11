@@ -1,5 +1,105 @@
 use crate::circuit::Circuit;
-use rand::{Rng, RngCore};
+use rand::{seq::IndexedRandom, Rng, RngCore};
+
+pub fn find_convex_gate_ids2<const N_OUT: usize, R: RngCore>(
+    circuit: &Circuit,
+    rng: &mut R,
+) -> ([usize; N_OUT], usize) {
+    let num_gates = circuit.gates.len();
+    let num_wires = circuit.num_wires;
+    let search_range = num_wires;
+    let mut search_attempts = 0;
+    loop {
+        search_attempts += 1;
+        let search_start = rng.random_range(0..num_gates - search_range + 1);
+
+        let mut selected_gate_idx = [0; N_OUT];
+
+        // Pick first gate
+        selected_gate_idx[0] = rng.random_range(search_start..search_start + search_range);
+        let mut selected_gate_ctr = 1;
+
+        while selected_gate_ctr < N_OUT {
+            // Find all gates in range that collide with >= 1 selected gate
+            let candidates: Vec<usize> = (search_start..search_start + search_range)
+                .filter(|&idx| {
+                    for i in 0..selected_gate_ctr {
+                        if idx == selected_gate_idx[i] {
+                            return false;
+                        }
+                    }
+                    for i in 0..selected_gate_ctr {
+                        if circuit.gates[idx].collides_with(&circuit.gates[selected_gate_idx[i]]) {
+                            return true;
+                        }
+                    }
+                    false
+                })
+                .collect();
+            // Break and choose new range if no candidates left to add
+            if candidates.len() == 0 {
+                break;
+            }
+            // Pick next gate at random among candidates
+            selected_gate_idx[selected_gate_ctr] = *candidates.choose(rng).unwrap();
+            selected_gate_ctr += 1;
+        }
+        if selected_gate_ctr != N_OUT {
+            continue;
+        }
+
+        // selected_gate_idx is weakly-connected
+        selected_gate_idx.sort_unstable();
+
+        // Check that selected_gate_idx is convex
+        let mut path_connected_target_wires = vec![false; num_wires];
+        let mut path_connected_control_wires = vec![false; num_wires];
+        let mut selected_gates_seen = 1;
+        let mut not_convex = false;
+
+        for idx in selected_gate_idx[0] + 1..=selected_gate_idx[N_OUT - 1] {
+            if idx != selected_gate_idx[selected_gates_seen] {
+                // Not a selected gate
+                let curr_gate = circuit.gates[idx];
+                let mut collides_with_prev_selected = false;
+                for i in 0..selected_gates_seen {
+                    if curr_gate.collides_with(&circuit.gates[selected_gate_idx[i]]) {
+                        collides_with_prev_selected = true;
+                        break;
+                    }
+                }
+                let [t, c1, c2] = curr_gate.wires;
+                if collides_with_prev_selected
+                    || path_connected_control_wires[t]
+                    || path_connected_target_wires[c1]
+                    || path_connected_target_wires[c2]
+                {
+                    path_connected_target_wires[t] = true;
+                    path_connected_control_wires[c1] = true;
+                    path_connected_control_wires[c2] = true;
+                }
+            } else {
+                // This is the next candidate
+                let [t, c1, c2] = circuit.gates[selected_gate_idx[selected_gates_seen]].wires;
+                if path_connected_control_wires[t]
+                    || path_connected_target_wires[c1]
+                    || path_connected_target_wires[c2]
+                {
+                    not_convex = true;
+                    break;
+                }
+
+                selected_gates_seen += 1;
+            }
+        }
+
+        if not_convex {
+            continue;
+        }
+
+        return (selected_gate_idx, search_attempts);
+    }
+}
 
 pub fn find_convex_gate_ids<const N_OUT: usize, R: RngCore>(
     circuit: &Circuit,
@@ -121,8 +221,14 @@ pub fn find_convex_gate_ids<const N_OUT: usize, R: RngCore>(
                 search_restart_ctr += 1;
             }
 
-            // pick gate 1 at random
-            selected_gate_idx[0] = rng.random_range(0..num_gates - N_OUT + 1);
+            // // pick gate 1 at random
+            // selected_gate_idx[0] = rng.random_range(0..num_gates - N_OUT + 1);
+
+            let gen_zero_idx = (0..num_gates - N_OUT + 1)
+                .filter(|i| circuit.gates[*i].generation == 0)
+                .collect::<Vec<_>>();
+            dbg!(gen_zero_idx.len());
+            selected_gate_idx[0] = *gen_zero_idx.choose(rng).unwrap();
             selected_gate_ctr += 1;
         } else if candidate_next_gates[selected_gate_ctr].is_empty() {
             // reset candidates for this gate, dec ctr and pick again for prev gate

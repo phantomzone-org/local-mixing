@@ -15,7 +15,7 @@ use crate::local_mixing::consts::CORRECTNESS_CHECK_ITER;
 use super::{
     consts::{N_IN, N_OUT_INF, N_OUT_KND},
     job::LocalMixingStage,
-    search::{find_convex_gate_ids, permute_circuit},
+    search::{find_convex_gate_ids2, permute_circuit},
     tracer::{SearchTraceFields, Tracer},
 };
 
@@ -91,7 +91,7 @@ impl Worker<ChaCha8Rng> {
             let start_time = Instant::now();
 
             let (selected_gate_idx, _max_candidate_dist) =
-                find_convex_gate_ids::<N_OUT, _>(&self.circuit, &mut self.rng);
+                find_convex_gate_ids2::<N_OUT, _>(&self.circuit, &mut self.rng);
             let selected_gates = selected_gate_idx
                 .iter()
                 .map(|i| self.circuit.gates[*i])
