@@ -4,7 +4,7 @@ use local_mixing::{
         circuit::{par_check_equiv_probabilistic, Circuit},
     },
     compression::ct::CompressionTable,
-    local_mixing::LocalMixingJob,
+    local_mixing::{test_search::test_local_mixing_search, LocalMixingJob},
     replacement::{
         strategy::{ControlFnChoice, ReplacementStrategy},
         test::test_num_samples,
@@ -49,6 +49,10 @@ fn run() {
             let job_dir = args.next().expect("Missing job directory");
             let mut job = LocalMixingJob::load(&job_dir).expect("Failed to load job");
             job.run();
+        }
+        "search-test" => {
+            let test_dir = args.next().expect("Missing test directory");
+            test_local_mixing_search(&test_dir);
         }
         "build-compression-table" => {
             let save_path = args.next().expect("Missing compression table save path");
