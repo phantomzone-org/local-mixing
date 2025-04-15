@@ -2,7 +2,7 @@
     "num_wires": 64,
     "num_gates": 100000,
     "cf": "TwoBit",
-    "run_parallel": false,
-    "permute": true,
-    "iterations": 1000000
+    "run_parallel": true,
+    "permute": false,
+    "iterations": 100000
 }
