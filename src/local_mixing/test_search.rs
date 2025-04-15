@@ -59,8 +59,7 @@ fn test_parallel(circuit: &mut Circuit, permute: bool, iterations: usize) {
         let mut phase1_circuits = circuit.split_into_chunks(num_search_workers, 0);
         phase1_circuits.par_iter_mut().for_each(|ckt_chunk| {
             let mut rng = ChaCha8Rng::from_os_rng();
-            let (selected_gate_idx, _) =
-                find_convex_gate_ids3::<4, _>(&ckt_chunk, &mut rng);
+            let (selected_gate_idx, _) = find_convex_gate_ids3::<4, _>(&ckt_chunk, &mut rng);
             selected_gate_idx
                 .iter()
                 .for_each(|&id| ckt_chunk.gates[id].generation += 1);
@@ -74,22 +73,22 @@ fn test_parallel(circuit: &mut Circuit, permute: bool, iterations: usize) {
             .flat_map(|ckt| ckt.gates.clone())
             .collect();
 
-        // let mut phase2_circuits = circuit.split_into_chunks(num_search_workers, chunk_size / 2);
-        // phase2_circuits.par_iter_mut().for_each(|ckt_chunk| {
-        //     let (selected_gate_idx, _) =
-        //         find_convex_gate_ids3::<4, _>(&ckt_chunk, &mut rng.clone());
-        //     selected_gate_idx
-        //         .iter()
-        //         .for_each(|&id| ckt_chunk.gates[id].generation += 1);
+        let mut phase2_circuits = circuit.split_into_chunks(num_search_workers, chunk_size / 2);
+        phase2_circuits.par_iter_mut().for_each(|ckt_chunk| {
+            let mut rng = ChaCha8Rng::from_os_rng();
+            let (selected_gate_idx, _) = find_convex_gate_ids3::<4, _>(&ckt_chunk, &mut rng);
+            selected_gate_idx
+                .iter()
+                .for_each(|&id| ckt_chunk.gates[id].generation += 1);
 
-        //     if permute {
-        //         permute_circuit(ckt_chunk, &selected_gate_idx);
-        //     }
-        // });
-        // circuit.gates = phase2_circuits
-        //     .iter()
-        //     .flat_map(|ckt| ckt.gates.clone())
-        //     .collect();
+            if permute {
+                permute_circuit(ckt_chunk, &selected_gate_idx);
+            }
+        });
+        circuit.gates = phase2_circuits
+            .iter()
+            .flat_map(|ckt| ckt.gates.clone())
+            .collect();
 
         steps_completed += 2 * num_search_workers
     }
