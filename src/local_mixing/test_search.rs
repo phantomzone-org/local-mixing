@@ -54,13 +54,13 @@ fn test_parallel(circuit: &mut Circuit, permute: bool, iterations: usize) {
     dbg!(num_search_workers);
     let chunk_size = circuit.gates.len() / num_search_workers;
     let mut steps_completed = 0;
-    let rng = ChaCha8Rng::from_os_rng();
 
     while steps_completed < iterations {
         let mut phase1_circuits = circuit.split_into_chunks(num_search_workers, 0);
         phase1_circuits.par_iter_mut().for_each(|ckt_chunk| {
+            let mut rng = ChaCha8Rng::from_os_rng();
             let (selected_gate_idx, _) =
-                find_convex_gate_ids3::<4, _>(&ckt_chunk, &mut rng.clone());
+                find_convex_gate_ids3::<4, _>(&ckt_chunk, &mut rng);
             selected_gate_idx
                 .iter()
                 .for_each(|&id| ckt_chunk.gates[id].generation += 1);
