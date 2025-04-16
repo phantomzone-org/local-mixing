@@ -54,10 +54,10 @@ impl Worker<ChaCha8Rng> {
         self.circuit.clone()
     }
 
-    pub fn run_task(
+    pub fn step(
         &mut self,
         stage: &LocalMixingStage,
-        num_steps: usize,
+        current_step: usize,
         input_circuit: Circuit,
         ct: &CompressionTable,
     ) {
@@ -70,23 +70,21 @@ impl Worker<ChaCha8Rng> {
 
         match stage {
             LocalMixingStage::Inflationary => {
-                self.run_stage_specific_task::<N_OUT_INF>(stage, num_steps, ct);
+                self.step_stage_specific::<N_OUT_INF>(stage, current_step, ct);
             }
             LocalMixingStage::Kneading => {
-                self.run_stage_specific_task::<N_OUT_KND>(stage, num_steps, ct);
+                self.step_stage_specific::<N_OUT_KND>(stage, current_step, ct);
             }
         }
     }
 
-    fn run_stage_specific_task<const N_OUT: usize>(
+    fn step_stage_specific<const N_OUT: usize>(
         &mut self,
         stage: &LocalMixingStage,
-        num_steps: usize,
+        current_step: usize,
         ct: &CompressionTable,
     ) {
-        let mut current_step = 1;
-
-        while current_step <= num_steps {
+        loop {
             #[cfg(feature = "trace")]
             let start_time = Instant::now();
 
@@ -153,12 +151,50 @@ impl Worker<ChaCha8Rng> {
                     }
                 }
 
-                current_step += 1;
+                return;
             } else {
                 #[cfg(feature = "trace")]
                 log::warn!(target: "trace", "{}, worker = {}, step = {}, FAILED: failed to find replacement for {:?}",
                 stage, self.id, current_step, selected_gates);
             }
+        }
+    }
+
+    pub fn run_task(
+        &mut self,
+        stage: &LocalMixingStage,
+        num_steps: usize,
+        input_circuit: Circuit,
+        ct: &CompressionTable,
+    ) {
+        #[cfg(feature = "correctness")]
+        {
+            self.original_circuit = input_circuit.clone();
+        }
+
+        self.circuit = input_circuit;
+
+        match stage {
+            LocalMixingStage::Inflationary => {
+                self.run_stage_specific_task::<N_OUT_INF>(stage, num_steps, ct);
+            }
+            LocalMixingStage::Kneading => {
+                self.run_stage_specific_task::<N_OUT_KND>(stage, num_steps, ct);
+            }
+        }
+    }
+
+    fn run_stage_specific_task<const N_OUT: usize>(
+        &mut self,
+        stage: &LocalMixingStage,
+        num_steps: usize,
+        ct: &CompressionTable,
+    ) {
+        let mut current_step = 1;
+
+        while current_step <= num_steps {
+            self.step_stage_specific::<N_OUT>(stage, current_step, ct);
+            current_step += 1;
         }
     }
 

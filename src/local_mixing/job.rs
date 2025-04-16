@@ -233,7 +233,8 @@ impl LocalMixingJob {
                 .enumerate()
                 .map(|(i, worker)| {
                     let ckt = phase1_circuits[i].clone();
-                    worker.run_task(&LocalMixingStage::Kneading, 1, ckt, &self.ct);
+                    let current_step = steps_completed + i;
+                    worker.step(&LocalMixingStage::Kneading, current_step, ckt, &self.ct);
 
                     worker.get_current_circuit()
                 })
@@ -249,7 +250,8 @@ impl LocalMixingJob {
                 .enumerate()
                 .map(|(i, worker)| {
                     let ckt = phase2_circuits[i].clone();
-                    worker.run_task(&LocalMixingStage::Kneading, 1, ckt, &self.ct);
+                    let current_step = steps_completed + num_search_workers + i;
+                    worker.step(&LocalMixingStage::Kneading, current_step, ckt, &self.ct);
 
                     worker.get_current_circuit()
                 })
