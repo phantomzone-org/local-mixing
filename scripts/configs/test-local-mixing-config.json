@@ -1,7 +1,7 @@
 {
   "num_wires": 64,
   "inflationary_stage_steps": 1000,
-  "kneading_stage_steps": 10000,
+  "kneading_stage_steps": 1000,
   "cf_choice": "TwoBit",
   "search_threads": 8,
   "gate_sample_limit": 100000,
