@@ -251,7 +251,9 @@ impl LocalMixingJob {
             self.circuit
                 .save_generation_data(format!("{}/generation.json", self.dir_path));
 
-            let tracer = Tracer::collect(workers.iter().map(|worker| worker.tracer()));
+            let mut all_workers = vec![inf_worker];
+            all_workers.extend(workers);
+            let tracer = Tracer::collect(all_workers.iter().map(|worker| worker.tracer()));
             tracer.save_to_file(&self.dir_path).unwrap();
         }
     }
