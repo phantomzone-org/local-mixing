@@ -2,6 +2,8 @@ use std::{error::Error, fs::File, time::Duration};
 
 use serde::{Deserialize, Serialize};
 
+use crate::circuit::{circuit::GateData, Gate};
+
 use super::job::LocalMixingStage;
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
@@ -86,11 +88,40 @@ impl SearchInfo {
     }
 }
 
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct ReplacementSampleFields {
+    c_out: Vec<GateData>,
+    c_in: Vec<GateData>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, Default)]
+pub struct ReplacementSamples {
+    inflationary_stage: Vec<ReplacementSampleFields>,
+    kneading_stage: Vec<ReplacementSampleFields>,
+}
+
+impl ReplacementSamples {
+    fn new(inf_capacity: usize, knd_capacity: usize) -> Self {
+        Self {
+            inflationary_stage: Vec::with_capacity(inf_capacity),
+            kneading_stage: Vec::with_capacity(knd_capacity),
+        }
+    }
+
+    fn add_entry(&mut self, stage: &LocalMixingStage, replacement: ReplacementSampleFields) {
+        match stage {
+            LocalMixingStage::Inflationary => self.inflationary_stage.push(replacement),
+            LocalMixingStage::Kneading => self.kneading_stage.push(replacement),
+        }
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize, Debug, Default)]
 pub struct Tracer {
     pub replacement_times: ReplacementTimes,
     pub replacement_info: ReplacementInfo,
     pub search_info: SearchInfo,
+    pub replacement_samples: ReplacementSamples,
 }
 
 impl Tracer {
@@ -99,6 +130,7 @@ impl Tracer {
             replacement_times: ReplacementTimes::new(inf_capacity, knd_capacity),
             replacement_info: ReplacementInfo::new(inf_capacity, knd_capacity),
             search_info: SearchInfo::new(inf_capacity, knd_capacity),
+            replacement_samples: ReplacementSamples::new(inf_capacity, knd_capacity),
         }
     }
 
@@ -114,12 +146,31 @@ impl Tracer {
         self.search_info.add_entry(stage, search_fields);
     }
 
+    pub fn add_replacement_sample(
+        &mut self,
+        stage: &LocalMixingStage,
+        c_out: Vec<Gate>,
+        c_in: Vec<Gate>,
+    ) {
+        self.replacement_samples.add_entry(
+            stage,
+            ReplacementSampleFields {
+                c_out: c_out.iter().map(|&g| g.into()).collect(),
+                c_in: c_in.iter().map(|&g| g.into()).collect(),
+            },
+        );
+    }
+
     pub fn save_to_file(&self, dir_path: &str) -> Result<(), Box<dyn Error>> {
         let file = File::create(format!("{}/logs/replacement_times.json", dir_path)).unwrap();
-        serde_json::to_writer_pretty(file, &self.replacement_times)?;
+        serde_json::to_writer(file, &self.replacement_times)?;
 
         let file = File::create(format!("{}/logs/replacement_fields.json", dir_path)).unwrap();
         serde_json::to_writer_pretty(file, &self.replacement_info)?;
+
+        let file = File::create(format!("{}/logs/replacement_samples.json", dir_path)).unwrap();
+        serde_json::to_writer(file, &self.replacement_samples)?;
+
         Ok(())
     }
 
@@ -153,6 +204,15 @@ impl Tracer {
                 .search_info
                 .kneading_stage
                 .extend(tracer.search_info.kneading_stage);
+
+            combined
+                .replacement_samples
+                .inflationary_stage
+                .extend(tracer.replacement_samples.inflationary_stage);
+            combined
+                .replacement_samples
+                .kneading_stage
+                .extend(tracer.replacement_samples.kneading_stage);
         }
 
         combined

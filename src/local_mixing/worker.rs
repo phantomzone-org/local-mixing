@@ -90,7 +90,8 @@ impl Worker<ChaCha8Rng> {
 
             let (selected_gate_idx, _n_search_attempts) =
                 find_convex_gate_ids3::<N_OUT, _>(&self.circuit, &mut self.rng);
-            let selected_gates = selected_gate_idx
+
+            let c_out = selected_gate_idx
                 .iter()
                 .map(|i| self.circuit.gates[*i])
                 .collect::<Vec<_>>();
@@ -99,7 +100,7 @@ impl Worker<ChaCha8Rng> {
             let repl_start = Instant::now();
 
             let replacement_res = find_replacement(
-                &selected_gates,
+                &c_out,
                 self.circuit.num_wires,
                 N_IN,
                 self.gate_sample_limit,
@@ -111,6 +112,12 @@ impl Worker<ChaCha8Rng> {
             let replacement_time = Instant::now() - repl_start;
 
             if let Some((c_in, _replacement_fields)) = replacement_res {
+                #[cfg(feature = "trace")]
+                if current_step % 10000 == 0 {
+                    self.tracer
+                        .add_replacement_sample(stage, c_out, c_in.clone());
+                }
+
                 let c_out_start = permute_circuit(&mut self.circuit, &selected_gate_idx);
                 self.circuit
                     .gates
@@ -155,7 +162,7 @@ impl Worker<ChaCha8Rng> {
             } else {
                 #[cfg(feature = "trace")]
                 log::warn!(target: "trace", "{}, worker = {}, step = {}, FAILED: failed to find replacement for {:?}",
-                stage, self.id, current_step, selected_gates);
+                stage, self.id, current_step, c_out);
             }
         }
     }
