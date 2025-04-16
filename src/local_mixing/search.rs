@@ -154,6 +154,9 @@ pub fn find_convex_gate_ids3<const N_OUT: usize, R: RngCore>(
             selected_gate_ctr += 1;
         }
 
+        #[cfg(feature = "correctness")]
+        assert!(is_convex(circuit, &selected_gate_idx));
+
         return (selected_gate_idx, search_attempts);
     }
 }
@@ -466,58 +469,61 @@ pub fn permute_circuit<const N_OUT: usize>(
     c_out_start
 }
 
-#[cfg(test)]
-mod tests {
-    use crate::{circuit::Circuit, local_mixing::consts::N_OUT_KND};
+pub fn is_convex(circuit: &Circuit, convex_gate_ids: &[usize]) -> bool {
+    let mut is_convex = true;
 
-    use super::find_convex_gate_ids;
-
-    fn is_convex(circuit: &Circuit, convex_gate_ids: &[usize]) -> bool {
-        let mut is_convex = true;
-
-        let mut colliding_set = vec![];
-        let mut path_colliding_targets = vec![false; circuit.num_wires];
-        let mut path_colliding_controls = vec![false; circuit.num_wires];
-        'outer: for i in convex_gate_ids[0]..*convex_gate_ids.last().unwrap() + 1 {
-            if convex_gate_ids.contains(&i) {
-                let selected_gate = circuit.gates[i];
-                // check no collision with any gate in colliding_set
-                for c_gate in colliding_set.iter() {
-                    if selected_gate.collides_with(c_gate) {
-                        is_convex = false;
-                        break 'outer;
-                    }
+    let mut colliding_set = vec![];
+    let mut path_colliding_targets = vec![false; circuit.num_wires];
+    let mut path_colliding_controls = vec![false; circuit.num_wires];
+    'outer: for i in convex_gate_ids[0]..*convex_gate_ids.last().unwrap() + 1 {
+        if convex_gate_ids.contains(&i) {
+            let selected_gate = circuit.gates[i];
+            // check no collision with any gate in colliding_set
+            for c_gate in colliding_set.iter() {
+                if selected_gate.collides_with(c_gate) {
+                    is_convex = false;
+                    break 'outer;
                 }
+            }
 
-                let [t, c0, c1] = circuit.gates[i].wires;
+            let [t, c0, c1] = circuit.gates[i].wires;
+            path_colliding_targets[t] = true;
+            path_colliding_controls[c0] = true;
+            path_colliding_controls[c1] = true;
+        } else {
+            let [t, c0, c1] = circuit.gates[i].wires;
+            if path_colliding_targets[c0]
+                || path_colliding_targets[c1]
+                || path_colliding_controls[t]
+            {
+                colliding_set.push(circuit.gates[i].clone());
                 path_colliding_targets[t] = true;
                 path_colliding_controls[c0] = true;
                 path_colliding_controls[c1] = true;
-            } else {
-                let [t, c0, c1] = circuit.gates[i].wires;
-                if path_colliding_targets[c0]
-                    || path_colliding_targets[c1]
-                    || path_colliding_controls[t]
-                {
-                    colliding_set.push(circuit.gates[i].clone());
-                    path_colliding_targets[t] = true;
-                    path_colliding_controls[c0] = true;
-                    path_colliding_controls[c1] = true;
-                }
             }
         }
-
-        is_convex
     }
+
+    is_convex
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        circuit::Circuit,
+        local_mixing::{consts::N_OUT_KND, search::is_convex},
+    };
+
+    use super::find_convex_gate_ids3;
 
     #[test]
     fn test_find_convex() {
         let num_wires = 64;
         let num_gates = 10000;
         let mut rng = rand::rng();
-        for i in 0..1000 {
+        for i in 0..100000 {
             let circuit = Circuit::random(num_wires, num_gates, &mut rng);
-            let (convex_gate_ids, _) = find_convex_gate_ids::<N_OUT_KND, _>(&circuit, &mut rng);
+            let (convex_gate_ids, _) = find_convex_gate_ids3::<N_OUT_KND, _>(&circuit, &mut rng);
             assert!(
                 is_convex(&circuit, &convex_gate_ids),
                 "failed at iteration {i}"
