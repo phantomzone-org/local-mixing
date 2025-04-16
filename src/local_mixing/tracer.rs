@@ -117,11 +117,24 @@ impl ReplacementSamples {
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug, Default)]
+pub struct StepStatusCounter {
+    pub success: usize,
+    pub fail: usize,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, Default)]
+pub struct StepStatuses {
+    pub inflationary_stage: StepStatusCounter,
+    pub kneading_stage: StepStatusCounter,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, Default)]
 pub struct Tracer {
     pub replacement_times: ReplacementTimes,
     pub replacement_info: ReplacementInfo,
     pub search_info: SearchInfo,
     pub replacement_samples: ReplacementSamples,
+    pub step_statuses: StepStatuses,
 }
 
 impl Tracer {
@@ -131,6 +144,7 @@ impl Tracer {
             replacement_info: ReplacementInfo::new(inf_capacity, knd_capacity),
             search_info: SearchInfo::new(inf_capacity, knd_capacity),
             replacement_samples: ReplacementSamples::new(inf_capacity, knd_capacity),
+            step_statuses: StepStatuses::default(),
         }
     }
 
@@ -159,6 +173,20 @@ impl Tracer {
                 c_in: c_in.iter().map(|&g| g.into()).collect(),
             },
         );
+    }
+
+    pub fn inc_success(&mut self, stage: &LocalMixingStage) {
+        match stage {
+            LocalMixingStage::Inflationary => self.step_statuses.inflationary_stage.success += 1,
+            LocalMixingStage::Kneading => self.step_statuses.kneading_stage.success += 1,
+        }
+    }
+
+    pub fn inc_fail(&mut self, stage: &LocalMixingStage) {
+        match stage {
+            LocalMixingStage::Inflationary => self.step_statuses.inflationary_stage.fail += 1,
+            LocalMixingStage::Kneading => self.step_statuses.kneading_stage.fail += 1,
+        }
     }
 
     pub fn save_to_file(&self, dir_path: &str) -> Result<(), Box<dyn Error>> {
@@ -213,6 +241,14 @@ impl Tracer {
                 .replacement_samples
                 .kneading_stage
                 .extend(tracer.replacement_samples.kneading_stage);
+
+            combined.step_statuses.inflationary_stage.fail +=
+                tracer.step_statuses.inflationary_stage.fail;
+            combined.step_statuses.inflationary_stage.success +=
+                tracer.step_statuses.inflationary_stage.success;
+            combined.step_statuses.kneading_stage.fail += tracer.step_statuses.kneading_stage.fail;
+            combined.step_statuses.kneading_stage.success +=
+                tracer.step_statuses.kneading_stage.success;
         }
 
         combined

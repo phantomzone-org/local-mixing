@@ -177,6 +177,12 @@ impl LocalMixingJob {
                 .get_current_circuit()
                 .save_generation_data(format!("{}/generation.json", self.dir_path));
             worker.save_trace(&self.dir_path);
+            let tracer = worker.tracer();
+            log::info!(target: "trace", "Finished.");
+            log::info!(target: "trace", "Inflationary stage successes: {}", tracer.step_statuses.inflationary_stage.success);
+            log::info!(target: "trace", "Inflationary stage fails: {}", tracer.step_statuses.inflationary_stage.fail);
+            log::info!(target: "trace", "Kneading stage successes: {}", tracer.step_statuses.kneading_stage.success);
+            log::info!(target: "trace", "Kneading stage fails: {}", tracer.step_statuses.kneading_stage.fail);
         }
     }
 
@@ -274,6 +280,11 @@ impl LocalMixingJob {
             all_workers.extend(workers);
             let tracer = Tracer::collect(all_workers.iter().map(|worker| worker.tracer()));
             tracer.save_to_file(&self.dir_path).unwrap();
+            log::info!(target: "trace", "Finished.");
+            log::info!(target: "trace", "Inflationary stage successes: {}", tracer.step_statuses.inflationary_stage.success);
+            log::info!(target: "trace", "Inflationary stage fails: {}", tracer.step_statuses.inflationary_stage.fail);
+            log::info!(target: "trace", "Kneading stage successes: {}", tracer.step_statuses.kneading_stage.success);
+            log::info!(target: "trace", "Kneading stage fails: {}", tracer.step_statuses.kneading_stage.fail);
         }
     }
 }

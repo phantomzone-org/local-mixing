@@ -136,6 +136,7 @@ impl Worker<ChaCha8Rng> {
                         _replacement_fields.clone(),
                         replacement_time,
                     );
+                    self.tracer.inc_success(stage);
 
                     log::info!(target: "trace", "{}", format!("{}, worker = {}, step={}, SUCCESS: n_gates = {}, n_circuits_sampled = {}, n_search_attempts = {}, time = {:?}", 
                     stage, self.id, current_step, search_fields.n_gates, _replacement_fields.num_circuits_sampled, search_fields.n_search_attempts, search_fields.time));
@@ -161,8 +162,11 @@ impl Worker<ChaCha8Rng> {
                 return;
             } else {
                 #[cfg(feature = "trace")]
-                log::warn!(target: "trace", "{}, worker = {}, step = {}, FAILED: failed to find replacement for {:?}",
-                stage, self.id, current_step, c_out);
+                {
+                    log::warn!(target: "trace", "{}, worker = {}, step = {}, FAILED: failed to find replacement for {:?}",
+                        stage, self.id, current_step, c_out);
+                    self.tracer.inc_fail(stage);
+                }
             }
         }
     }
