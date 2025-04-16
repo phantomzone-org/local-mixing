@@ -3,7 +3,8 @@
   "inflationary_stage_steps": 1000,
   "kneading_stage_steps": 10000,
   "cf_choice": "TwoBit",
-  "search_threads": 1,
+  "search_threads": 8,
   "gate_sample_limit": 100000,
-  "save_inflationary": true
+  "save_inflationary": true,
+  "compression_table_path": "bin/table-twobit.db"
 }

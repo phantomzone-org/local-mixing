@@ -48,6 +48,8 @@ pub struct LocalMixingJob {
     gate_sample_limit: usize,
     /// Save circuit after inflationary stage
     save_inflationary: bool,
+    /// Path to compression table
+    compression_table_path: String,
     /// Number of wires in auto-generated circuit
     #[serde(default)]
     num_wires: usize,
@@ -68,7 +70,6 @@ impl LocalMixingJob {
 
         let config_path = format!("{}/config.json", dir_path);
         let input_circuit_path = format!("{}/input.json", dir_path);
-        let ct_path = "bin/table-twobit.db";
 
         let mut job: Self = serde_json::from_reader(BufReader::new(File::open(&config_path)?))?;
         job.dir_path = dir_path.to_string();
@@ -96,10 +97,26 @@ impl LocalMixingJob {
         }
 
         // Load compression table
-        println!("-- Loading compression table at {}", ct_path);
-        job.ct = CompressionTable::from_file(ct_path);
-        assert!(job.cf_choice.cfs() == job.ct.cf_choice);
-        println!("-- Loading compression table done");
+        if Path::new(&job.compression_table_path).exists() {
+            println!(
+                "-- Loading compression table at {}",
+                job.compression_table_path
+            );
+            job.ct = CompressionTable::from_file(&job.compression_table_path);
+            assert!(job.cf_choice.cfs() == job.ct.cf_choice);
+            println!("-- Loading compression table done");
+        } else {
+            println!(
+                "-- No compression table found at {}, generating",
+                job.compression_table_path
+            );
+            job.ct = CompressionTable::new(3, 9, job.cf_choice.cfs());
+            job.ct.save_to_file(&job.compression_table_path);
+            println!(
+                "-- Save compression table into {}",
+                job.compression_table_path
+            );
+        }
 
         Ok(job)
     }
