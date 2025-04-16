@@ -135,48 +135,40 @@ fn sample_gate<R: Rng>(num_wires: usize, cf_choice: &Vec<u8>, rng: &mut R) -> Ga
 
 #[cfg(test)]
 mod test {
-    use std::time::Instant;
-
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 
-    use crate::{circuit::Gate, compression::ct::CompressionTable};
+    use crate::{
+        circuit::{circuit::par_check_equiv_probabilistic, Circuit},
+        compression::ct::CompressionTable,
+        replacement::strategy::ControlFnChoice,
+    };
 
     use super::find_replacement;
 
     #[test]
-    fn test_replacement_with_ct() {
-        println!("loading ct");
-        let mut ct = CompressionTable::from_file("bin/table-twobit.db");
-        println!("done loading ct");
+    fn test_replacement_ct() {
+        let ct = CompressionTable::new(3, 9, ControlFnChoice::TwoBit.cfs());
+        let wires = 15;
         let mut rng = ChaCha8Rng::from_os_rng();
-        let circuit = vec![
-            Gate {
-                wires: [10, 1, 2],
-                control_func: 2,
-                generation: 0,
-            },
-            Gate {
-                wires: [1, 3, 4],
-                control_func: 9,
-                generation: 0,
-            },
-            Gate {
-                wires: [4, 5, 6],
-                control_func: 6,
-                generation: 0,
-            },
-            Gate {
-                wires: [5, 8, 7],
-                control_func: 11,
-                generation: 0,
-            },
-        ];
-        let replacement_size = 4;
-
-        let s = Instant::now();
-        let res = find_replacement(&circuit, 9, replacement_size, 100000, &mut ct, &mut rng);
-        let d = Instant::now() - s;
-        dbg!(res, d);
+        let mut replacement_success_count = 0;
+        while replacement_success_count < 10 {
+            let ckt_one = Circuit::random(wires, 2, &mut rng).gates;
+            let ckt_two = match find_replacement(&ckt_one, wires, 4, 1000000, &ct, &mut rng) {
+                Some((r, _)) => {
+                    replacement_success_count += 1;
+                    r
+                }
+                None => continue,
+            };
+            match par_check_equiv_probabilistic(wires, &ckt_one, &ckt_two, 1000, &mut rng) {
+                Ok(()) => continue,
+                _ => {
+                    dbg!(ckt_one);
+                    dbg!(ckt_two);
+                    panic!();
+                }
+            }
+        }
     }
 }

@@ -1,10 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::circuit::{
-    analysis::{
-        compute_active_wires, num_active_wires, projection_circuit,
-        truth_table,
-    },
+    analysis::{compute_active_wires, num_active_wires, projection_circuit, truth_table},
     cf::Base2GateControlFunc,
     Gate,
 };
@@ -266,21 +263,23 @@ mod tests {
     use super::CompressionTable;
     use crate::{
         circuit::{
-            analysis::{
-                compute_active_wires, optimal_projection_circuit, projection_circuit, truth_table,
-            },
-            Circuit, Gate,
+            analysis::{compute_active_wires, projection_circuit, truth_table},
+            Circuit,
         },
         replacement::strategy::ControlFnChoice,
     };
 
     #[test]
     fn test_compression_table() {
-        let ct = CompressionTable::from_file("bin/table-twobit.db");
+        let gates = 3;
+        let wires = 9;
+        let cf_choice = ControlFnChoice::TwoBit;
+        let ct = CompressionTable::new(gates, wires, cf_choice.cfs());
 
         let mut rng = rand::rng();
         for _ in 0..1000000 {
-            let circuit = Circuit::random_with_cf(9, 3, &ControlFnChoice::TwoBit, &mut rng).gates;
+            let circuit =
+                Circuit::random_with_cf(wires, gates, &ControlFnChoice::TwoBit, &mut rng).gates;
 
             let res = ct.lookup_cxity(&circuit);
             if res.is_none() {
@@ -290,50 +289,8 @@ mod tests {
                 let proj_tt = truth_table(9, &proj_circuit);
                 let proj_active = compute_active_wires(9, &proj_tt);
                 dbg!(proj_active);
-                let opt_circuit = optimal_projection_circuit(&circuit).0;
-                dbg!(&opt_circuit);
-                let opt_tt = truth_table(9, &opt_circuit);
-                let opt_active = compute_active_wires(9, &opt_tt);
-                dbg!(opt_active);
             }
             assert!(res.is_some());
         }
-    }
-
-    #[test]
-    fn test_ct_specific() {
-        let mut ct = CompressionTable::from_file("bin/table-twobit.db");
-        let circuit = vec![
-            Gate {
-                wires: [5, 8, 3],
-                control_func: 9,
-                generation: 0,
-            },
-            Gate {
-                wires: [0, 2, 8],
-                control_func: 11,
-                generation: 0,
-            },
-            Gate {
-                wires: [5, 6, 3],
-                control_func: 6,
-                generation: 0,
-            },
-        ];
-        let res = ct.compress_circuit(&circuit);
-        if res.is_none() {
-            dbg!(&circuit);
-            let proj_circuit = projection_circuit(&circuit).0;
-            dbg!(&proj_circuit);
-            let proj_tt = truth_table(9, &proj_circuit);
-            let proj_active = compute_active_wires(9, &proj_tt);
-            dbg!(proj_active);
-            let opt_circuit = optimal_projection_circuit(&circuit).0;
-            dbg!(&opt_circuit);
-            let opt_tt = truth_table(9, &opt_circuit);
-            let opt_active = compute_active_wires(9, &opt_tt);
-            dbg!(opt_active);
-        }
-        assert!(res.is_some());
     }
 }

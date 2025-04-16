@@ -1,6 +1,6 @@
+pub mod replace_ct;
 pub mod strategy;
 pub mod test;
-pub mod replace_ct;
 
 use crate::{
     circuit::{
@@ -347,13 +347,13 @@ mod tests {
     };
 
     #[test]
-    fn test_find_replacement_n_out_4() {
-        let wires = 100;
+    fn test_find_replacement_random_sample() {
+        let wires = 15;
         let mut rng = ChaCha8Rng::from_os_rng();
         for _ in 0..10 {
-            let ckt_one = Circuit::random(wires, 2, &mut rng);
+            let ckt_one = Circuit::random(wires, 2, &mut rng).gates;
             let replacement = match find_replacement_circuit::<2, 4, 9, { 1 << 9 }, _>(
-                &[ckt_one.gates[0], ckt_one.gates[1]],
+                &[ckt_one[0], ckt_one[1]],
                 wires,
                 1_000_000_000,
                 ReplacementStrategy::SampleActive0,
@@ -369,7 +369,7 @@ mod tests {
             };
             match par_check_equiv_probabilistic(
                 wires,
-                &ckt_one.gates,
+                &ckt_one,
                 &Vec::from(replacement),
                 1000,
                 &mut rng,
@@ -378,6 +378,7 @@ mod tests {
                 _ => {
                     dbg!(ckt_one);
                     dbg!(ckt_two);
+                    panic!();
                 }
             }
         }
