@@ -16,7 +16,7 @@ pub struct ReplacementTraceFields {
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct SearchTraceFields {
     pub n_gates: usize,
-    pub max_candidate_dist: usize,
+    pub n_search_attempts: usize,
     pub time: Duration,
 }
 

@@ -90,7 +90,7 @@ impl Worker<ChaCha8Rng> {
             #[cfg(feature = "trace")]
             let start_time = Instant::now();
 
-            let (selected_gate_idx, _max_candidate_dist) =
+            let (selected_gate_idx, _n_search_attempts) =
                 find_convex_gate_ids3::<N_OUT, _>(&self.circuit, &mut self.rng);
             let selected_gates = selected_gate_idx
                 .iter()
@@ -122,7 +122,7 @@ impl Worker<ChaCha8Rng> {
                 {
                     let search_fields = SearchTraceFields {
                         n_gates: self.circuit.gates.len(),
-                        max_candidate_dist: _max_candidate_dist,
+                        n_search_attempts: _n_search_attempts,
                         time: Instant::now() - start_time,
                     };
                     self.tracer.add_entry(
@@ -132,8 +132,8 @@ impl Worker<ChaCha8Rng> {
                         replacement_time,
                     );
 
-                    log::info!(target: "trace", "{}", format!("{}, worker = {}, step={}, SUCCESS: n_gates = {}, n_circuits_sampled = {}, max_candidate_dist = {}, time = {:?}", 
-                    stage, self.id, current_step, search_fields.n_gates, _replacement_fields.num_circuits_sampled, search_fields.max_candidate_dist, search_fields.time));
+                    log::info!(target: "trace", "{}", format!("{}, worker = {}, step={}, SUCCESS: n_gates = {}, n_circuits_sampled = {}, n_search_attempts = {}, time = {:?}", 
+                    stage, self.id, current_step, search_fields.n_gates, _replacement_fields.num_circuits_sampled, search_fields.n_search_attempts, search_fields.time));
                 }
 
                 #[cfg(feature = "correctness")]
