@@ -51,10 +51,6 @@ pub fn find_replacement<R: Rng>(
         num_samples.push(0);
         loop {
             if num_samples[replacement_idx] >= gate_sample_limit {
-                println!(
-                    "exited early, proj_circuit = {:?}, replacement_circuit = {:?}",
-                    proj_circuit, replacement_circuit
-                );
                 return None;
             }
             let g = sample_gate(9, &ct.cf_choice, rng);
