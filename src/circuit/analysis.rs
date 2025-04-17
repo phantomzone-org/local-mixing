@@ -5,7 +5,7 @@ type ProjMap = Vec<usize>;
 type TruthTable = Vec<usize>;
 type ActiveWires = Vec<usize>;
 
-pub fn projection_circuit(circuit: &Circuit) -> (Circuit, ProjMap) {
+pub fn projection_circuit(circuit: &[Gate]) -> (Circuit, ProjMap) {
     let mut proj_circuit = vec![Gate::default(); circuit.len()];
     let mut proj_map = vec![];
     let mut proj_ctr = 0;
@@ -131,8 +131,7 @@ pub fn optimal_projection_circuit(circuit: &Circuit) -> (Circuit, ProjMap, usize
             let proj_wire = proj_circuit[i].wires[w];
             if let Some(pos) = updated_proj_map.iter().position(|&x| x == wire) {
                 updated_proj_circuit[i].wires[w] = pos;
-            } else if active_wires.0.contains(&(proj_wire))
-                || active_wires.1.contains(&(proj_wire))
+            } else if active_wires.0.contains(&(proj_wire)) || active_wires.1.contains(&(proj_wire))
             {
                 updated_proj_circuit[i].wires[w] = proj_ctr;
                 updated_proj_map.push(wire);

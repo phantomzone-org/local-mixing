@@ -8,7 +8,7 @@ use rand::seq::{IndexedRandom, SliceRandom};
 use rand::Rng;
 
 pub fn find_replacement<R: Rng>(
-    circuit: &Vec<Gate>,
+    circuit: &[Gate],
     num_wires: usize,
     replacement_size: usize,
     gate_sample_limit: usize,
@@ -153,7 +153,7 @@ mod test {
         let mut rng = ChaCha8Rng::from_os_rng();
         let mut replacement_success_count = 0;
         while replacement_success_count < 10 {
-            let ckt_one = Circuit::random(wires, 2, &mut rng).gates;
+            let ckt_one = Circuit::random_with_cf(wires, 2, ControlFnChoice::All, &mut rng).gates;
             let ckt_two = match find_replacement(&ckt_one, wires, 4, 1000000, &ct, &mut rng) {
                 Some((r, _)) => {
                     replacement_success_count += 1;

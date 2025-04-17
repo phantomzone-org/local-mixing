@@ -1,4 +1,4 @@
-use std::{error::Error, fs::File, time::Duration};
+use std::{error::Error, fmt::Display, fs::File, path::Path, time::Duration};
 
 use serde::{Deserialize, Serialize};
 
@@ -108,7 +108,7 @@ impl ReplacementSamples {
         }
     }
 
-    fn add_entry(&mut self, stage: &LocalMixingStage, replacement: ReplacementSampleFields) {
+    fn add_entry(&mut self, stage: LocalMixingStage, replacement: ReplacementSampleFields) {
         match stage {
             LocalMixingStage::Inflationary => self.inflationary_stage.push(replacement),
             LocalMixingStage::Kneading => self.kneading_stage.push(replacement),
@@ -162,7 +162,7 @@ impl Tracer {
 
     pub fn add_replacement_sample(
         &mut self,
-        stage: &LocalMixingStage,
+        stage: LocalMixingStage,
         c_out: Vec<Gate>,
         c_in: Vec<Gate>,
     ) {
@@ -182,7 +182,7 @@ impl Tracer {
         }
     }
 
-    pub fn inc_fail(&mut self, stage: &LocalMixingStage) {
+    pub fn inc_fail(&mut self, stage: LocalMixingStage) {
         match stage {
             LocalMixingStage::Inflationary => self.step_statuses.inflationary_stage.fail += 1,
             LocalMixingStage::Kneading => self.step_statuses.kneading_stage.fail += 1,

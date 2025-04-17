@@ -1,4 +1,4 @@
-use crate::circuit::Circuit;
+use crate::circuit::{Circuit, Gate};
 use rand::{seq::IndexedRandom, Rng, RngCore};
 
 struct PathConnectedWires {
@@ -31,11 +31,12 @@ impl PathConnectedWires {
 }
 
 pub fn find_convex_gate_ids3<const N_OUT: usize, R: RngCore>(
-    circuit: &Circuit,
+    circuit_num_wires: usize,
+    circuit_gates: &[Gate],
     rng: &mut R,
 ) -> ([usize; N_OUT], usize) {
-    let num_gates = circuit.gates.len();
-    let num_wires = circuit.num_wires;
+    let num_gates = circuit_gates.len();
+    let num_wires = circuit_num_wires;
     let mut search_attempts = 0;
     loop {
         search_attempts += 1;
@@ -63,10 +64,10 @@ pub fn find_convex_gate_ids3<const N_OUT: usize, R: RngCore>(
                         selected_gates_seen += 1;
                     } else {
                         // Not a selected gate
-                        let curr_gate = circuit.gates[curr_idx];
+                        let curr_gate = circuit_gates[curr_idx];
                         let mut collides_with_prev_selected = false;
                         for i in 0..selected_gates_seen {
-                            if curr_gate.collides_with(&circuit.gates[selected_gate_idx[i]]) {
+                            if curr_gate.collides_with(&circuit_gates[selected_gate_idx[i]]) {
                                 collides_with_prev_selected = true;
                                 break;
                             }
@@ -108,11 +109,11 @@ pub fn find_convex_gate_ids3<const N_OUT: usize, R: RngCore>(
                         selected_gates_seen += 1;
                     } else {
                         // Not a selected gate
-                        let curr_gate = circuit.gates[curr_idx];
+                        let curr_gate = circuit_gates[curr_idx];
                         let mut collides_with_prev_selected = false;
                         for i in 0..selected_gates_seen {
                             if curr_gate.collides_with(
-                                &circuit.gates[selected_gate_idx[selected_gate_ctr - 1 - i]],
+                                &circuit_gates[selected_gate_idx[selected_gate_ctr - 1 - i]],
                             ) {
                                 collides_with_prev_selected = true;
                                 break;
@@ -155,7 +156,11 @@ pub fn find_convex_gate_ids3<const N_OUT: usize, R: RngCore>(
         }
 
         #[cfg(feature = "correctness")]
-        assert!(is_convex(circuit, &selected_gate_idx));
+        assert!(is_convex(
+            circuit_num_wires,
+            circuit_gates,
+            &selected_gate_idx
+        ));
 
         return (selected_gate_idx, search_attempts);
     }
@@ -413,18 +418,19 @@ pub fn find_convex_gate_ids<const N_OUT: usize, R: RngCore>(
 }
 
 pub fn permute_circuit<const N_OUT: usize>(
-    circuit: &mut Circuit,
+    circuit_num_wires: usize,
+    circuit_gates: &mut [Gate],
     selected_gate_idx: &[usize; N_OUT],
 ) -> usize {
-    let selected_gates = selected_gate_idx.map(|id| circuit.gates[id]);
+    let selected_gates = selected_gate_idx.map(|id| circuit_gates[id]);
     let mut to_before = vec![];
     let mut to_after = vec![];
-    let mut path_connected_target_wires = vec![false; circuit.num_wires];
-    let mut path_connected_control_wires = vec![false; circuit.num_wires];
+    let mut path_connected_target_wires = vec![false; circuit_num_wires];
+    let mut path_connected_control_wires = vec![false; circuit_num_wires];
 
     for j in 0..selected_gate_idx.len() - 1 {
         for i in selected_gate_idx[j] + 1..selected_gate_idx[j + 1] {
-            let curr_gate = &circuit.gates[i];
+            let curr_gate = &circuit_gates[i];
             let curr_target = curr_gate.wires[0];
             let curr_control0 = curr_gate.wires[1];
             let curr_control1 = curr_gate.wires[2];
@@ -432,7 +438,7 @@ pub fn permute_circuit<const N_OUT: usize>(
             let mut collides_with_prev_selected = false;
             for k in 0..=j {
                 collides_with_prev_selected = collides_with_prev_selected
-                    || circuit.gates[selected_gate_idx[k]].collides_with(curr_gate);
+                    || circuit_gates[selected_gate_idx[k]].collides_with(curr_gate);
             }
 
             if collides_with_prev_selected
@@ -453,31 +459,35 @@ pub fn permute_circuit<const N_OUT: usize>(
 
     let mut write_idx = selected_gate_idx[0];
     for i in 0..to_before.len() {
-        circuit.gates[write_idx] = to_before[i];
+        circuit_gates[write_idx] = to_before[i];
         write_idx += 1;
     }
     let c_out_start = write_idx;
     for i in 0..N_OUT {
-        circuit.gates[write_idx] = selected_gates[i];
+        circuit_gates[write_idx] = selected_gates[i];
         write_idx += 1;
     }
     for i in 0..to_after.len() {
-        circuit.gates[write_idx] = to_after[i];
+        circuit_gates[write_idx] = to_after[i];
         write_idx += 1;
     }
 
     c_out_start
 }
 
-pub fn is_convex(circuit: &Circuit, convex_gate_ids: &[usize]) -> bool {
+pub fn is_convex(
+    circuit_num_wires: usize,
+    circuit_gates: &[Gate],
+    convex_gate_ids: &[usize],
+) -> bool {
     let mut is_convex = true;
 
     let mut colliding_set = vec![];
-    let mut path_colliding_targets = vec![false; circuit.num_wires];
-    let mut path_colliding_controls = vec![false; circuit.num_wires];
+    let mut path_colliding_targets = vec![false; circuit_num_wires];
+    let mut path_colliding_controls = vec![false; circuit_num_wires];
     'outer: for i in convex_gate_ids[0]..*convex_gate_ids.last().unwrap() + 1 {
         if convex_gate_ids.contains(&i) {
-            let selected_gate = circuit.gates[i];
+            let selected_gate = circuit_gates[i];
             // check no collision with any gate in colliding_set
             for c_gate in colliding_set.iter() {
                 if selected_gate.collides_with(c_gate) {
@@ -486,17 +496,17 @@ pub fn is_convex(circuit: &Circuit, convex_gate_ids: &[usize]) -> bool {
                 }
             }
 
-            let [t, c0, c1] = circuit.gates[i].wires;
+            let [t, c0, c1] = circuit_gates[i].wires;
             path_colliding_targets[t] = true;
             path_colliding_controls[c0] = true;
             path_colliding_controls[c1] = true;
         } else {
-            let [t, c0, c1] = circuit.gates[i].wires;
+            let [t, c0, c1] = circuit_gates[i].wires;
             if path_colliding_targets[c0]
                 || path_colliding_targets[c1]
                 || path_colliding_controls[t]
             {
-                colliding_set.push(circuit.gates[i].clone());
+                colliding_set.push(circuit_gates[i].clone());
                 path_colliding_targets[t] = true;
                 path_colliding_controls[c0] = true;
                 path_colliding_controls[c1] = true;
@@ -522,10 +532,16 @@ mod tests {
         let num_gates = 10000;
         let mut rng = rand::rng();
         for i in 0..100000 {
-            let circuit = Circuit::random(num_wires, num_gates, &mut rng);
-            let (convex_gate_ids, _) = find_convex_gate_ids3::<N_OUT_KND, _>(&circuit, &mut rng);
+            let circuit = Circuit::random_with_cf(
+                num_wires,
+                num_gates,
+                crate::replacement::strategy::ControlFnChoice::All,
+                &mut rng,
+            );
+            let (convex_gate_ids, _) =
+                find_convex_gate_ids3::<N_OUT_KND, _>(circuit.num_wires, &circuit.gates, &mut rng);
             assert!(
-                is_convex(&circuit, &convex_gate_ids),
+                is_convex(circuit.num_wires, &circuit.gates, &convex_gate_ids),
                 "failed at iteration {i}"
             );
         }

@@ -37,6 +37,11 @@ impl Gate {
     }
 }
 
+pub struct CircuitMutRef<'a> {
+    pub num_wires: usize,
+    pub gates: &'a mut [Gate],
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct Circuit {
     pub num_wires: usize,
@@ -44,32 +49,33 @@ pub struct Circuit {
 }
 
 impl Circuit {
-    pub fn random<R: Rng>(num_wires: usize, num_gates: usize, rng: &mut R) -> Self {
-        let mut gates = vec![];
-        for _ in 0..num_gates {
-            loop {
-                let target = rng.random_range(0..num_wires);
-                let control_one = rng.random_range(0..num_wires);
-                let control_two = rng.random_range(0..num_wires);
+    // /// Samples a random circuit with gates with arbitrary 2-bit control function
+    // pub fn random<R: Rng>(num_wires: usize, num_gates: usize, rng: &mut R) -> Self {
+    //     let mut gates = vec![];
+    //     for _ in 0..num_gates {
+    //         loop {
+    //             let target = rng.random_range(0..num_wires);
+    //             let control_one = rng.random_range(0..num_wires);
+    //             let control_two = rng.random_range(0..num_wires);
 
-                if target != control_one && target != control_two && control_one != control_two {
-                    gates.push(Gate {
-                        wires: [target, control_one, control_two],
-                        control_func: rng.random_range(1..Base2GateControlFunc::COUNT),
-                        generation: 0,
-                    });
-                    break;
-                }
-            }
-        }
+    //             if target != control_one && target != control_two && control_one != control_two {
+    //                 gates.push(Gate {
+    //                     wires: [target, control_one, control_two],
+    //                     control_func: rng.random_range(1..Base2GateControlFunc::COUNT),
+    //                     generation: 0,
+    //                 });
+    //                 break;
+    //             }
+    //         }
+    //     }
 
-        Self { num_wires, gates }
-    }
+    //     Self { num_wires, gates }
+    // }
 
     pub fn random_with_cf<R: Rng>(
         num_wires: usize,
         num_gates: usize,
-        cf_choice: &ControlFnChoice,
+        cf_choice: ControlFnChoice,
         rng: &mut R,
     ) -> Self {
         let mut gates = vec![];
@@ -204,6 +210,16 @@ pub fn check_equiv_probabilistic<R: Rng>(
         }
         Ok(())
     })
+}
+
+pub fn check_ckt_equiv_inout_map(inout_map: &[(Vec<bool>, Vec<bool>)], ckt: &[Gate]) -> bool {
+    for (input, ex_output) in inout_map.iter() {
+        let output = ckt.evaluate(input);
+        if output != ex_output.as_slice() {
+            return false;
+        }
+    }
+    return true;
 }
 
 pub fn par_check_equiv_probabilistic<R: Rng>(
