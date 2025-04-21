@@ -5,18 +5,15 @@ use local_mixing::{
     },
     compression::ct::CompressionTable,
     local_mixing::{test_search::test_local_mixing_search, LocalMixingJob},
-    replacement::{
-        strategy::{ControlFnChoice, ReplacementStrategy},
-        test::test_num_samples,
-    },
+    replacement::strategy::ControlFnChoice,
 };
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde_json::json;
 use std::collections::HashMap;
+use std::env::args;
 use std::fs::File;
 use std::io::Write;
-use std::{env::args, error::Error};
 
 fn main() {
     run();
@@ -80,44 +77,6 @@ fn run() {
                 CompressionTable::new(max_gates_supported, max_wires_supported, cf_choice.cfs());
             ct.save_to_file(&save_path);
         }
-        // "json" => {
-        //     let circuit_path = args.next().expect("Missing circuit path");
-
-        //     let circuit = Circuit::load_from_json(&circuit_path);
-
-        //     if let Some(json_path) = args.next() {
-        //         circuit.save_as_json(&json_path);
-        //         println!("Circuit JSON saved to {}", json_path);
-        //     } else {
-        //         println!("{:#?}", circuit);
-        //     }
-        // }
-        // "replace" => {
-        //     let log_path = args.next().expect("Missing log path");
-        //     let strategy_u8 = args
-        //         .next()
-        //         .expect("Missing strategy")
-        //         .parse()
-        //         .expect("Invalid strategy input");
-        //     let cf_choice_u8 = args
-        //         .next()
-        //         .expect("Missing control func choice")
-        //         .parse()
-        //         .expect("Invalid cf input");
-        //     let n_iter = args
-        //         .next()
-        //         .expect("Missing n_iter")
-        //         .parse()
-        //         .expect("Invalid value for n_iter");
-        //     let strategy =
-        //         ReplacementStrategy::from_u8(strategy_u8).expect("Strategy does not exist");
-        //     let cf_choice =
-        //         ControlFnChoice::from_u8(cf_choice_u8).expect("ControlFnChoice does not exist");
-
-        //     init_logs(&log_path).expect("Error initializing logs");
-
-        //     test_num_samples(strategy, cf_choice, n_iter);
-        // }
         "equiv" => {
             let circuit_one_path = args.next().expect("Missing circuit 1 path");
             let circuit_two_path = args.next().expect("Missing circuit 2 path");
@@ -237,26 +196,4 @@ fn run() {
             eprintln!("Unknown command: {}", cmd);
         }
     }
-}
-
-fn init_logs(log_path: &str) -> Result<(), Box<dyn Error>> {
-    // Define the file appender with the specified path and pattern
-    let file_appender = log4rs::append::file::FileAppender::builder()
-        .encoder(Box::new(log4rs::encode::pattern::PatternEncoder::new(
-            "{d} - {l} - {m}{n}",
-        )))
-        .build(log_path)?;
-
-    // Build the configuration
-    let config = log4rs::Config::builder()
-        .appender(log4rs::config::Appender::builder().build("file", Box::new(file_appender)))
-        .build(
-            log4rs::config::Root::builder()
-                .appender("file")
-                .build(log::LevelFilter::Trace),
-        )?;
-
-    log4rs::init_config(config)?;
-
-    Ok(())
 }

@@ -37,9 +37,10 @@ impl Gate {
     }
 }
 
-pub struct CircuitMutRef<'a> {
-    pub num_wires: usize,
-    pub gates: &'a mut [Gate],
+pub fn evaluate(gate_slice: &[Gate], input: &Vec<bool>) -> Vec<bool> {
+    let mut bitlines = input.to_vec();
+    gate_slice.iter().for_each(|g| g.evaluate(&mut bitlines));
+    bitlines
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
@@ -49,29 +50,6 @@ pub struct Circuit {
 }
 
 impl Circuit {
-    // /// Samples a random circuit with gates with arbitrary 2-bit control function
-    // pub fn random<R: Rng>(num_wires: usize, num_gates: usize, rng: &mut R) -> Self {
-    //     let mut gates = vec![];
-    //     for _ in 0..num_gates {
-    //         loop {
-    //             let target = rng.random_range(0..num_wires);
-    //             let control_one = rng.random_range(0..num_wires);
-    //             let control_two = rng.random_range(0..num_wires);
-
-    //             if target != control_one && target != control_two && control_one != control_two {
-    //                 gates.push(Gate {
-    //                     wires: [target, control_one, control_two],
-    //                     control_func: rng.random_range(1..Base2GateControlFunc::COUNT),
-    //                     generation: 0,
-    //                 });
-    //                 break;
-    //             }
-    //         }
-    //     }
-
-    //     Self { num_wires, gates }
-    // }
-
     pub fn random_with_cf<R: Rng>(
         num_wires: usize,
         num_gates: usize,
@@ -97,39 +75,6 @@ impl Circuit {
         }
 
         Self { num_wires, gates }
-    }
-
-    pub fn split_into_chunks(&self, num_chunks: usize, offset: usize) -> Vec<Self> {
-        let mut chunks = vec![];
-        let chunk_size = self.gates.len() / num_chunks;
-
-        let idx: Vec<usize> = (0..num_chunks)
-            .map(|i| if i == 0 { 0 } else { i * chunk_size + offset })
-            .chain(std::iter::once(self.gates.len()))
-            .collect();
-
-        for i in 0..num_chunks {
-            let c = Circuit {
-                num_wires: self.num_wires,
-                gates: self.gates[idx[i]..idx[i + 1]].to_vec(),
-            };
-            chunks.push(c);
-        }
-
-        chunks
-    }
-
-    pub fn combine_circuits(ckts: Vec<Self>) -> Self {
-        let num_wires = ckts[0].num_wires;
-        let combined_gates = ckts.into_iter().flat_map(|ckt| ckt.gates).collect();
-        Self {
-            num_wires,
-            gates: combined_gates,
-        }
-    }
-
-    pub fn subcircuit<const SIZE: usize>(&self, index: usize) -> [Gate; SIZE] {
-        std::array::from_fn(|i| self.gates[index + i])
     }
 
     pub fn load_from_json(path: impl AsRef<Path>) -> Self {
@@ -214,7 +159,7 @@ pub fn check_equiv_probabilistic<R: Rng>(
 
 pub fn check_ckt_equiv_inout_map(inout_map: &[(Vec<bool>, Vec<bool>)], ckt: &[Gate]) -> bool {
     for (input, ex_output) in inout_map.iter() {
-        let output = ckt.evaluate(input);
+        let output = evaluate(ckt, input);
         if output != ex_output.as_slice() {
             return false;
         }

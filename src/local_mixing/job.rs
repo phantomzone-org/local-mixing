@@ -1,6 +1,6 @@
 use std::{cmp::min, error::Error, fs::File, io::BufReader, path::Path, time::Instant};
 
-use rand::{rng, Rng, RngCore, SeedableRng};
+use rand::{Rng, RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use rayon::{
     current_num_threads,
@@ -10,7 +10,10 @@ use rayon::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    circuit::{circuit::check_ckt_equiv_inout_map, Circuit, Gate},
+    circuit::{
+        circuit::{check_ckt_equiv_inout_map, evaluate},
+        Circuit, Gate,
+    },
     compression::ct::CompressionTable,
     local_mixing::tracer::{SearchTraceFields, Tracer},
     replacement::{replace_ct::find_replacement, strategy::ControlFnChoice},
@@ -22,7 +25,6 @@ use super::{
     },
     search::{find_convex_gate_ids3, permute_circuit},
     tracer::init_logs,
-    worker::Worker,
 };
 
 #[derive(Clone, Copy)]
@@ -130,11 +132,12 @@ impl LocalMixingJob {
 
     pub fn run(&mut self) {
         println!("-- Running");
+        let mut rng = ChaCha8Rng::from_os_rng();
         let start = Instant::now();
         if self.search_threads > 1 {
-            self.run_multiple_threads();
+            self.run_multiple_threads(&mut rng);
         } else {
-            self.run_one_thread();
+            self.run_one_thread(&mut rng);
         }
         let elapsed = Instant::now() - start;
         println!("-- Finished running in {:?}", elapsed);
@@ -146,8 +149,9 @@ impl LocalMixingJob {
         println!("-- Inflationary stage");
         let mut inf_steps = 0;
         while inf_steps < self.inflationary_stage_steps {
-            let success = run_step::<N_OUT_INF, N_IN, _>(
-                &mut self.circuit,
+            let success = run_step::<N_OUT_INF, N_IN, _, _>(
+                self.circuit.num_wires,
+                &mut self.circuit.gates,
                 LocalMixingStage::Inflationary,
                 inf_steps,
                 &self.ct,
@@ -171,8 +175,9 @@ impl LocalMixingJob {
         println!("-- Kneading stage");
         let mut knd_steps = 0;
         while knd_steps < self.kneading_stage_steps {
-            let success = run_step::<N_OUT_KND, N_IN, _>(
-                &mut self.circuit,
+            let success = run_step::<N_OUT_KND, N_IN, _, _>(
+                self.circuit.num_wires,
+                &mut self.circuit.gates[..],
                 LocalMixingStage::Kneading,
                 knd_steps,
                 &self.ct,
@@ -193,28 +198,31 @@ impl LocalMixingJob {
         {
             self.circuit
                 .save_generation_data(format!("{}/generation.json", self.dir_path));
+            tracer
+                .save_to_file(&self.dir_path)
+                .expect("Failed to save trace");
             log::info!(target: "trace", "Finished.");
             log::info!(target: "trace", "Inflationary stage successes: {}", tracer.step_statuses.inflationary_stage.success);
             log::info!(target: "trace", "Inflationary stage fails: {}", tracer.step_statuses.inflationary_stage.fail);
             log::info!(target: "trace", "Kneading stage successes: {}", tracer.step_statuses.kneading_stage.success);
             log::info!(target: "trace", "Kneading stage fails: {}", tracer.step_statuses.kneading_stage.fail);
-            tracer.save_to_file(&self.dir_path);
         }
     }
 
-    pub fn run_multiple_threads<R: Rng + RngCore>(&mut self, rng: &mut R) {
-        let mut tracer = Tracer::new(self.inflationary_stage_steps, self.kneading_stage_steps);
+    pub fn run_multiple_threads<R: Send + Sync + RngCore + SeedableRng>(&mut self, rng: &mut R) {
+        let mut inf_tracer = Tracer::new(self.inflationary_stage_steps, 0);
 
         println!("-- Inflationary stage");
         let mut inf_steps = 0;
         while inf_steps < self.inflationary_stage_steps {
-            let success = run_step::<N_OUT_INF, N_IN, _>(
-                &mut self.circuit,
+            let success = run_step::<N_OUT_INF, N_IN, _, _>(
+                self.circuit.num_wires,
+                &mut self.circuit.gates,
                 LocalMixingStage::Inflationary,
                 inf_steps,
                 &self.ct,
                 self.gate_sample_limit,
-                &mut tracer,
+                &mut inf_tracer,
                 rng,
             );
             if success {
@@ -233,63 +241,111 @@ impl LocalMixingJob {
         println!("-- Kneading stage");
 
         let num_search_workers = min(self.search_threads, current_num_threads());
-        println!(
-            "-- Initializing search workers. {} threads available",
-            num_search_workers
-        );
+        println!("-- Using {} search workers", num_search_workers);
 
-        let mut workers: Vec<Worker<ChaCha8Rng>> = (0..num_search_workers)
-            .map(|worker_id| {
-                Worker::new(
-                    worker_id,
-                    self.gate_sample_limit,
-                    0,
-                    self.kneading_stage_steps,
-                )
-            })
+        let num_gates = self.circuit.gates.len();
+        let chunk_size = num_gates / num_search_workers;
+        let mut knd_tracers = vec![Tracer::new(0, self.kneading_stage_steps); num_search_workers];
+        let mut rngs: Vec<_> = (0..num_search_workers)
+            .map(|_| ChaCha8Rng::from_os_rng())
             .collect();
 
-        let chunk_size = self.circuit.gates.len() / num_search_workers;
-        self.circuit
-            .gates
-            .par_chunks_mut(chunk_size)
-            .for_each(|s_circuit| {});
+        let mut knd_steps = 0;
+        while knd_steps < self.kneading_stage_steps {
+            // TODO: debug, remove println! and zip_eq's
+            println!(
+                "KND CHUNK TEST: PHASE 1 lens: {:?}",
+                self.circuit
+                    .gates
+                    .par_chunks_mut(chunk_size)
+                    .map(|chunk| chunk.len())
+                    .collect::<Vec<_>>()
+            );
 
-        let mut steps_completed = 0;
-        while steps_completed < self.kneading_stage_steps {
-            let phase1_circuits = self.circuit.split_into_chunks(num_search_workers, 0);
-            self.circuit.gates = workers
+            // Phase 1: even chunks
+            self.circuit
+                .gates
+                .par_chunks_mut(chunk_size)
+                .zip_eq(knd_tracers.par_iter_mut())
+                .zip_eq(rngs.par_iter_mut())
+                .for_each(|((chunk, tracer), rng)| {
+                    run_step::<N_OUT_KND, N_IN, _, _>(
+                        self.circuit.num_wires,
+                        chunk,
+                        LocalMixingStage::Kneading,
+                        knd_steps,
+                        &self.ct,
+                        self.gate_sample_limit,
+                        tracer,
+                        rng,
+                    );
+                });
+
+            // Phase 2: |1st chunk| = chunk_size / 2, |last chunk| = chunk_size * 3 / 2
+            let mut chunks = vec![];
+            let (first, rest) = self.circuit.gates.split_at_mut(chunk_size / 2);
+            let (middle, last) = rest.split_at_mut(num_gates - chunk_size * 2);
+            chunks.push(first);
+            middle
+                .chunks_mut(chunk_size)
+                .for_each(|chunk| chunks.push(chunk));
+            chunks.push(last);
+            println!(
+                "KND CHUNK TEST: PHASE 2 lens: {:?}",
+                chunks.iter().map(|c| c.len()).collect::<Vec<_>>()
+            );
+
+            chunks
                 .par_iter_mut()
-                .enumerate()
-                .map(|(i, worker)| {
-                    let ckt = phase1_circuits[i].clone();
-                    let current_step = steps_completed + i;
-                    worker.step(&LocalMixingStage::Kneading, current_step, ckt, &self.ct);
+                .zip_eq(knd_tracers.par_iter_mut())
+                .zip_eq(rngs.par_iter_mut())
+                .for_each(|((chunk, tracer), rng)| {
+                    run_step::<N_OUT_KND, N_IN, _, _>(
+                        self.circuit.num_wires,
+                        chunk,
+                        LocalMixingStage::Kneading,
+                        knd_steps,
+                        &self.ct,
+                        self.gate_sample_limit,
+                        tracer,
+                        rng,
+                    );
+                });
 
-                    worker.get_current_circuit()
-                })
-                .flat_map(|ckt| ckt.gates)
-                .collect();
+            // Phase 3: |1st chunk| = chunk_size * 3 / 2, |last chunk| = chunk_size / 2
+            let mut chunks = vec![];
+            let (first, rest) = self.circuit.gates.split_at_mut(chunk_size * 3 / 2);
+            let (middle, last) = rest.split_at_mut(num_gates - chunk_size * 2);
+            chunks.push(first);
+            middle
+                .chunks_mut(chunk_size)
+                .for_each(|chunk| chunks.push(chunk));
+            chunks.push(last);
+            println!(
+                "KND CHUNK TEST: PHASE 3 lens: {:?}",
+                chunks.iter().map(|c| c.len()).collect::<Vec<_>>()
+            );
 
-            let phase2_circuits = self
-                .circuit
-                .split_into_chunks(num_search_workers, chunk_size / 2);
-
-            self.circuit.gates = workers
+            chunks
                 .par_iter_mut()
-                .enumerate()
-                .map(|(i, worker)| {
-                    let ckt = phase2_circuits[i].clone();
-                    let current_step = steps_completed + num_search_workers + i;
-                    worker.step(&LocalMixingStage::Kneading, current_step, ckt, &self.ct);
+                .zip_eq(knd_tracers.par_iter_mut())
+                .zip_eq(rngs.par_iter_mut())
+                .for_each(|((chunk, tracer), rng)| {
+                    run_step::<N_OUT_KND, N_IN, _, _>(
+                        self.circuit.num_wires,
+                        chunk,
+                        LocalMixingStage::Kneading,
+                        knd_steps,
+                        &self.ct,
+                        self.gate_sample_limit,
+                        tracer,
+                        rng,
+                    );
+                });
 
-                    worker.get_current_circuit()
-                })
-                .flat_map(|ckt| ckt.gates)
-                .collect();
-
-            steps_completed += 2 * num_search_workers;
+            knd_steps += 3 * num_search_workers;
         }
+
         println!("-- Kneading stage: done");
 
         self.circuit
@@ -300,10 +356,12 @@ impl LocalMixingJob {
             self.circuit
                 .save_generation_data(format!("{}/generation.json", self.dir_path));
 
-            let mut all_workers = vec![inf_worker];
-            all_workers.extend(workers);
-            let tracer = Tracer::collect(all_workers.iter().map(|worker| worker.tracer()));
-            tracer.save_to_file(&self.dir_path).unwrap();
+            let mut all_tracers = vec![inf_tracer];
+            all_tracers.extend(knd_tracers);
+            let tracer = Tracer::collect(all_tracers);
+            tracer
+                .save_to_file(&self.dir_path)
+                .expect("Failed to save trace");
             log::info!(target: "trace", "Finished.");
             log::info!(target: "trace", "Inflationary stage successes: {}", tracer.step_statuses.inflationary_stage.success);
             log::info!(target: "trace", "Inflationary stage fails: {}", tracer.step_statuses.inflationary_stage.fail);
@@ -314,34 +372,20 @@ impl LocalMixingJob {
 }
 
 trait Growable {
-    fn replace(self, start: usize, end: usize, gates: Vec<Gate>);
+    fn replace(&mut self, start: usize, end: usize, gates: Vec<Gate>);
     fn gate_at_index(&self, index: usize) -> Gate;
-    fn as_slice_ref<'a>(&'a self) -> &'a [Gate];
-    fn as_slice_mut_ref<'a>(&'a mut self) -> &'a mut [Gate];
+    fn as_slice_ref(&self) -> &[Gate];
+    fn as_slice_mut_ref(&mut self) -> &mut [Gate];
 }
 
 impl Growable for Vec<Gate> {
-    fn replace(mut self, start: usize, end: usize, gates: Vec<Gate>) {
+    fn replace(&mut self, start: usize, end: usize, gates: Vec<Gate>) {
         self.splice(start..end, gates);
     }
-    fn as_slice_ref<'a>(&'a self) -> &'a [Gate] {
+    fn as_slice_ref(&self) -> &[Gate] {
         self.as_ref()
     }
-    fn as_slice_mut_ref<'a>(&'a mut self) -> &'a mut [Gate] {
-        self
-    }
-    fn gate_at_index(&self, index: usize) -> Gate {
-        self[index]
-    }
-}
-impl Growable for &mut [Gate] {
-    fn replace(self, start: usize, end: usize, gates: Vec<Gate>) {
-        self[start..end].copy_from_slice(&gates);
-    }
-    fn as_slice_ref<'a>(&'a self) -> &'a [Gate] {
-        self
-    }
-    fn as_slice_mut_ref<'a>(&'a mut self) -> &'a mut [Gate] {
+    fn as_slice_mut_ref(&mut self) -> &mut [Gate] {
         self
     }
     fn gate_at_index(&self, index: usize) -> Gate {
@@ -349,9 +393,39 @@ impl Growable for &mut [Gate] {
     }
 }
 
-fn run_step<const N_OUT: usize, const N_IN: usize, R: Rng + RngCore>(
+impl Growable for [Gate] {
+    fn replace(&mut self, start: usize, end: usize, gates: Vec<Gate>) {
+        self[start..end].copy_from_slice(&gates);
+    }
+    fn as_slice_ref(&self) -> &[Gate] {
+        self
+    }
+    fn as_slice_mut_ref(&mut self) -> &mut [Gate] {
+        self
+    }
+    fn gate_at_index(&self, index: usize) -> Gate {
+        self[index]
+    }
+}
+
+impl Growable for &mut [Gate] {
+    fn replace(&mut self, start: usize, end: usize, gates: Vec<Gate>) {
+        self[start..end].copy_from_slice(&gates);
+    }
+    fn as_slice_ref(&self) -> &[Gate] {
+        self
+    }
+    fn as_slice_mut_ref(&mut self) -> &mut [Gate] {
+        self
+    }
+    fn gate_at_index(&self, index: usize) -> Gate {
+        self[index]
+    }
+}
+
+fn run_step<const N_OUT: usize, const N_IN: usize, G: Growable + ?Sized, R: Rng + RngCore>(
     circuit_num_wires: usize,
-    circuit_gates: impl Growable,
+    circuit_gates: &mut G,
     stage: LocalMixingStage,
     current_step: usize,
     ct: &CompressionTable,
@@ -394,8 +468,7 @@ fn run_step<const N_OUT: usize, const N_IN: usize, R: Rng + RngCore>(
                 let input: Vec<bool> = (0..circuit_num_wires)
                     .map(|_| rng.random_bool(0.5))
                     .collect();
-                // TODO: circuit.evaluate(&input)
-                let output = vec![];
+                let output = evaluate(circuit_gates.as_slice_ref(), &input);
                 (input, output)
             })
             .collect();

@@ -351,7 +351,8 @@ mod tests {
         let wires = 15;
         let mut rng = ChaCha8Rng::from_os_rng();
         for _ in 0..10 {
-            let ckt_one = Circuit::random(wires, 2, &mut rng).gates;
+            let ckt_one =
+                Circuit::random_with_cf(wires, 2, ControlFnChoice::NoIdentity, &mut rng).gates;
             let replacement = match find_replacement_circuit::<2, 4, 9, { 1 << 9 }, _>(
                 &[ckt_one[0], ckt_one[1]],
                 wires,

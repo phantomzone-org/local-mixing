@@ -279,7 +279,7 @@ mod tests {
         let mut rng = rand::rng();
         for _ in 0..1000000 {
             let circuit =
-                Circuit::random_with_cf(wires, gates, &ControlFnChoice::TwoBit, &mut rng).gates;
+                Circuit::random_with_cf(wires, gates, ControlFnChoice::TwoBit, &mut rng).gates;
 
             let res = ct.lookup_cxity(&circuit);
             if res.is_none() {

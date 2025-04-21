@@ -4,7 +4,8 @@ use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use rayon::{
     current_num_threads,
-    iter::{IntoParallelRefMutIterator, ParallelIterator},
+    iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator},
+    slice::ParallelSliceMut,
 };
 use serde::{Deserialize, Serialize};
 
@@ -37,7 +38,7 @@ pub fn test_local_mixing_search(test_dir: &str) {
     } = config;
 
     let mut rng = ChaCha8Rng::from_os_rng();
-    let mut circuit = Circuit::random_with_cf(num_wires, num_gates, &cf, &mut rng);
+    let mut circuit = Circuit::random_with_cf(num_wires, num_gates, cf, &mut rng);
 
     if run_parallel {
         test_parallel(&mut circuit, permute, iterations);
@@ -51,46 +52,84 @@ pub fn test_local_mixing_search(test_dir: &str) {
 
 fn test_parallel(circuit: &mut Circuit, permute: bool, iterations: usize) {
     let num_search_workers = current_num_threads();
-    dbg!(num_search_workers);
-    let chunk_size = circuit.gates.len() / num_search_workers;
-    let mut steps_completed = 0;
+    println!("-- Using {} search workers", num_search_workers);
 
-    while steps_completed < iterations {
-        let mut phase1_circuits = circuit.split_into_chunks(num_search_workers, 0);
-        phase1_circuits.par_iter_mut().for_each(|ckt_chunk| {
-            let mut rng = ChaCha8Rng::from_os_rng();
-            let (selected_gate_idx, _) = find_convex_gate_ids3::<4, _>(&ckt_chunk, &mut rng);
-            selected_gate_idx
-                .iter()
-                .for_each(|&id| ckt_chunk.gates[id].generation += 1);
+    let num_gates = circuit.gates.len();
+    let chunk_size = num_gates / num_search_workers;
+    let mut rngs: Vec<_> = (0..num_search_workers)
+        .map(|_| ChaCha8Rng::from_os_rng())
+        .collect();
 
-            if permute {
-                permute_circuit(ckt_chunk, &selected_gate_idx);
-            }
-        });
-        circuit.gates = phase1_circuits
-            .iter()
-            .flat_map(|ckt| ckt.gates.clone())
-            .collect();
+    let mut knd_steps = 0;
+    while knd_steps < iterations {
+        // Phase 1: even chunks
+        circuit
+            .gates
+            .par_chunks_mut(chunk_size)
+            .zip_eq(rngs.par_iter_mut())
+            .for_each(|(chunk, rng)| {
+                let (selected_gate_idx, _) =
+                    find_convex_gate_ids3::<4, _>(circuit.num_wires, &chunk, rng);
+                selected_gate_idx
+                    .iter()
+                    .for_each(|&id| chunk[id].generation += 1);
 
-        let mut phase2_circuits = circuit.split_into_chunks(num_search_workers, chunk_size / 2);
-        phase2_circuits.par_iter_mut().for_each(|ckt_chunk| {
-            let mut rng = ChaCha8Rng::from_os_rng();
-            let (selected_gate_idx, _) = find_convex_gate_ids3::<4, _>(&ckt_chunk, &mut rng);
-            selected_gate_idx
-                .iter()
-                .for_each(|&id| ckt_chunk.gates[id].generation += 1);
+                if permute {
+                    permute_circuit(circuit.num_wires, chunk, &selected_gate_idx);
+                }
+            });
 
-            if permute {
-                permute_circuit(ckt_chunk, &selected_gate_idx);
-            }
-        });
-        circuit.gates = phase2_circuits
-            .iter()
-            .flat_map(|ckt| ckt.gates.clone())
-            .collect();
+        // Phase 2: |1st chunk| = chunk_size / 2, |last chunk| = chunk_size * 3 / 2
+        let mut chunks = vec![];
+        let (first, rest) = circuit.gates.split_at_mut(chunk_size / 2);
+        let (middle, last) = rest.split_at_mut(num_gates - chunk_size * 2);
+        chunks.push(first);
+        middle
+            .chunks_mut(chunk_size)
+            .for_each(|chunk| chunks.push(chunk));
+        chunks.push(last);
 
-        steps_completed += 2 * num_search_workers
+        chunks
+            .par_iter_mut()
+            .zip_eq(rngs.par_iter_mut())
+            .for_each(|(chunk, rng)| {
+                let (selected_gate_idx, _) =
+                    find_convex_gate_ids3::<4, _>(circuit.num_wires, &chunk, rng);
+                selected_gate_idx
+                    .iter()
+                    .for_each(|&id| chunk[id].generation += 1);
+
+                if permute {
+                    permute_circuit(circuit.num_wires, chunk, &selected_gate_idx);
+                }
+            });
+
+        // Phase 3: |1st chunk| = chunk_size * 3 / 2, |last chunk| = chunk_size / 2
+        let mut chunks = vec![];
+        let (first, rest) = circuit.gates.split_at_mut(chunk_size * 3 / 2);
+        let (middle, last) = rest.split_at_mut(num_gates - chunk_size * 2);
+        chunks.push(first);
+        middle
+            .chunks_mut(chunk_size)
+            .for_each(|chunk| chunks.push(chunk));
+        chunks.push(last);
+
+        chunks
+            .par_iter_mut()
+            .zip_eq(rngs.par_iter_mut())
+            .for_each(|(chunk, rng)| {
+                let (selected_gate_idx, _) =
+                    find_convex_gate_ids3::<4, _>(circuit.num_wires, &chunk, rng);
+                selected_gate_idx
+                    .iter()
+                    .for_each(|&id| chunk[id].generation += 1);
+
+                if permute {
+                    permute_circuit(circuit.num_wires, chunk, &selected_gate_idx);
+                }
+            });
+
+        knd_steps += 3 * num_search_workers;
     }
 }
 
@@ -98,13 +137,14 @@ fn test_sequential(circuit: &mut Circuit, permute: bool, iterations: usize) {
     let mut rng = ChaCha8Rng::from_os_rng();
 
     for _ in 1..=iterations {
-        let (selected_gate_idx, _) = find_convex_gate_ids3::<4, _>(&circuit, &mut rng);
+        let (selected_gate_idx, _) =
+            find_convex_gate_ids3::<4, _>(circuit.num_wires, &circuit.gates, &mut rng);
         selected_gate_idx
             .iter()
             .for_each(|&id| circuit.gates[id].generation += 1);
 
         if permute {
-            permute_circuit(circuit, &selected_gate_idx);
+            permute_circuit(circuit.num_wires, &mut circuit.gates, &selected_gate_idx);
         }
     }
 }

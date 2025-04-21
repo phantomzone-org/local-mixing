@@ -1,4 +1,4 @@
-use std::{error::Error, fmt::Display, fs::File, path::Path, time::Duration};
+use std::{error::Error, fs::File, time::Duration};
 
 use serde::{Deserialize, Serialize};
 
@@ -202,7 +202,7 @@ impl Tracer {
         Ok(())
     }
 
-    pub fn collect(tracers: impl Iterator<Item = Tracer>) -> Self {
+    pub fn collect(tracers: Vec<Tracer>) -> Self {
         let mut combined = Tracer::new(0, 0);
 
         for tracer in tracers {
