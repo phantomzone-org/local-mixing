@@ -80,9 +80,3 @@ impl ControlFnChoice {
         }
     }
 }
-
-impl Default for ControlFnChoice {
-    fn default() -> Self {
-        Self::OnlyUnique
-    }
-}

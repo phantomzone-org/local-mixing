@@ -36,12 +36,9 @@ pub fn truth_table(num_wires: usize, proj_circuit: &Circuit) -> TruthTable {
     let mut tt = vec![];
     for i in 0..1 << num_wires {
         let mut input = i;
-        proj_circuit.iter().for_each(|g| {
-            let a = (input & (1 << g.wires[1])) != 0;
-            let b = (input & (1 << g.wires[2])) != 0;
-            let x = g.evaluate_cf(a, b);
-            input ^= (x as usize) << g.wires[0];
-        });
+        proj_circuit
+            .iter()
+            .for_each(|g| input = g.evaluate_usize(input));
         tt.push(input);
     }
     tt
@@ -50,12 +47,9 @@ pub fn truth_table(num_wires: usize, proj_circuit: &Circuit) -> TruthTable {
 pub fn truth_table_sized<const TT_SIZE: usize>(proj_circuit: &Circuit) -> [usize; TT_SIZE] {
     std::array::from_fn(|i| {
         let mut input = i;
-        proj_circuit.iter().for_each(|g| {
-            let a = (input & (1 << g.wires[1])) != 0;
-            let b = (input & (1 << g.wires[2])) != 0;
-            let x = g.evaluate_cf(a, b);
-            input ^= (x as usize) << g.wires[0];
-        });
+        proj_circuit
+            .iter()
+            .for_each(|g| input = g.evaluate_usize(input));
         input
     })
 }

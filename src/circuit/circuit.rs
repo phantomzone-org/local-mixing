@@ -1,4 +1,4 @@
-use crate::{circuit::cf::Base2GateControlFunc, replacement::strategy::ControlFnChoice};
+use crate::{local_mixing::consts::CONTROL_FUNC_TABLE, replacement::strategy::ControlFnChoice};
 use rand::{seq::IndexedRandom, Rng};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
@@ -28,19 +28,37 @@ impl Gate {
     }
 
     #[inline]
-    pub fn evaluate_cf(&self, a: bool, b: bool) -> bool {
-        Base2GateControlFunc::from_u8(self.control_func).evaluate(a, b)
+    pub fn evaluate(&self, input: &mut Vec<bool>) {
+        let idx = ((self.control_func as usize) << 2)
+            ^ ((input[self.wires[1]] as usize) << 1)
+            ^ (input[self.wires[2]] as usize);
+        input[self.wires[0]] ^= CONTROL_FUNC_TABLE[idx];
     }
 
-    pub fn evaluate(&self, x: &mut Vec<bool>) {
-        x[self.wires[0]] ^= self.evaluate_cf(x[self.wires[1]], x[self.wires[2]]);
+    #[inline]
+    pub fn evaluate_usize(&self, input: usize) -> usize {
+        let idx = ((self.control_func as usize) << 2)
+            ^ (((input >> self.wires[1]) & 1) << 1)
+            ^ ((input >> self.wires[2]) & 1);
+        let x = CONTROL_FUNC_TABLE[idx];
+        input ^ ((x as usize) << self.wires[0])
     }
 }
 
+#[inline]
 pub fn evaluate(gate_slice: &[Gate], input: &Vec<bool>) -> Vec<bool> {
     let mut bitlines = input.to_vec();
     gate_slice.iter().for_each(|g| g.evaluate(&mut bitlines));
     bitlines
+}
+
+#[inline]
+pub fn evaluate_usize(gate_slice: &[Gate], input: usize) -> usize {
+    let mut result = input;
+    gate_slice
+        .iter()
+        .for_each(|g| result = g.evaluate_usize(result));
+    result
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
@@ -97,12 +115,6 @@ impl Circuit {
         std::fs::write(path, data).unwrap();
     }
 
-    pub fn evaluate(&self, input: &Vec<bool>) -> Vec<bool> {
-        let mut data = input.clone();
-        self.gates.iter().for_each(|g| g.evaluate(&mut data));
-        data
-    }
-
     pub fn evaluate_evolution(&self, input: &Vec<bool>) -> Vec<Vec<bool>> {
         let mut data = input.clone();
         let mut evolution = vec![data.clone()];
@@ -150,7 +162,7 @@ pub fn check_equiv_probabilistic<R: Rng>(
     };
 
     random_inputs.iter().try_for_each(|random_input| {
-        if c1.evaluate(random_input) != c2.evaluate(random_input) {
+        if evaluate(&c1.gates, random_input) != evaluate(&c2.gates, random_input) {
             return Err("Circuits produce different outputs".to_string());
         }
         Ok(())
@@ -201,7 +213,7 @@ pub fn par_check_equiv_probabilistic<R: Rng>(
     };
 
     random_inputs.par_iter().try_for_each(|random_input| {
-        if c1.evaluate(random_input) != c2.evaluate(random_input) {
+        if evaluate(&c1.gates, random_input) != evaluate(&c2.gates, random_input) {
             return Err("Circuits produce different outputs".to_string());
         }
         Ok(())

@@ -36,7 +36,7 @@ impl ReplacementTimes {
         }
     }
 
-    fn add_entry(&mut self, stage: &LocalMixingStage, duration: Duration) {
+    fn add_entry(&mut self, stage: LocalMixingStage, duration: Duration) {
         match stage {
             LocalMixingStage::Inflationary => self.inflationary_stage.push(duration),
             LocalMixingStage::Kneading => self.kneading_stage.push(duration),
@@ -58,7 +58,7 @@ impl ReplacementInfo {
         }
     }
 
-    fn add_entry(&mut self, stage: &LocalMixingStage, replacement_fields: ReplacementTraceFields) {
+    fn add_entry(&mut self, stage: LocalMixingStage, replacement_fields: ReplacementTraceFields) {
         match stage {
             LocalMixingStage::Inflationary => self.inflationary_stage.push(replacement_fields),
             LocalMixingStage::Kneading => self.kneading_stage.push(replacement_fields),
@@ -80,7 +80,7 @@ impl SearchInfo {
         }
     }
 
-    fn add_entry(&mut self, stage: &LocalMixingStage, search_fields: SearchTraceFields) {
+    fn add_entry(&mut self, stage: LocalMixingStage, search_fields: SearchTraceFields) {
         match stage {
             LocalMixingStage::Inflationary => self.inflationary_stage.push(search_fields),
             LocalMixingStage::Kneading => self.kneading_stage.push(search_fields),
@@ -117,24 +117,11 @@ impl ReplacementSamples {
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug, Default)]
-pub struct StepStatusCounter {
-    pub success: usize,
-    pub fail: usize,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug, Default)]
-pub struct StepStatuses {
-    pub inflationary_stage: StepStatusCounter,
-    pub kneading_stage: StepStatusCounter,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug, Default)]
 pub struct Tracer {
     pub replacement_times: ReplacementTimes,
     pub replacement_info: ReplacementInfo,
     pub search_info: SearchInfo,
     pub replacement_samples: ReplacementSamples,
-    pub step_statuses: StepStatuses,
 }
 
 impl Tracer {
@@ -144,13 +131,12 @@ impl Tracer {
             replacement_info: ReplacementInfo::new(inf_capacity, knd_capacity),
             search_info: SearchInfo::new(inf_capacity, knd_capacity),
             replacement_samples: ReplacementSamples::new(inf_capacity, knd_capacity),
-            step_statuses: StepStatuses::default(),
         }
     }
 
     pub fn add_entry(
         &mut self,
-        stage: &LocalMixingStage,
+        stage: LocalMixingStage,
         search_fields: SearchTraceFields,
         replacement_fields: ReplacementTraceFields,
         replacement_time: Duration,
@@ -175,29 +161,15 @@ impl Tracer {
         );
     }
 
-    pub fn inc_success(&mut self, stage: &LocalMixingStage) {
-        match stage {
-            LocalMixingStage::Inflationary => self.step_statuses.inflationary_stage.success += 1,
-            LocalMixingStage::Kneading => self.step_statuses.kneading_stage.success += 1,
-        }
-    }
-
-    pub fn inc_fail(&mut self, stage: LocalMixingStage) {
-        match stage {
-            LocalMixingStage::Inflationary => self.step_statuses.inflationary_stage.fail += 1,
-            LocalMixingStage::Kneading => self.step_statuses.kneading_stage.fail += 1,
-        }
-    }
-
     pub fn save_to_file(&self, dir_path: &str) -> Result<(), Box<dyn Error>> {
         let file = File::create(format!("{}/logs/replacement_times.json", dir_path)).unwrap();
-        serde_json::to_writer(file, &self.replacement_times)?;
+        serde_json::to_writer_pretty(file, &self.replacement_times)?;
 
         let file = File::create(format!("{}/logs/replacement_fields.json", dir_path)).unwrap();
         serde_json::to_writer_pretty(file, &self.replacement_info)?;
 
         let file = File::create(format!("{}/logs/replacement_samples.json", dir_path)).unwrap();
-        serde_json::to_writer(file, &self.replacement_samples)?;
+        serde_json::to_writer_pretty(file, &self.replacement_samples)?;
 
         Ok(())
     }
@@ -241,14 +213,6 @@ impl Tracer {
                 .replacement_samples
                 .kneading_stage
                 .extend(tracer.replacement_samples.kneading_stage);
-
-            combined.step_statuses.inflationary_stage.fail +=
-                tracer.step_statuses.inflationary_stage.fail;
-            combined.step_statuses.inflationary_stage.success +=
-                tracer.step_statuses.inflationary_stage.success;
-            combined.step_statuses.kneading_stage.fail += tracer.step_statuses.kneading_stage.fail;
-            combined.step_statuses.kneading_stage.success +=
-                tracer.step_statuses.kneading_stage.success;
         }
 
         combined

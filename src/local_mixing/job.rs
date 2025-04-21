@@ -1,4 +1,12 @@
-use std::{cmp::min, error::Error, fs::File, io::BufReader, path::Path, time::Instant};
+use std::{
+    cmp::min,
+    error::Error,
+    fs::File,
+    io::BufReader,
+    path::Path,
+    sync::atomic::{AtomicUsize, Ordering},
+    time::Instant,
+};
 
 use rand::{Rng, RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
@@ -148,6 +156,7 @@ impl LocalMixingJob {
 
         println!("-- Inflationary stage");
         let mut inf_steps = 0;
+        let mut inf_fails = 0;
         while inf_steps < self.inflationary_stage_steps {
             let success = run_step::<N_OUT_INF, N_IN, _, _>(
                 self.circuit.num_wires,
@@ -161,6 +170,8 @@ impl LocalMixingJob {
             );
             if success {
                 inf_steps += 1;
+            } else {
+                inf_fails += 1;
             }
         }
         println!("-- Inflationary stage: done");
@@ -168,12 +179,15 @@ impl LocalMixingJob {
         if self.save_inflationary && self.inflationary_stage_steps > 0 {
             let inflationary_path = format!("{}/inflationary.json", self.dir_path);
             self.circuit.save_as_json(inflationary_path.clone());
+            self.circuit
+                .save_generation_data(format!("{}/inflationary.generations.json", self.dir_path));
             println!("-- Saved inflationary stage to {}", inflationary_path);
         }
         self.circuit.reset_generations();
 
         println!("-- Kneading stage");
         let mut knd_steps = 0;
+        let mut knd_fails = 0;
         while knd_steps < self.kneading_stage_steps {
             let success = run_step::<N_OUT_KND, N_IN, _, _>(
                 self.circuit.num_wires,
@@ -187,6 +201,8 @@ impl LocalMixingJob {
             );
             if success {
                 knd_steps += 1;
+            } else {
+                knd_fails += 1;
             }
         }
         println!("-- Kneading stage: done");
@@ -202,10 +218,8 @@ impl LocalMixingJob {
                 .save_to_file(&self.dir_path)
                 .expect("Failed to save trace");
             log::info!(target: "trace", "Finished.");
-            log::info!(target: "trace", "Inflationary stage successes: {}", tracer.step_statuses.inflationary_stage.success);
-            log::info!(target: "trace", "Inflationary stage fails: {}", tracer.step_statuses.inflationary_stage.fail);
-            log::info!(target: "trace", "Kneading stage successes: {}", tracer.step_statuses.kneading_stage.success);
-            log::info!(target: "trace", "Kneading stage fails: {}", tracer.step_statuses.kneading_stage.fail);
+            log::info!(target: "trace", "Inflationary stage fails: {}", inf_fails);
+            log::info!(target: "trace", "Kneading stage fails: {}", knd_fails);
         }
     }
 
@@ -214,6 +228,7 @@ impl LocalMixingJob {
 
         println!("-- Inflationary stage");
         let mut inf_steps = 0;
+        let mut inf_fails = 0;
         while inf_steps < self.inflationary_stage_steps {
             let success = run_step::<N_OUT_INF, N_IN, _, _>(
                 self.circuit.num_wires,
@@ -227,6 +242,8 @@ impl LocalMixingJob {
             );
             if success {
                 inf_steps += 1;
+            } else {
+                inf_fails += 1;
             }
         }
         println!("-- Inflationary stage: done");
@@ -241,7 +258,7 @@ impl LocalMixingJob {
         println!("-- Kneading stage");
 
         let num_search_workers = min(self.search_threads, current_num_threads());
-        println!("-- Using {} search workers", num_search_workers);
+        println!("-- Using {} search threads", num_search_workers);
 
         let num_gates = self.circuit.gates.len();
         let chunk_size = num_gates / num_search_workers;
@@ -251,25 +268,16 @@ impl LocalMixingJob {
             .collect();
 
         let mut knd_steps = 0;
+        let knd_fails = AtomicUsize::new(0);
         while knd_steps < self.kneading_stage_steps {
-            // TODO: debug, remove println! and zip_eq's
-            println!(
-                "KND CHUNK TEST: PHASE 1 lens: {:?}",
-                self.circuit
-                    .gates
-                    .par_chunks_mut(chunk_size)
-                    .map(|chunk| chunk.len())
-                    .collect::<Vec<_>>()
-            );
-
             // Phase 1: even chunks
             self.circuit
                 .gates
                 .par_chunks_mut(chunk_size)
-                .zip_eq(knd_tracers.par_iter_mut())
-                .zip_eq(rngs.par_iter_mut())
-                .for_each(|((chunk, tracer), rng)| {
-                    run_step::<N_OUT_KND, N_IN, _, _>(
+                .zip(knd_tracers.par_iter_mut())
+                .zip(rngs.par_iter_mut())
+                .for_each(|((chunk, tracer), rng)| loop {
+                    let success = run_step::<N_OUT_KND, N_IN, _, _>(
                         self.circuit.num_wires,
                         chunk,
                         LocalMixingStage::Kneading,
@@ -279,6 +287,10 @@ impl LocalMixingJob {
                         tracer,
                         rng,
                     );
+                    if success {
+                        break;
+                    }
+                    knd_fails.fetch_add(1, Ordering::Relaxed);
                 });
 
             // Phase 2: |1st chunk| = chunk_size / 2, |last chunk| = chunk_size * 3 / 2
@@ -290,17 +302,13 @@ impl LocalMixingJob {
                 .chunks_mut(chunk_size)
                 .for_each(|chunk| chunks.push(chunk));
             chunks.push(last);
-            println!(
-                "KND CHUNK TEST: PHASE 2 lens: {:?}",
-                chunks.iter().map(|c| c.len()).collect::<Vec<_>>()
-            );
 
             chunks
                 .par_iter_mut()
-                .zip_eq(knd_tracers.par_iter_mut())
-                .zip_eq(rngs.par_iter_mut())
-                .for_each(|((chunk, tracer), rng)| {
-                    run_step::<N_OUT_KND, N_IN, _, _>(
+                .zip(knd_tracers.par_iter_mut())
+                .zip(rngs.par_iter_mut())
+                .for_each(|((chunk, tracer), rng)| loop {
+                    let success = run_step::<N_OUT_KND, N_IN, _, _>(
                         self.circuit.num_wires,
                         chunk,
                         LocalMixingStage::Kneading,
@@ -310,6 +318,10 @@ impl LocalMixingJob {
                         tracer,
                         rng,
                     );
+                    if success {
+                        break;
+                    }
+                    knd_fails.fetch_add(1, Ordering::Relaxed);
                 });
 
             // Phase 3: |1st chunk| = chunk_size * 3 / 2, |last chunk| = chunk_size / 2
@@ -321,17 +333,13 @@ impl LocalMixingJob {
                 .chunks_mut(chunk_size)
                 .for_each(|chunk| chunks.push(chunk));
             chunks.push(last);
-            println!(
-                "KND CHUNK TEST: PHASE 3 lens: {:?}",
-                chunks.iter().map(|c| c.len()).collect::<Vec<_>>()
-            );
 
             chunks
                 .par_iter_mut()
-                .zip_eq(knd_tracers.par_iter_mut())
-                .zip_eq(rngs.par_iter_mut())
-                .for_each(|((chunk, tracer), rng)| {
-                    run_step::<N_OUT_KND, N_IN, _, _>(
+                .zip(knd_tracers.par_iter_mut())
+                .zip(rngs.par_iter_mut())
+                .for_each(|((chunk, tracer), rng)| loop {
+                    let success = run_step::<N_OUT_KND, N_IN, _, _>(
                         self.circuit.num_wires,
                         chunk,
                         LocalMixingStage::Kneading,
@@ -341,6 +349,10 @@ impl LocalMixingJob {
                         tracer,
                         rng,
                     );
+                    if success {
+                        break;
+                    }
+                    knd_fails.fetch_add(1, Ordering::Relaxed);
                 });
 
             knd_steps += 3 * num_search_workers;
@@ -363,10 +375,8 @@ impl LocalMixingJob {
                 .save_to_file(&self.dir_path)
                 .expect("Failed to save trace");
             log::info!(target: "trace", "Finished.");
-            log::info!(target: "trace", "Inflationary stage successes: {}", tracer.step_statuses.inflationary_stage.success);
-            log::info!(target: "trace", "Inflationary stage fails: {}", tracer.step_statuses.inflationary_stage.fail);
-            log::info!(target: "trace", "Kneading stage successes: {}", tracer.step_statuses.kneading_stage.success);
-            log::info!(target: "trace", "Kneading stage fails: {}", tracer.step_statuses.kneading_stage.fail);
+            log::info!(target: "trace", "Inflationary stage fails: {}", inf_fails);
+            log::info!(target: "trace", "Kneading stage fails: {}", knd_fails.load(Ordering::Relaxed));
         }
     }
 }
@@ -499,12 +509,11 @@ fn run_step<const N_OUT: usize, const N_IN: usize, G: Growable + ?Sized, R: Rng 
                 time: _final_end_time,
             };
             tracer.add_entry(
-                &stage,
+                stage,
                 search_fields.clone(),
                 _replacement_fields.clone(),
                 _replacement_time,
             );
-            tracer.inc_success(&stage);
 
             log::info!(target: "trace", "{}", format!("{}, step={}, SUCCESS: n_gates = {}, n_circuits_sampled = {}, n_search_attempts = {}, time = {:?}", 
                     stage, current_step, search_fields.n_gates, _replacement_fields.num_circuits_sampled, search_fields.n_search_attempts, search_fields.time));
@@ -516,7 +525,6 @@ fn run_step<const N_OUT: usize, const N_IN: usize, G: Growable + ?Sized, R: Rng 
         {
             log::warn!(target: "trace", "{}, step = {}, FAILED: failed to find replacement for {:?}",
                         stage,  current_step, c_out);
-            tracer.inc_fail(stage);
         }
 
         return false;

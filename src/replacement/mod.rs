@@ -133,12 +133,9 @@ pub fn find_replacement_circuit<
                 let mut func_equiv = true;
                 for i in 0..N_PROJ_INPUTS {
                     let mut input = i;
-                    replacement_circuit.iter().for_each(|g| {
-                        let a = (input & (1 << g.wires[1])) != 0;
-                        let b = (input & (1 << g.wires[2])) != 0;
-                        let x = g.evaluate_cf(a, b);
-                        input ^= (x as usize) << g.wires[0];
-                    });
+                    replacement_circuit
+                        .iter()
+                        .for_each(|g| input = g.evaluate_usize(input));
                     if input != eval_table[i] {
                         func_equiv = false;
                         break;

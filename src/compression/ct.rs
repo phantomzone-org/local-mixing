@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::circuit::{
     analysis::{compute_active_wires, num_active_wires, projection_circuit, truth_table},
     cf::Base2GateControlFunc,
+    circuit::evaluate_usize,
     Gate,
 };
 use std::collections::HashMap;
@@ -152,16 +153,7 @@ fn build_compression_table_recursive(
     }
 
     let tt = (0..1 << max_wires_supported)
-        .map(|i| {
-            let mut input = i;
-            current_circuit.iter().take(current_size).for_each(|g| {
-                let a = (input & (1 << g.wires[1])) != 0;
-                let b = (input & (1 << g.wires[2])) != 0;
-                let x = g.evaluate_cf(a, b);
-                input ^= (x as usize) << g.wires[0];
-            });
-            input
-        })
+        .map(|i| evaluate_usize(&current_circuit[..current_size], i))
         .collect();
 
     ct.entry(tt)
