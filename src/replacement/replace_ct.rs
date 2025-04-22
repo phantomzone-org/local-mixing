@@ -74,10 +74,6 @@ pub fn find_replacement<R: Rng>(
         {
             replacement_idx = 0;
             lhs_circuit = proj_circuit.clone();
-            println!("bad replacement");
-            println!("proj_circuit: {:?}", proj_circuit);
-            println!("repl_circuit: {:?}", replacement_circuit);
-            println!("num_samples: {}", num_samples);
             continue;
         }
 
