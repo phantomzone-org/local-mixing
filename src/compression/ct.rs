@@ -1,31 +1,38 @@
 use serde::{Deserialize, Serialize};
 
-use crate::circuit::{
-    analysis::{compute_active_wires, num_active_wires, projection_circuit, truth_table},
-    cf::Base2GateControlFunc,
-    circuit::evaluate_usize,
-    Gate,
+use crate::{
+    circuit::{
+        analysis::{compute_active_wires, num_active_wires, optimal_projection_circuit, projection_circuit, truth_table},
+        cf::Base2GateControlFunc,
+        circuit::evaluate_usize,
+        Gate,
+    },
+    replacement::strategy::ControlFnChoice,
 };
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Default, Debug, Serialize, Deserialize)]
 pub struct CompressionTable {
     pub max_gates_supported: usize,
     pub max_wires_supported: usize,
-    pub cf_choice: Vec<u8>,
+    pub cf_choice: ControlFnChoice,
     ct: HashMap<Vec<usize>, Vec<Gate>>,
     #[serde(skip_serializing, skip_deserializing)]
     cache: HashMap<Vec<Gate>, Vec<Gate>>,
 }
 
 impl CompressionTable {
-    pub fn new(max_gates_supported: usize, max_wires_supported: usize, cf_choice: Vec<u8>) -> Self {
+    pub fn new(
+        max_gates_supported: usize,
+        max_wires_supported: usize,
+        cf_choice: ControlFnChoice,
+    ) -> Self {
         Self {
             max_gates_supported,
             max_wires_supported,
-            ct: build_compression_table(max_gates_supported, max_wires_supported, &cf_choice),
+            ct: build_compression_table(max_gates_supported, max_wires_supported, cf_choice),
             cf_choice,
             cache: HashMap::new(),
         }
@@ -49,7 +56,7 @@ impl CompressionTable {
         if let Some(saved) = self.cache.get(circuit) {
             return Some(saved.len());
         }
-        let (proj_circuit, proj_map) = projection_circuit(circuit);
+        let (proj_circuit, proj_map, _) = optimal_projection_circuit(circuit);
         let num_wires = proj_map.len();
         let tt = truth_table(num_wires, &proj_circuit);
         let num_active_wires = num_active_wires(num_wires, compute_active_wires(num_wires, &tt));
@@ -109,7 +116,7 @@ impl CompressionTable {
 pub fn build_compression_table(
     max_gates_supported: usize,
     max_wires_supported: usize,
-    cf_choice: &Vec<u8>,
+    cf_choice: ControlFnChoice,
 ) -> HashMap<Vec<usize>, Vec<Gate>> {
     assert!(max_gates_supported >= 1);
     assert!(max_wires_supported >= 3);
@@ -123,8 +130,8 @@ pub fn build_compression_table(
     let mut current_circuit = vec![Gate::default(); max_gates_supported];
     current_circuit[0].wires = [0, 1, 2];
 
-    for cf in cf_choice {
-        current_circuit[0].control_func = *cf;
+    for cf in cf_choice.cfs() {
+        current_circuit[0].control_func = cf;
         build_compression_table_recursive(
             max_gates_supported,
             max_wires_supported,
@@ -142,7 +149,7 @@ pub fn build_compression_table(
 fn build_compression_table_recursive(
     max_gates_supported: usize,
     max_wires_supported: usize,
-    cf_choice: &Vec<u8>,
+    cf_choice: ControlFnChoice,
     current_size: usize,
     current_circuit: &mut Vec<Gate>,
     wires_used: usize,
@@ -266,7 +273,8 @@ mod tests {
         let gates = 3;
         let wires = 9;
         let cf_choice = ControlFnChoice::TwoBit;
-        let ct = CompressionTable::new(gates, wires, cf_choice.cfs());
+        let ct = CompressionTable::new(gates, wires, cf_choice);
+        ct.save_to_file("bin/table-twobit.db");
 
         let mut rng = rand::rng();
         for _ in 0..1000000 {

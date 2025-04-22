@@ -73,8 +73,7 @@ fn run() {
                 .parse()
                 .expect("Invalid num wires");
 
-            let ct =
-                CompressionTable::new(max_gates_supported, max_wires_supported, cf_choice.cfs());
+            let ct = CompressionTable::new(max_gates_supported, max_wires_supported, cf_choice);
             ct.save_to_file(&save_path);
         }
         "equiv" => {

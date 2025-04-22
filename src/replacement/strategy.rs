@@ -1,9 +1,6 @@
-use std::error::Error;
-
-use rand::{seq::IndexedRandom, Rng};
-use serde::{Deserialize, Serialize};
-
 use crate::circuit::cf::Base2GateControlFunc;
+use serde::{Deserialize, Serialize};
+use std::error::Error;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ReplacementStrategy {
@@ -29,8 +26,9 @@ impl Default for ReplacementStrategy {
     }
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Default, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ControlFnChoice {
+    #[default]
     All,
     NoIdentity,
     OnlyUnique,
@@ -45,18 +43,7 @@ impl ControlFnChoice {
             Self::NoIdentity => (1..Base2GateControlFunc::COUNT).collect(),
             Self::OnlyUnique => vec![15, 3, 12, 1, 4, 7, 13, 6, 9, 14, 8],
             Self::UniqueNo0Bit => vec![3, 12, 1, 4, 7, 13, 6, 9, 14, 8],
-            Self::TwoBit => vec![1, 2, 4, 6, 7, 8, 9, 11, 13, 14]
-        }
-    }
-
-    #[inline]
-    pub fn random_cf<R: Rng>(&self, rng: &mut R) -> u8 {
-        match self {
-            Self::All => rng.random_range(0..Base2GateControlFunc::COUNT),
-            Self::NoIdentity => rng.random_range(1..Base2GateControlFunc::COUNT),
-            Self::OnlyUnique => *[15, 3, 12, 1, 4, 7, 13, 6, 9, 14, 8].choose(rng).unwrap(),
-            Self::UniqueNo0Bit => *[3, 12, 1, 4, 7, 13, 6, 9, 14, 8].choose(rng).unwrap(),
-            Self::TwoBit => *[1, 2, 4, 6, 7, 8, 9, 11, 13, 14].choose(rng).unwrap(),
+            Self::TwoBit => vec![1, 2, 4, 6, 7, 8, 9, 11, 13, 14],
         }
     }
 
@@ -76,7 +63,10 @@ impl ControlFnChoice {
             "OnlyUnique" => Ok(Self::OnlyUnique),
             "UniqueNo0Bit" => Ok(Self::UniqueNo0Bit),
             "TwoBit" => Ok(Self::TwoBit),
-            _ => Err(Box::<dyn Error>::from(format!("Cannot parse '{}'", raw_cf_choice))),
+            _ => Err(Box::<dyn Error>::from(format!(
+                "Cannot parse '{}'",
+                raw_cf_choice
+            ))),
         }
     }
 }

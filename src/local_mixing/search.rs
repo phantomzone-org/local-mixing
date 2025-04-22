@@ -143,7 +143,7 @@ pub fn find_convex_gate_ids3<const N_OUT: usize, R: RngCore>(
             }
 
             // Pick next gate at random among candidates
-            let next_candidate = *candidates.choose(rng).unwrap();
+            let next_candidate = candidates.choose(rng).copied().unwrap();
 
             // Insert next_candidate into selected_gate_idx in order
             let mut insert_pos = selected_gate_ctr;
@@ -206,7 +206,7 @@ pub fn find_convex_gate_ids2<const N_OUT: usize, R: RngCore>(
                 break;
             }
             // Pick next gate at random among candidates
-            selected_gate_idx[selected_gate_ctr] = *candidates.choose(rng).unwrap();
+            selected_gate_idx[selected_gate_ctr] = candidates.choose(rng).copied().unwrap();
             selected_gate_ctr += 1;
         }
         if selected_gate_ctr != N_OUT {
@@ -393,7 +393,7 @@ pub fn find_convex_gate_ids<const N_OUT: usize, R: RngCore>(
                 .filter(|i| circuit.gates[*i].generation == 0)
                 .collect::<Vec<_>>();
             dbg!(gen_zero_idx.len());
-            selected_gate_idx[0] = *gen_zero_idx.choose(rng).unwrap();
+            selected_gate_idx[0] = gen_zero_idx.choose(rng).copied().unwrap();
             selected_gate_ctr += 1;
         } else if candidate_next_gates[selected_gate_ctr].is_empty() {
             // reset candidates for this gate, dec ctr and pick again for prev gate

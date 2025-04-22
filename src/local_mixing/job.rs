@@ -28,12 +28,13 @@ use crate::{
 };
 
 use super::{
-    consts::{
-        CORRECTNESS_CHECK_ITER, DEFAULT_NUM_GATES, DEFAULT_NUM_WIRES, N_IN, N_OUT_INF, N_OUT_KND,
-    },
+    consts::{DEFAULT_NUM_GATES, DEFAULT_NUM_WIRES, N_IN, N_OUT_INF, N_OUT_KND},
     search::{find_convex_gate_ids3, permute_circuit},
     tracer::init_logs,
 };
+
+#[cfg(feature = "correctness")]
+use super::consts::CORRECTNESS_CHECK_ITER;
 
 #[derive(Clone, Copy)]
 pub enum LocalMixingStage {
@@ -120,14 +121,14 @@ impl LocalMixingJob {
                 job.compression_table_path
             );
             job.ct = CompressionTable::from_file(&job.compression_table_path);
-            assert!(job.cf_choice.cfs() == job.ct.cf_choice);
+            assert!(job.cf_choice == job.ct.cf_choice);
             println!("-- Loading compression table done");
         } else {
             println!(
                 "-- No compression table found at {}, generating",
                 job.compression_table_path
             );
-            job.ct = CompressionTable::new(3, 9, job.cf_choice.cfs());
+            job.ct = CompressionTable::new(3, 9, job.cf_choice);
             job.ct.save_to_file(&job.compression_table_path);
             println!(
                 "-- Save compression table into {}",
@@ -490,6 +491,7 @@ fn run_step<const N_OUT: usize, const N_IN: usize, G: Growable + ?Sized, R: Rng 
         );
         circuit_gates.replace(c_out_start, c_out_start + N_OUT, c_in);
 
+        #[cfg(feature = "trace")]
         let _final_end_time = Instant::now() - start_time;
 
         #[cfg(feature = "correctness")]

@@ -107,7 +107,7 @@ pub fn num_active_wires(num_wires: usize, active_wires_vec: (ActiveWires, Active
     num_active_wires
 }
 
-pub fn optimal_projection_circuit(circuit: &Circuit) -> (Circuit, ProjMap, usize) {
+pub fn optimal_projection_circuit(circuit: &[Gate]) -> (Circuit, ProjMap, usize) {
     let (proj_circuit, proj_map) = projection_circuit(&circuit);
     let num_wires = proj_map.len();
     let tt = truth_table(num_wires, &proj_circuit);

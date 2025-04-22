@@ -9,7 +9,7 @@ use crate::{
     },
     local_mixing::tracer::ReplacementTraceFields,
 };
-use rand::{Rng, RngCore, SeedableRng};
+use rand::{seq::IndexedRandom, Rng, RngCore, SeedableRng};
 use rayon::{
     current_num_threads,
     iter::{ParallelBridge, ParallelIterator},
@@ -302,7 +302,7 @@ pub fn sample_random_circuit<
                 };
             }
         }
-        circuit[gate_idx].control_func = cf_choice.random_cf(rng);
+        circuit[gate_idx].control_func = cf_choice.cfs().choose(rng).copied().unwrap();
     }
 }
 
@@ -327,7 +327,7 @@ pub fn sample_random_circuit_unguided<const N_IN: usize, const N_PROJ_WIRES: usi
     });
 
     circuit.iter_mut().for_each(|gate| {
-        gate.control_func = cf_choice.random_cf(rng);
+        gate.control_func = cf_choice.cfs().choose(rng).copied().unwrap();
     });
 }
 

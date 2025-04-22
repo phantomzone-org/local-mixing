@@ -82,11 +82,19 @@ impl Circuit {
                 let control_two = rng.random_range(0..num_wires);
 
                 if target != control_one && target != control_two && control_one != control_two {
-                    gates.push(Gate {
-                        wires: [target, control_one, control_two],
-                        control_func: *cf_choice.cfs().choose(rng).unwrap(),
-                        generation: 0,
-                    });
+                    if control_one < control_two {
+                        gates.push(Gate {
+                            wires: [target, control_one, control_two],
+                            control_func: cf_choice.cfs().choose(rng).copied().unwrap(),
+                            generation: 0,
+                        });
+                    } else {
+                        gates.push(Gate {
+                            wires: [target, control_two, control_one],
+                            control_func: cf_choice.cfs().choose(rng).copied().unwrap(),
+                            generation: 0,
+                        });
+                    }
                     break;
                 }
             }

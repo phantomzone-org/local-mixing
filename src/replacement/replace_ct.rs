@@ -3,9 +3,12 @@ use crate::circuit::analysis::{
 };
 use crate::circuit::Gate;
 use crate::compression::ct::CompressionTable;
+use crate::local_mixing::consts::ALL_BITLINES;
 use crate::local_mixing::tracer::ReplacementTraceFields;
-use rand::seq::{IndexedRandom, SliceRandom};
+use rand::seq::IndexedRandom;
 use rand::Rng;
+
+use super::strategy::ControlFnChoice;
 
 pub fn find_replacement<R: Rng>(
     circuit: &[Gate],
@@ -45,27 +48,39 @@ pub fn find_replacement<R: Rng>(
         })
     });
 
-    let mut num_samples = vec![];
-
-    while replacement_idx < replacement_size {
-        num_samples.push(0);
-        loop {
-            if num_samples[replacement_idx] >= gate_sample_limit {
-                return None;
-            }
-            let g = sample_gate(9, &ct.cf_choice, rng);
-            num_samples[replacement_idx] += 1;
-            let mut new_lhs = lhs_circuit.clone();
-            new_lhs.push(g);
-            if let Some(res) = ct.lookup_cxity(&new_lhs) {
-                if res <= replacement_size - replacement_idx - 1 {
-                    lhs_circuit = new_lhs;
-                    replacement_circuit[replacement_size - replacement_idx - 1] = g;
-                    replacement_idx += 1;
-                    break;
+    let mut num_samples = 0;
+    loop {
+        while replacement_idx < replacement_size {
+            loop {
+                if num_samples >= gate_sample_limit {
+                    return None;
+                }
+                let g = sample_gate(ct.cf_choice, rng);
+                num_samples += 1;
+                let mut new_lhs = lhs_circuit.clone();
+                new_lhs.push(g);
+                if let Some(res) = ct.lookup_cxity(&new_lhs) {
+                    if res <= replacement_size - replacement_idx - 1 {
+                        lhs_circuit = new_lhs;
+                        replacement_circuit[replacement_size - replacement_idx - 1] = g;
+                        replacement_idx += 1;
+                        break;
+                    }
                 }
             }
         }
+
+        if replacement_circuit.len() == proj_circuit.len()
+            && replacement_circuit.iter().all(|gate| proj_circuit.contains(gate))
+        {
+            println!("bad replacement");
+            println!("proj_circuit: {:?}", proj_circuit);
+            println!("repl_circuit: {:?}", replacement_circuit);
+            println!("num_samples: {}", num_samples);
+            continue;
+        }
+
+        break;
     }
 
     // map back to original num_wires
@@ -117,18 +132,16 @@ pub fn find_replacement<R: Rng>(
             num_output_wires: output_distinct.len(),
             num_active_wires,
             min_generation,
-            num_circuits_sampled: num_samples.iter().sum(),
+            num_circuits_sampled: num_samples,
         },
     ))
 }
 
-fn sample_gate<R: Rng>(num_wires: usize, cf_choice: &Vec<u8>, rng: &mut R) -> Gate {
-    let mut wires: Vec<usize> = (0..num_wires).collect();
-    wires.shuffle(rng);
-
+#[inline]
+fn sample_gate<R: Rng>(cf_choice: ControlFnChoice, rng: &mut R) -> Gate {
     Gate {
-        wires: [wires[0], wires[1], wires[2]],
-        control_func: cf_choice.choose(rng).copied().unwrap(),
+        wires: ALL_BITLINES.choose(rng).copied().unwrap(),
+        control_func: cf_choice.cfs().choose(rng).copied().unwrap(),
         generation: 0,
     }
 }
@@ -148,7 +161,7 @@ mod test {
 
     #[test]
     fn test_replacement_ct() {
-        let ct = CompressionTable::new(3, 9, ControlFnChoice::TwoBit.cfs());
+        let ct = CompressionTable::new(3, 9, ControlFnChoice::TwoBit);
         let wires = 15;
         let mut rng = ChaCha8Rng::from_os_rng();
         let mut replacement_success_count = 0;
