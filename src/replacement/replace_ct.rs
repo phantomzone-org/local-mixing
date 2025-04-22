@@ -70,7 +70,11 @@ pub fn find_replacement<R: Rng>(
         }
 
         if replacement_circuit.len() == proj_circuit.len()
-            && replacement_circuit.iter().all(|gate| proj_circuit.contains(gate))
+            && replacement_circuit.iter().all(|gate| {
+                proj_circuit
+                    .iter()
+                    .any(|g| g.wires == gate.wires && g.control_func == gate.control_func)
+            })
         {
             replacement_idx = 0;
             lhs_circuit = proj_circuit.clone();
