@@ -29,10 +29,6 @@ pub fn find_replacement<R: Rng>(
         return None;
     }
 
-    let mut lhs_circuit = proj_circuit.clone();
-    let mut replacement_circuit = vec![Gate::default(); replacement_size];
-
-    let mut replacement_idx = 0;
     if replacement_size > 4 {
         // TODO: initial sample to get to regular samples
         dbg!("replacement_size > 4");
@@ -48,6 +44,9 @@ pub fn find_replacement<R: Rng>(
         })
     });
 
+    let mut lhs_circuit = proj_circuit.clone();
+    let mut replacement_circuit = vec![Gate::default(); replacement_size];
+    let mut replacement_idx = 0;
     let mut num_samples = 0;
     loop {
         while replacement_idx < replacement_size {
@@ -73,6 +72,8 @@ pub fn find_replacement<R: Rng>(
         if replacement_circuit.len() == proj_circuit.len()
             && replacement_circuit.iter().all(|gate| proj_circuit.contains(gate))
         {
+            replacement_idx = 0;
+            lhs_circuit = proj_circuit.clone();
             println!("bad replacement");
             println!("proj_circuit: {:?}", proj_circuit);
             println!("repl_circuit: {:?}", replacement_circuit);
