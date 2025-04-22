@@ -13,7 +13,6 @@ use rand_chacha::ChaCha8Rng;
 use rayon::{
     current_num_threads,
     iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator},
-    slice::ParallelSliceMut,
 };
 use serde::{Deserialize, Serialize};
 
@@ -252,6 +251,8 @@ impl LocalMixingJob {
         if self.save_inflationary && self.inflationary_stage_steps > 0 {
             let inflationary_path = format!("{}/inflationary.json", self.dir_path);
             self.circuit.save_as_json(inflationary_path.clone());
+            self.circuit
+                .save_generation_data(format!("{}/inflationary.generations.json", self.dir_path));
             println!("-- Saved inflationary stage to {}", inflationary_path);
         }
         self.circuit.reset_generations();
@@ -263,6 +264,20 @@ impl LocalMixingJob {
 
         let num_gates = self.circuit.gates.len();
         let chunk_size = num_gates / num_search_workers;
+        let phase_bds = {
+            let middle_size = chunk_size * (num_search_workers - 2);
+            let first_last_size = num_gates - middle_size;
+            let chunk_equal = first_last_size / 2;
+            let chunk_equal_other = first_last_size - chunk_equal;
+            let chunk_smaller = first_last_size / 4;
+            let chunk_bigger = first_last_size - chunk_smaller;
+            [
+                [chunk_equal, chunk_equal_other],
+                [chunk_smaller, chunk_bigger],
+                [chunk_bigger, chunk_smaller],
+            ]
+        };
+
         let mut knd_tracers = vec![Tracer::new(0, self.kneading_stage_steps); num_search_workers];
         let mut rngs: Vec<_> = (0..num_search_workers)
             .map(|_| ChaCha8Rng::from_os_rng())
@@ -271,90 +286,40 @@ impl LocalMixingJob {
         let mut knd_steps = 0;
         let knd_fails = AtomicUsize::new(0);
         while knd_steps < self.kneading_stage_steps {
-            // Phase 1: even chunks
-            self.circuit
-                .gates
-                .par_chunks_mut(chunk_size)
-                .zip(knd_tracers.par_iter_mut())
-                .zip(rngs.par_iter_mut())
-                .for_each(|((chunk, tracer), rng)| loop {
-                    let success = run_step::<N_OUT_KND, N_IN, _, _>(
-                        self.circuit.num_wires,
-                        chunk,
-                        LocalMixingStage::Kneading,
-                        knd_steps,
-                        &self.ct,
-                        self.gate_sample_limit,
-                        tracer,
-                        rng,
-                    );
-                    if success {
-                        break;
-                    }
-                    knd_fails.fetch_add(1, Ordering::Relaxed);
-                });
+            for first_last_bds in phase_bds {
+                let mut chunks = vec![];
+                let (rest, last) = self
+                    .circuit
+                    .gates
+                    .split_at_mut(num_gates - first_last_bds[1]);
+                let (first, middle) = rest.split_at_mut(first_last_bds[0]);
+                chunks.push(first);
+                middle
+                    .chunks_mut(chunk_size)
+                    .for_each(|chunk| chunks.push(chunk));
+                chunks.push(last);
 
-            // Phase 2: |1st chunk| = chunk_size / 2, |last chunk| = chunk_size * 3 / 2
-            let mut chunks = vec![];
-            let (first, rest) = self.circuit.gates.split_at_mut(chunk_size / 2);
-            let (middle, last) = rest.split_at_mut(num_gates - chunk_size * 2);
-            chunks.push(first);
-            middle
-                .chunks_mut(chunk_size)
-                .for_each(|chunk| chunks.push(chunk));
-            chunks.push(last);
-
-            chunks
-                .par_iter_mut()
-                .zip(knd_tracers.par_iter_mut())
-                .zip(rngs.par_iter_mut())
-                .for_each(|((chunk, tracer), rng)| loop {
-                    let success = run_step::<N_OUT_KND, N_IN, _, _>(
-                        self.circuit.num_wires,
-                        chunk,
-                        LocalMixingStage::Kneading,
-                        knd_steps,
-                        &self.ct,
-                        self.gate_sample_limit,
-                        tracer,
-                        rng,
-                    );
-                    if success {
-                        break;
-                    }
-                    knd_fails.fetch_add(1, Ordering::Relaxed);
-                });
-
-            // Phase 3: |1st chunk| = chunk_size * 3 / 2, |last chunk| = chunk_size / 2
-            let mut chunks = vec![];
-            let (first, rest) = self.circuit.gates.split_at_mut(chunk_size * 3 / 2);
-            let (middle, last) = rest.split_at_mut(num_gates - chunk_size * 2);
-            chunks.push(first);
-            middle
-                .chunks_mut(chunk_size)
-                .for_each(|chunk| chunks.push(chunk));
-            chunks.push(last);
-
-            chunks
-                .par_iter_mut()
-                .zip(knd_tracers.par_iter_mut())
-                .zip(rngs.par_iter_mut())
-                .for_each(|((chunk, tracer), rng)| loop {
-                    let success = run_step::<N_OUT_KND, N_IN, _, _>(
-                        self.circuit.num_wires,
-                        chunk,
-                        LocalMixingStage::Kneading,
-                        knd_steps,
-                        &self.ct,
-                        self.gate_sample_limit,
-                        tracer,
-                        rng,
-                    );
-                    if success {
-                        break;
-                    }
-                    knd_fails.fetch_add(1, Ordering::Relaxed);
-                });
+                chunks
+                    .par_iter_mut()
+                    .zip(knd_tracers.par_iter_mut())
+                    .zip(rngs.par_iter_mut())
+                    .for_each(|((chunk, tracer), rng)| loop {
+                        let success = run_step::<N_OUT_KND, N_IN, _, _>(
+                            self.circuit.num_wires,
+                            chunk,
+                            LocalMixingStage::Kneading,
+                            knd_steps,
+                            &self.ct,
+                            self.gate_sample_limit,
+                            tracer,
+                            rng,
+                        );
+                        if success {
+                            break;
+                        }
+                        knd_fails.fetch_add(1, Ordering::Relaxed);
+                    });
+            }
 
             knd_steps += 3 * num_search_workers;
         }
