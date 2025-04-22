@@ -56,7 +56,7 @@ impl CompressionTable {
         if let Some(saved) = self.cache.get(circuit) {
             return Some(saved.len());
         }
-        let (proj_circuit, proj_map, _) = optimal_projection_circuit(circuit);
+        let (proj_circuit, proj_map) = projection_circuit(circuit);
         let num_wires = proj_map.len();
         let tt = truth_table(num_wires, &proj_circuit);
         let num_active_wires = num_active_wires(num_wires, compute_active_wires(num_wires, &tt));
@@ -273,8 +273,9 @@ mod tests {
         let gates = 3;
         let wires = 9;
         let cf_choice = ControlFnChoice::TwoBit;
-        let ct = CompressionTable::new(gates, wires, cf_choice);
-        ct.save_to_file("bin/table-twobit.db");
+        // let ct = CompressionTable::new(gates, wires, cf_choice);
+        // ct.save_to_file("bin/table-twobit.db");
+        let ct = CompressionTable::from_file("bin/table-twobit.db");
 
         let mut rng = rand::rng();
         for _ in 0..1000000 {
