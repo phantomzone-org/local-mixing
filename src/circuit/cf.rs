@@ -63,4 +63,18 @@ impl Base2GateControlFunc {
             Self::T => true,
         }
     }
+
+    pub const fn opposite_on_controls(v: u8) -> u8 {
+        match v {
+            2 => 4,  // ANDNA
+            3 => 5,  // B
+            4 => 2,  // ANDNB
+            5 => 3,  // A
+            10 => 12, // NA
+            11 => 13, // ORNA
+            12 => 10, // NB
+            13 => 11, // ORNB
+            _ => v,
+        }
+    }
 }
