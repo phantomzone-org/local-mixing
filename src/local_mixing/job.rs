@@ -1,12 +1,4 @@
-use std::{
-    cmp::min,
-    error::Error,
-    fs::File,
-    io::BufReader,
-    path::Path,
-    sync::atomic::{AtomicUsize, Ordering},
-    time::Instant,
-};
+use std::{cmp::min, error::Error, fs::File, io::BufReader, path::Path, time::Instant};
 
 use rand::{Rng, RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
@@ -284,7 +276,7 @@ impl LocalMixingJob {
             .collect();
 
         let mut knd_steps = 0;
-        let knd_fails = AtomicUsize::new(0);
+        let mut knd_fails = 0;
         while knd_steps < self.kneading_stage_steps {
             for first_last_bds in phase_bds {
                 let mut chunks = vec![];
@@ -299,11 +291,11 @@ impl LocalMixingJob {
                     .for_each(|chunk| chunks.push(chunk));
                 chunks.push(last);
 
-                chunks
+                let num_success = chunks
                     .par_iter_mut()
                     .zip(knd_tracers.par_iter_mut())
                     .zip(rngs.par_iter_mut())
-                    .for_each(|((chunk, tracer), rng)| loop {
+                    .map(|((chunk, tracer), rng)| {
                         let success = run_step::<N_OUT_KND, N_IN, _, _>(
                             self.circuit.num_wires,
                             chunk,
@@ -314,14 +306,14 @@ impl LocalMixingJob {
                             tracer,
                             rng,
                         );
-                        if success {
-                            break;
-                        }
-                        knd_fails.fetch_add(1, Ordering::Relaxed);
-                    });
-            }
+                        success
+                    })
+                    .filter(|&success| success)
+                    .count();
 
-            knd_steps += 3 * num_search_workers;
+                knd_steps += num_success;
+                knd_fails += num_search_workers - num_success;
+            }
         }
 
         println!("-- Kneading stage: done");
@@ -342,7 +334,7 @@ impl LocalMixingJob {
                 .expect("Failed to save trace");
             log::info!(target: "trace", "Finished.");
             log::info!(target: "trace", "Inflationary stage fails: {}", inf_fails);
-            log::info!(target: "trace", "Kneading stage fails: {}", knd_fails.load(Ordering::Relaxed));
+            log::info!(target: "trace", "Kneading stage fails: {}", knd_fails);
         }
     }
 }
