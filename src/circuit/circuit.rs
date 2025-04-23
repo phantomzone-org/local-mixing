@@ -63,6 +63,17 @@ pub fn evaluate_usize(gate_slice: &[Gate], input: usize) -> usize {
     result
 }
 
+#[inline]
+pub fn correct_controls(circuit: &mut [Gate]) {
+    circuit
+        .iter_mut()
+        .filter(|g| g.wires[2] < g.wires[1])
+        .for_each(|g| {
+            g.wires = [g.wires[0], g.wires[2], g.wires[1]];
+            g.control_func = Base2GateControlFunc::opposite_on_controls(g.control_func);
+        });
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct Circuit {
     pub num_wires: usize,

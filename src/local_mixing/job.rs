@@ -492,6 +492,10 @@ fn run_step<const N_OUT: usize, const N_IN: usize, G: Growable + ?Sized, R: Rng 
         {
             log::warn!(target: "trace", "{}, step = {}, FAILED: failed to find replacement for {:?}",
                         stage,  current_step, c_out);
+
+            if current_step % 10000 == 0 {
+                tracer.add_failed_replacement(stage, c_out);
+            }
         }
 
         return false;

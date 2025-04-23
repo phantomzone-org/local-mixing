@@ -116,12 +116,45 @@ impl ReplacementSamples {
     }
 }
 
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct ReplacementFailFields {
+    pub c_out: Vec<GateData>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, Default)]
+pub struct ReplacementFails {
+    pub inflationary_stage: Vec<ReplacementFailFields>,
+    pub kneading_stage: Vec<ReplacementFailFields>,
+}
+
+impl ReplacementFails {
+    fn new(inf_capacity: usize, knd_capacity: usize) -> Self {
+        Self {
+            inflationary_stage: Vec::with_capacity(inf_capacity),
+            kneading_stage: Vec::with_capacity(knd_capacity),
+        }
+    }
+
+    fn add_entry(&mut self, stage: LocalMixingStage, c_out: Vec<Gate>) {
+        let c_out_data = c_out.iter().map(|&g| GateData::from(g)).collect();
+        match stage {
+            LocalMixingStage::Inflationary => self
+                .inflationary_stage
+                .push(ReplacementFailFields { c_out: c_out_data }),
+            LocalMixingStage::Kneading => self
+                .kneading_stage
+                .push(ReplacementFailFields { c_out: c_out_data }),
+        }
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize, Debug, Default)]
 pub struct Tracer {
     pub replacement_times: ReplacementTimes,
     pub replacement_info: ReplacementInfo,
     pub search_info: SearchInfo,
     pub replacement_samples: ReplacementSamples,
+    pub replacement_fails: ReplacementFails,
 }
 
 impl Tracer {
@@ -131,6 +164,7 @@ impl Tracer {
             replacement_info: ReplacementInfo::new(inf_capacity, knd_capacity),
             search_info: SearchInfo::new(inf_capacity, knd_capacity),
             replacement_samples: ReplacementSamples::new(inf_capacity, knd_capacity),
+            replacement_fails: ReplacementFails::new(inf_capacity, knd_capacity),
         }
     }
 
@@ -161,6 +195,10 @@ impl Tracer {
         );
     }
 
+    pub fn add_failed_replacement(&mut self, stage: LocalMixingStage, c_out: Vec<Gate>) {
+        self.replacement_fails.add_entry(stage, c_out);
+    }
+
     pub fn save_to_file(&self, dir_path: &str) -> Result<(), Box<dyn Error>> {
         let file = File::create(format!("{}/logs/replacement_times.json", dir_path)).unwrap();
         serde_json::to_writer_pretty(file, &self.replacement_times)?;
@@ -170,6 +208,9 @@ impl Tracer {
 
         let file = File::create(format!("{}/logs/replacement_samples.json", dir_path)).unwrap();
         serde_json::to_writer_pretty(file, &self.replacement_samples)?;
+
+        let file = File::create(format!("{}/logs/replacement_fails.json", dir_path)).unwrap();
+        serde_json::to_writer_pretty(file, &self.replacement_fails)?;
 
         Ok(())
     }
@@ -213,6 +254,15 @@ impl Tracer {
                 .replacement_samples
                 .kneading_stage
                 .extend(tracer.replacement_samples.kneading_stage);
+
+            combined
+                .replacement_fails
+                .inflationary_stage
+                .extend(tracer.replacement_fails.inflationary_stage);
+            combined
+                .replacement_fails
+                .kneading_stage
+                .extend(tracer.replacement_fails.kneading_stage);
         }
 
         combined

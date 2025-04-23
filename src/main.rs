@@ -6,7 +6,9 @@ use local_mixing::{
     },
     compression::ct::CompressionTable,
     local_mixing::{
-        test_search::test_local_mixing_search, tracer::ReplacementSamples, LocalMixingJob,
+        test_search::test_local_mixing_search,
+        tracer::{ReplacementFails, ReplacementSamples},
+        LocalMixingJob,
     },
     replacement::{is_weakly_connected, strategy::ControlFnChoice},
 };
@@ -195,9 +197,13 @@ fn run() {
                 .expect("Failed to write to output file");
         }
         "analyze-replacements" => {
-            let repl_sample_path = args.next().expect("Missing replacement_samples.json path");
+            let logs_path = args.next().expect("Missing /logs path");
+            let repl_sample_path = format!("{}/replacement_samples.json", logs_path);
+            let repl_fails_path = format!("{}/replacement_fails.json", logs_path);
             let replacement_samples: ReplacementSamples =
                 serde_json::from_slice(&std::fs::read(repl_sample_path).unwrap()).unwrap();
+            let replacement_fails: ReplacementFails =
+                serde_json::from_slice(&std::fs::read(repl_fails_path).unwrap()).unwrap();
 
             for (i, inf_stage_replacement) in
                 replacement_samples.inflationary_stage.iter().enumerate()
@@ -238,8 +244,7 @@ fn run() {
                 println!("{}\n", c_replacement.to_string());
             }
 
-            for (i, knd_stage_replacement) in
-                replacement_samples.kneading_stage.iter().enumerate()
+            for (i, knd_stage_replacement) in replacement_samples.kneading_stage.iter().enumerate()
             {
                 let c_original = Circuit {
                     num_wires: 64,
@@ -275,6 +280,31 @@ fn run() {
                 println!("{}\n", c_original.to_string());
                 println!("c_replacement:");
                 println!("{}\n", c_replacement.to_string());
+            }
+
+            for (i, knd_stage_fails) in replacement_fails.kneading_stage.iter().enumerate() {
+                let c_original = Circuit {
+                    num_wires: 64,
+                    gates: knd_stage_fails
+                        .c_out
+                        .iter()
+                        .map(|&g| Gate::from(g))
+                        .collect(),
+                };
+
+                // Get # distinct targets
+                let mut target_wires = HashSet::new();
+                c_original.gates.iter().for_each(|g| {
+                    target_wires.insert(g.wires[0]);
+                });
+
+                let c_original_wc = is_weakly_connected::<4>(&c_original.gates);
+
+                println!("Failed kneading sample {}:", i);
+                println!("# target wires: {}", target_wires.len());
+                println!("c_original weakly-connected: {}", c_original_wc);
+                println!("c_original:");
+                println!("{}\n", c_original.to_string());
             }
         }
         _ => {

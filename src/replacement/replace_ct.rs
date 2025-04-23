@@ -1,7 +1,7 @@
 use crate::circuit::analysis::{
     compute_active_wires, num_active_wires, projection_circuit, truth_table,
 };
-use crate::circuit::cf::Base2GateControlFunc;
+use crate::circuit::circuit::correct_controls;
 use crate::circuit::Gate;
 use crate::compression::ct::CompressionTable;
 use crate::local_mixing::consts::ALL_BITLINES;
@@ -147,17 +147,6 @@ fn sample_gate<R: Rng>(cf_choice: ControlFnChoice, rng: &mut R) -> Gate {
         control_func: cf_choice.cfs().choose(rng).copied().unwrap(),
         generation: 0,
     }
-}
-
-#[inline]
-fn correct_controls(circuit: &mut [Gate]) {
-    circuit
-        .iter_mut()
-        .filter(|g| g.wires[2] < g.wires[1])
-        .for_each(|g| {
-            g.wires = [g.wires[0], g.wires[2], g.wires[1]];
-            g.control_func = Base2GateControlFunc::opposite_on_controls(g.control_func);
-        });
 }
 
 #[cfg(test)]
