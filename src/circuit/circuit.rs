@@ -2,7 +2,9 @@ use crate::{local_mixing::consts::CONTROL_FUNC_TABLE, replacement::strategy::Con
 use rand::{seq::IndexedRandom, Rng};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::{collections::HashSet, path::Path};
+
+use super::cf::Base2GateControlFunc;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Gate {
@@ -133,6 +135,44 @@ impl Circuit {
         });
 
         evolution
+    }
+
+    pub fn to_string(&self) -> String {
+        let mut wires: HashSet<usize> = HashSet::new();
+        for gate in &self.gates {
+            wires.extend(gate.wires.iter());
+        }
+        let mut wire_list: Vec<usize> = wires.into_iter().collect();
+        wire_list.sort();
+
+        let mut result = String::new();
+        for (i, wire) in wire_list.iter().enumerate() {
+            result.push_str(&format!("{:<2} ", wire));
+            for gate in &self.gates {
+                if gate.wires[0] == *wire {
+                    result.push('X');
+                } else if gate.wires[1] == *wire {
+                    result.push('a');
+                } else if gate.wires[2] == *wire {
+                    result.push('b');
+                } else {
+                    result.push('-');
+                }
+                result.push_str(" - ");
+            }
+            if i != wire_list.len() - 1 {
+                result.push_str("\n");
+            }
+        }
+
+        let control_fn_strings: Vec<String> = self
+            .gates
+            .iter()
+            .map(|gate| Base2GateControlFunc::from_u8(gate.control_func).to_string())
+            .collect();
+        result.push_str("\ncfs: ");
+        result.push_str(&control_fn_strings.join(", "));
+        result
     }
 }
 
@@ -285,7 +325,9 @@ mod tests {
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 
-    use crate::circuit::circuit::par_check_equiv_probabilistic;
+    use crate::{
+        circuit::circuit::par_check_equiv_probabilistic, replacement::strategy::ControlFnChoice,
+    };
 
     use super::{Circuit, Gate};
 
@@ -366,5 +408,12 @@ mod tests {
             par_check_equiv_probabilistic(64, &ckt.gates, &nequiv_ckt.gates, 1000, &mut rng)
                 != Ok(())
         );
+    }
+
+    #[test]
+    fn test_to_string() {
+        let circuit = Circuit::random_with_cf(10, 3, ControlFnChoice::All, &mut rand::rng());
+        let s = circuit.to_string();
+        println!("{}", s);
     }
 }

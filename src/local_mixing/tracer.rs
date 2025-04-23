@@ -90,14 +90,14 @@ impl SearchInfo {
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct ReplacementSampleFields {
-    c_out: Vec<GateData>,
-    c_in: Vec<GateData>,
+    pub c_out: Vec<GateData>,
+    pub c_in: Vec<GateData>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug, Default)]
 pub struct ReplacementSamples {
-    inflationary_stage: Vec<ReplacementSampleFields>,
-    kneading_stage: Vec<ReplacementSampleFields>,
+    pub inflationary_stage: Vec<ReplacementSampleFields>,
+    pub kneading_stage: Vec<ReplacementSampleFields>,
 }
 
 impl ReplacementSamples {

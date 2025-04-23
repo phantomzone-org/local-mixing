@@ -66,15 +66,36 @@ impl Base2GateControlFunc {
 
     pub const fn opposite_on_controls(v: u8) -> u8 {
         match v {
-            2 => 4,  // ANDNA
-            3 => 5,  // B
-            4 => 2,  // ANDNB
-            5 => 3,  // A
+            2 => 4,   // ANDNA
+            3 => 5,   // B
+            4 => 2,   // ANDNB
+            5 => 3,   // A
             10 => 12, // NA
             11 => 13, // ORNA
             12 => 10, // NB
             13 => 11, // ORNB
             _ => v,
+        }
+    }
+
+    pub fn to_string(&self) -> String {
+        match self {
+            Self::F => "0".to_string(),
+            Self::AND => "a&b".to_string(),
+            Self::ANDNB => "a&!b".to_string(),
+            Self::A => "a".to_string(),
+            Self::ANDNA => "!a&b".to_string(),
+            Self::B => "b".to_string(),
+            Self::XOR => "a^b".to_string(),
+            Self::OR => "a|b".to_string(),
+            Self::NOR => "!(a|b)".to_string(),
+            Self::EQUIV => "a=b".to_string(),
+            Self::NB => "!b".to_string(),
+            Self::ORNB => "!b|a".to_string(),
+            Self::NA => "!a".to_string(),
+            Self::ORNA => "!a|b".to_string(),
+            Self::NAND => "!(a&b)".to_string(),
+            Self::T => "1".to_string(),
         }
     }
 }
