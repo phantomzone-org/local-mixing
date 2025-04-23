@@ -277,6 +277,8 @@ impl LocalMixingJob {
 
         let mut knd_steps = 0;
         let mut knd_fails = 0;
+        let mut epoch_steps = 0;
+
         while knd_steps < self.kneading_stage_steps {
             for first_last_bds in phase_bds {
                 let mut chunks = vec![];
@@ -313,6 +315,28 @@ impl LocalMixingJob {
 
                 knd_steps += num_success;
                 knd_fails += num_search_workers - num_success;
+                epoch_steps += num_success;
+            }
+
+            if epoch_steps > 10000 {
+                epoch_steps = 0;
+
+                self.circuit
+                    .save_as_json(format!("{}/save.json", self.dir_path));
+
+                #[cfg(feature = "trace")]
+                {
+                    self.circuit
+                        .save_generation_data(format!("{}/generation.json", self.dir_path));
+
+                    let mut all_tracers = vec![inf_tracer.clone()];
+                    all_tracers.extend(knd_tracers.clone());
+                    let tracer = Tracer::collect(all_tracers);
+                    tracer
+                        .save_to_file(&self.dir_path)
+                        .expect("Failed to save trace");
+                    log::info!(target: "trace", "Saved at step {}", knd_steps);
+                }
             }
         }
 
