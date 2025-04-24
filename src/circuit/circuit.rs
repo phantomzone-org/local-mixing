@@ -281,8 +281,18 @@ pub fn par_check_equiv_probabilistic<R: Rng>(
 
 /// Structs for saving to file
 
-#[derive(Clone, Copy, Serialize, Deserialize, Debug)]
-pub struct GateData(usize, usize, usize, u8);
+#[derive(Clone, Copy, Serialize, Deserialize, Debug, PartialEq)]
+pub struct GateData(pub usize, pub usize, pub usize, pub u8);
+
+impl GateData {
+    pub fn wires(&self) -> [usize; 3] {
+        [self.2, self.0, self.1]
+    }
+
+    pub fn cf(&self) -> u8 {
+        self.3
+    }
+}
 
 impl From<Gate> for GateData {
     fn from(value: Gate) -> Self {

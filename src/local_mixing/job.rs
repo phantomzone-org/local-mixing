@@ -14,7 +14,10 @@ use crate::{
         Circuit, Gate,
     },
     compression::ct::CompressionTable,
-    local_mixing::tracer::{SearchTraceFields, Tracer},
+    local_mixing::{
+        consts::{EPOCH_SIZE, REPLACEMENT_EPOCH_SIZE},
+        tracer::{SearchTraceFields, Tracer},
+    },
     replacement::{replace_ct::find_replacement, strategy::ControlFnChoice},
 };
 
@@ -155,6 +158,7 @@ impl LocalMixingJob {
                 &mut self.circuit.gates,
                 LocalMixingStage::Inflationary,
                 inf_steps,
+                inf_steps,
                 &self.ct,
                 self.gate_sample_limit,
                 &mut tracer,
@@ -185,6 +189,7 @@ impl LocalMixingJob {
                 self.circuit.num_wires,
                 &mut self.circuit.gates[..],
                 LocalMixingStage::Kneading,
+                knd_steps,
                 knd_steps,
                 &self.ct,
                 self.gate_sample_limit,
@@ -226,6 +231,7 @@ impl LocalMixingJob {
                 self.circuit.num_wires,
                 &mut self.circuit.gates,
                 LocalMixingStage::Inflationary,
+                inf_steps,
                 inf_steps,
                 &self.ct,
                 self.gate_sample_limit,
@@ -277,6 +283,7 @@ impl LocalMixingJob {
 
         let mut knd_steps = 0;
         let mut knd_fails = 0;
+        let mut repl_save_steps = 0;
         let mut epoch_steps = 0;
 
         while knd_steps < self.kneading_stage_steps {
@@ -303,6 +310,7 @@ impl LocalMixingJob {
                             chunk,
                             LocalMixingStage::Kneading,
                             knd_steps,
+                            repl_save_steps,
                             &self.ct,
                             self.gate_sample_limit,
                             tracer,
@@ -316,9 +324,14 @@ impl LocalMixingJob {
                 knd_steps += num_success;
                 knd_fails += num_search_workers - num_success;
                 epoch_steps += num_success;
+                if repl_save_steps > REPLACEMENT_EPOCH_SIZE {
+                    repl_save_steps = 0;
+                } else {
+                    repl_save_steps += num_success;
+                }
             }
 
-            if epoch_steps > 10000 {
+            if epoch_steps > EPOCH_SIZE {
                 epoch_steps = 0;
 
                 self.circuit
@@ -420,6 +433,7 @@ fn run_step<const N_OUT: usize, const N_IN: usize, G: Growable + ?Sized, R: Rng 
     circuit_gates: &mut G,
     stage: LocalMixingStage,
     current_step: usize,
+    repl_save_step: usize,
     ct: &CompressionTable,
     gate_sample_limit: usize,
     tracer: &mut Tracer,
@@ -448,8 +462,8 @@ fn run_step<const N_OUT: usize, const N_IN: usize, G: Growable + ?Sized, R: Rng 
     if let Some((c_in, _replacement_fields)) = replacement_res {
         #[cfg(feature = "trace")]
         {
-            if current_step % 10000 == 0 {
-                tracer.add_replacement_sample(stage, c_out, c_in.clone());
+            if repl_save_step > REPLACEMENT_EPOCH_SIZE {
+                tracer.add_replacement_sample(stage, c_out, c_in.clone(), current_step);
             }
         }
 
@@ -510,7 +524,7 @@ fn run_step<const N_OUT: usize, const N_IN: usize, G: Growable + ?Sized, R: Rng 
                         stage,  current_step, c_out);
 
             if current_step % 10000 == 0 {
-                tracer.add_failed_replacement(stage, c_out);
+                tracer.add_failed_replacement(stage, c_out, current_step);
             }
         }
 

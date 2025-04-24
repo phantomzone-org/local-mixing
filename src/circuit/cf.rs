@@ -78,6 +78,28 @@ impl Base2GateControlFunc {
         }
     }
 
+    pub const fn negated(v: u8) -> u8 {
+        match v {
+            0 => 15,  // F -> T
+            1 => 14,  // AND -> NAND
+            2 => 13,  // ANDNB -> ORNA
+            3 => 12,  // A -> NA
+            4 => 11,  // ANDNA -> ORNB
+            5 => 10,  // B -> NB
+            6 => 9,   // XOR -> EQUIV
+            7 => 8,   // OR -> NOR
+            8 => 7,   // NOR -> OR
+            9 => 6,   // EQUIV -> XOR
+            10 => 5,  // NB -> B
+            11 => 4,  // ORNB -> ANDNA
+            12 => 3,  // NA -> A
+            13 => 2,  // ORNA -> ANDNB
+            14 => 1,  // NAND -> AND
+            15 => 0,  // T -> F
+            _ => unreachable!(),
+        }
+    }
+
     pub fn to_string(&self) -> String {
         match self {
             Self::F => "0".to_string(),

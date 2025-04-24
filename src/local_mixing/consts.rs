@@ -55,6 +55,10 @@ pub const DEFAULT_NUM_GATES: usize = 1000;
 /// Default number of wires for auto-gen circuits
 pub const DEFAULT_NUM_WIRES: usize = 64;
 
+/// Number of steps between every save
+pub const EPOCH_SIZE: usize = 100;
+/// Number of steps between saving replacement sample
+pub const REPLACEMENT_EPOCH_SIZE: usize = 10;
 #[cfg(feature = "correctness")]
 /// Correctness check iternations
 pub const CORRECTNESS_CHECK_ITER: usize = 1000;

@@ -6,6 +6,7 @@ use local_mixing::{
     },
     compression::ct::CompressionTable,
     local_mixing::{
+        classify_replacements::{classify_fail, classify_success},
         test_search::test_local_mixing_search,
         tracer::{ReplacementFails, ReplacementSamples},
         LocalMixingJob,
@@ -205,59 +206,21 @@ fn run() {
             let replacement_fails: ReplacementFails =
                 serde_json::from_slice(&std::fs::read(repl_fails_path).unwrap()).unwrap();
 
-            for (i, inf_stage_replacement) in
-                replacement_samples.inflationary_stage.iter().enumerate()
-            {
-                let c_original = Circuit {
-                    num_wires: 64,
-                    gates: inf_stage_replacement
-                        .c_out
-                        .iter()
-                        .map(|&g| Gate::from(g))
-                        .collect(),
-                };
-                let c_replacement = Circuit {
-                    num_wires: 64,
-                    gates: inf_stage_replacement
-                        .c_in
-                        .iter()
-                        .map(|&g| Gate::from(g))
-                        .collect(),
-                };
-
-                // Get # distinct targets
-                let mut target_wires = HashSet::new();
-                c_original.gates.iter().for_each(|g| {
-                    target_wires.insert(g.wires[0]);
-                });
-
-                let c_original_wc = is_weakly_connected::<2>(&c_original.gates);
-                let c_replacement_wc = is_weakly_connected::<4>(&c_replacement.gates);
-
-                println!("Inflationary sample {}:", i);
-                println!("# target wires: {}", target_wires.len());
-                println!("c_original weakly-connected: {}", c_original_wc);
-                println!("c_replacement weakly-connected: {}", c_replacement_wc);
-                println!("c_original:");
-                println!("{}\n", c_original.to_string());
-                println!("c_replacement:");
-                println!("{}\n", c_replacement.to_string());
-            }
-
             for (i, knd_stage_replacement) in replacement_samples.kneading_stage.iter().enumerate()
             {
-                let c_original = Circuit {
+                let classification = classify_success(knd_stage_replacement);
+                let input = Circuit {
                     num_wires: 64,
                     gates: knd_stage_replacement
-                        .c_out
+                        .input
                         .iter()
                         .map(|&g| Gate::from(g))
                         .collect(),
                 };
-                let c_replacement = Circuit {
+                let output = Circuit {
                     num_wires: 64,
                     gates: knd_stage_replacement
-                        .c_in
+                        .output
                         .iter()
                         .map(|&g| Gate::from(g))
                         .collect(),
@@ -265,28 +228,30 @@ fn run() {
 
                 // Get # distinct targets
                 let mut target_wires = HashSet::new();
-                c_original.gates.iter().for_each(|g| {
+                input.gates.iter().for_each(|g| {
                     target_wires.insert(g.wires[0]);
                 });
 
-                let c_original_wc = is_weakly_connected::<4>(&c_original.gates);
-                let c_replacement_wc = is_weakly_connected::<4>(&c_replacement.gates);
+                let input_wc = is_weakly_connected::<4>(&input.gates);
+                let output_wc = is_weakly_connected::<4>(&output.gates);
 
                 println!("Kneading sample {}:", i);
                 println!("# target wires: {}", target_wires.len());
-                println!("c_original weakly-connected: {}", c_original_wc);
-                println!("c_replacement weakly-connected: {}", c_replacement_wc);
-                println!("c_original:");
-                println!("{}\n", c_original.to_string());
-                println!("c_replacement:");
-                println!("{}\n", c_replacement.to_string());
+                println!("input weakly-connected: {}", input_wc);
+                println!("output weakly-connected: {}", output_wc);
+                println!("type: {:?}", classification);
+                println!("input:");
+                println!("{}\n", input.to_string());
+                println!("output:");
+                println!("{}\n", output.to_string());
             }
 
             for (i, knd_stage_fails) in replacement_fails.kneading_stage.iter().enumerate() {
-                let c_original = Circuit {
+                let classification = classify_fail(knd_stage_fails);
+                let input = Circuit {
                     num_wires: 64,
                     gates: knd_stage_fails
-                        .c_out
+                        .circuit
                         .iter()
                         .map(|&g| Gate::from(g))
                         .collect(),
@@ -294,17 +259,18 @@ fn run() {
 
                 // Get # distinct targets
                 let mut target_wires = HashSet::new();
-                c_original.gates.iter().for_each(|g| {
+                input.gates.iter().for_each(|g| {
                     target_wires.insert(g.wires[0]);
                 });
 
-                let c_original_wc = is_weakly_connected::<4>(&c_original.gates);
+                let input_wc = is_weakly_connected::<4>(&input.gates);
 
                 println!("Failed kneading sample {}:", i);
                 println!("# target wires: {}", target_wires.len());
-                println!("c_original weakly-connected: {}", c_original_wc);
-                println!("c_original:");
-                println!("{}\n", c_original.to_string());
+                println!("input weakly-connected: {}", input_wc);
+                println!("type: {:?}", classification);
+                println!("input:");
+                println!("{}\n", input.to_string());
             }
         }
         _ => {

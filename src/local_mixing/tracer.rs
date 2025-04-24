@@ -90,8 +90,9 @@ impl SearchInfo {
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct ReplacementSampleFields {
-    pub c_out: Vec<GateData>,
-    pub c_in: Vec<GateData>,
+    pub input: Vec<GateData>,
+    pub output: Vec<GateData>,
+    current_step: usize,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug, Default)]
@@ -118,7 +119,8 @@ impl ReplacementSamples {
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct ReplacementFailFields {
-    pub c_out: Vec<GateData>,
+    pub circuit: Vec<GateData>,
+    current_step: usize,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug, Default)]
@@ -135,15 +137,17 @@ impl ReplacementFails {
         }
     }
 
-    fn add_entry(&mut self, stage: LocalMixingStage, c_out: Vec<Gate>) {
-        let c_out_data = c_out.iter().map(|&g| GateData::from(g)).collect();
+    fn add_entry(&mut self, stage: LocalMixingStage, input: Vec<Gate>, current_step: usize) {
+        let input_data = input.iter().map(|&g| GateData::from(g)).collect();
         match stage {
-            LocalMixingStage::Inflationary => self
-                .inflationary_stage
-                .push(ReplacementFailFields { c_out: c_out_data }),
-            LocalMixingStage::Kneading => self
-                .kneading_stage
-                .push(ReplacementFailFields { c_out: c_out_data }),
+            LocalMixingStage::Inflationary => self.inflationary_stage.push(ReplacementFailFields {
+                circuit: input_data,
+                current_step,
+            }),
+            LocalMixingStage::Kneading => self.kneading_stage.push(ReplacementFailFields {
+                circuit: input_data,
+                current_step,
+            }),
         }
     }
 }
@@ -183,20 +187,27 @@ impl Tracer {
     pub fn add_replacement_sample(
         &mut self,
         stage: LocalMixingStage,
-        c_out: Vec<Gate>,
-        c_in: Vec<Gate>,
+        input: Vec<Gate>,
+        output: Vec<Gate>,
+        current_step: usize,
     ) {
         self.replacement_samples.add_entry(
             stage,
             ReplacementSampleFields {
-                c_out: c_out.iter().map(|&g| g.into()).collect(),
-                c_in: c_in.iter().map(|&g| g.into()).collect(),
+                input: input.iter().map(|&g| g.into()).collect(),
+                output: output.iter().map(|&g| g.into()).collect(),
+                current_step,
             },
         );
     }
 
-    pub fn add_failed_replacement(&mut self, stage: LocalMixingStage, c_out: Vec<Gate>) {
-        self.replacement_fails.add_entry(stage, c_out);
+    pub fn add_failed_replacement(
+        &mut self,
+        stage: LocalMixingStage,
+        input: Vec<Gate>,
+        current_step: usize,
+    ) {
+        self.replacement_fails.add_entry(stage, input, current_step);
     }
 
     pub fn save_to_file(&self, dir_path: &str) -> Result<(), Box<dyn Error>> {
