@@ -10,11 +10,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     circuit::{
-        circuit::{check_ckt_equiv_inout_map, evaluate},
+        circuit::{check_ckt_equiv_inout_map, evaluate, GateData},
         Circuit, Gate,
     },
     compression::ct::CompressionTable,
     local_mixing::{
+        classify_replacements::{classify_fail, classify_success},
         consts::{EPOCH_SIZE, REPLACEMENT_EPOCH_SIZE},
         tracer::{SearchTraceFields, Tracer},
     },
@@ -461,6 +462,11 @@ fn run_step<const N_OUT: usize, const N_IN: usize, G: Growable + ?Sized, R: Rng 
 
     if let Some((c_in, _replacement_fields)) = replacement_res {
         #[cfg(feature = "trace")]
+        let c_out_data: Vec<_> = c_out.iter().map(|&g| GateData::from(g)).collect();
+        #[cfg(feature = "trace")]
+        let c_in_data: Vec<_> = c_in.iter().map(|&g| GateData::from(g)).collect();
+
+        #[cfg(feature = "trace")]
         {
             if repl_save_step > REPLACEMENT_EPOCH_SIZE {
                 tracer.add_replacement_sample(stage, c_out, c_in.clone(), current_step);
@@ -512,16 +518,16 @@ fn run_step<const N_OUT: usize, const N_IN: usize, G: Growable + ?Sized, R: Rng 
                 _replacement_time,
             );
 
-            log::info!(target: "trace", "{}", format!("{}, step={}, SUCCESS: n_gates = {}, n_circuits_sampled = {}, n_search_attempts = {}, time = {:?}", 
-                    stage, current_step, search_fields.n_gates, _replacement_fields.num_circuits_sampled, search_fields.n_search_attempts, search_fields.time));
+            log::info!(target: "trace", "{}", format!("{}, step={}, SUCCESS: n_gates = {}, type = {:?}, n_circuits_sampled = {}, n_search_attempts = {}, time = {:?}", 
+                    stage, current_step, search_fields.n_gates, classify_success(&c_out_data, &c_in_data), _replacement_fields.num_circuits_sampled, search_fields.n_search_attempts, search_fields.time));
         }
 
         return true;
     } else {
         #[cfg(feature = "trace")]
         {
-            log::warn!(target: "trace", "{}, step = {}, FAILED: failed to find replacement for {:?}",
-                        stage,  current_step, c_out);
+            log::warn!(target: "trace", "{}, step = {}, FAILED: circuit = {:?}, type = {}",
+                        stage,  current_step, c_out, classify_fail(&c_out.iter().map(|&g| GateData::from(g)).collect()));
 
             if current_step % 10000 == 0 {
                 tracer.add_failed_replacement(stage, c_out, current_step);

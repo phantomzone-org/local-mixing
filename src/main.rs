@@ -208,7 +208,8 @@ fn run() {
 
             for (i, knd_stage_replacement) in replacement_samples.kneading_stage.iter().enumerate()
             {
-                let classification = classify_success(knd_stage_replacement);
+                let classification =
+                    classify_success(&knd_stage_replacement.input, &knd_stage_replacement.output);
                 let input = Circuit {
                     num_wires: 64,
                     gates: knd_stage_replacement
@@ -247,7 +248,7 @@ fn run() {
             }
 
             for (i, knd_stage_fails) in replacement_fails.kneading_stage.iter().enumerate() {
-                let classification = classify_fail(knd_stage_fails);
+                let classification = classify_fail(&knd_stage_fails.circuit);
                 let input = Circuit {
                     num_wires: 64,
                     gates: knd_stage_fails
