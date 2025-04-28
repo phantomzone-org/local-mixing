@@ -4,9 +4,6 @@ cargo run --release build-compression-table bin/table-twobit.db TwoBit 3 9
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Config
-WIRES=$(jq -r '.wires' "$SCRIPT_DIR/template-config.json")
-
 # Step 1: Create the "test_outputs" directory if it doesn't exist
 mkdir -p .experiments
 
