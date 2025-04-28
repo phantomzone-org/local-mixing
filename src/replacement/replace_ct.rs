@@ -1,11 +1,8 @@
-use crate::circuit::analysis::{
-    compute_active_wires, num_active_wires, projection_circuit, truth_table,
-};
-use crate::circuit::circuit::correct_controls;
+use crate::circuit::analysis::projection_circuit;
+use crate::circuit::circuit::{circuit_min_generation, correct_controls};
 use crate::circuit::Gate;
 use crate::compression::ct::CompressionTable;
 use crate::local_mixing::consts::ALL_BITLINES;
-use crate::local_mixing::tracer::ReplacementTraceFields;
 use rand::seq::IndexedRandom;
 use rand::Rng;
 
@@ -18,33 +15,9 @@ pub fn find_replacement<R: Rng>(
     gate_sample_limit: usize,
     ct: &CompressionTable,
     rng: &mut R,
-) -> Option<(Vec<Gate>, ReplacementTraceFields)> {
+) -> Option<(Vec<Gate>, usize)> {
+    // TODO: handle bigger replacement sizes
     let (proj_circuit, proj_map) = projection_circuit(circuit);
-    let tt = truth_table(proj_map.len(), &proj_circuit);
-    let active_wires_vecs = compute_active_wires(proj_map.len(), &tt);
-    let num_active_wires = num_active_wires(proj_map.len(), active_wires_vecs);
-
-    // Search input CC set will always have <= 9 active wires
-    if num_active_wires > 9 {
-        dbg!("num_active_wires > 9");
-        return None;
-    }
-
-    if replacement_size > 4 {
-        // TODO: initial sample to get to regular samples
-        dbg!("replacement_size > 4");
-        return None;
-    }
-
-    let mut input_distinct = vec![];
-    proj_circuit.iter().for_each(|g| {
-        g.wires.iter().for_each(|w| {
-            if !input_distinct.contains(w) {
-                input_distinct.push(*w);
-            }
-        })
-    });
-
     let mut lhs_circuit = proj_circuit.clone();
     let mut replacement_circuit = vec![Gate::default(); replacement_size];
     let mut replacement_idx = 0;
@@ -111,32 +84,13 @@ pub fn find_replacement<R: Rng>(
         }
 
         // update gate generation
-        let min_generation = circuit.iter().map(|g| g.generation).min().unwrap_or(0);
+        let min_generation = circuit_min_generation(circuit);
         let new_generation = min_generation + 1;
         output_circuit
             .iter_mut()
             .for_each(|g| g.generation = new_generation);
 
-        // output distinct wires
-        let mut output_distinct = vec![];
-        output_circuit.iter().for_each(|g| {
-            g.wires.iter().for_each(|w| {
-                if !output_distinct.contains(w) {
-                    output_distinct.push(*w);
-                }
-            });
-        });
-
-        return Some((
-            output_circuit,
-            ReplacementTraceFields {
-                num_input_wires: input_distinct.len(),
-                num_output_wires: output_distinct.len(),
-                num_active_wires,
-                min_generation,
-                num_circuits_sampled: num_samples,
-            },
-        ));
+        return Some((output_circuit, num_samples));
     }
 }
 

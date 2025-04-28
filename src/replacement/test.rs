@@ -43,11 +43,11 @@ pub fn test_num_samples(strategy: ReplacementStrategy, cf_choice: ControlFnChoic
         let d = Instant::now() - s;
         match res {
             None => log::error!("replacement failed, n_sampled = 1000000000, time = {:?}", d),
-            Some((replacement, replacement_fields)) => {
-                avg += replacement_fields.num_circuits_sampled;
+            Some((replacement, num_circuits_sampled)) => {
+                avg += num_circuits_sampled;
                 log::info!(
                     "n_sampled = {}, replacement = {:?}, time = {:?}",
-                    replacement_fields.num_circuits_sampled,
+                    num_circuits_sampled,
                     replacement,
                     d
                 );

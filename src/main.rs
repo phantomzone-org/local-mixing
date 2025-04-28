@@ -6,9 +6,9 @@ use local_mixing::{
     },
     compression::ct::CompressionTable,
     local_mixing::{
-        classify_replacements::{classify_fail, classify_success},
+        classify_replacements::{classify_fail, classify_success, SuccessCase},
         test_search::test_local_mixing_search,
-        tracer::{ReplacementFails, ReplacementSamples},
+        tracer::{ReplacementStatus, Tracer},
         LocalMixingJob,
     },
     replacement::{is_weakly_connected, strategy::ControlFnChoice},
@@ -150,42 +150,27 @@ fn run() {
                     let evolution_one = circuit_one.evaluate_evolution(&input);
                     let evolution_two = circuit_two.evaluate_evolution(&input);
 
-                    assert_eq!(
-                        evolution_one.last(),
-                        evolution_two.last(),
-                        "Final states of the circuits do not match"
-                    );
-
-                    let hamming_weights_one: Vec<usize> = evolution_one
-                        .iter()
-                        .map(|state| state.iter().filter(|&&bit| bit).count())
-                        .collect();
-
-                    let hamming_weights_two: Vec<usize> = evolution_two
-                        .iter()
-                        .map(|state| state.iter().filter(|&&bit| bit).count())
-                        .collect();
-
-                    let hamming_distances: Vec<usize> = evolution_one
-                        .iter()
-                        .zip(evolution_two.iter())
-                        .map(|(state_one, state_two)| {
-                            state_one
+                    let mut overlap_map = vec![];
+                    for i1 in 0..evolution_one.len() {
+                        for i2 in 0..evolution_two.len() {
+                            let tau1 = i1 as f64 / (evolution_one.len() - 1) as f64;
+                            let tau2 = i2 as f64 / (evolution_two.len() - 1) as f64;
+                            let hamming_dist = evolution_one[i1]
                                 .iter()
-                                .zip(state_two.iter())
-                                .filter(|(&bit_one, &bit_two)| bit_one != bit_two)
-                                .count()
-                        })
-                        .collect();
+                                .zip(evolution_two[i2].iter())
+                                .filter(|(&b1, &b2)| b1 != b2)
+                                .count();
+                            let overlap =
+                                (2 * hamming_dist) as f64 / circuit_one.num_wires as f64 - 1.0;
+                            overlap_map.push((tau1, tau2, overlap));
+                        }
+                    }
 
-                    let input_binary: String = input
+                    let input_key = input
                         .iter()
                         .map(|&bit| if bit { '1' } else { '0' })
-                        .collect();
-                    results.insert(
-                        input_binary,
-                        (hamming_weights_one, hamming_weights_two, hamming_distances),
-                    );
+                        .collect::<String>();
+                    results.insert(input_key, overlap_map);
                 });
 
             let output_json = json!({
@@ -198,33 +183,39 @@ fn run() {
                 .expect("Failed to write to output file");
         }
         "analyze-replacements" => {
-            let logs_path = args.next().expect("Missing /logs path");
-            let repl_sample_path = format!("{}/replacement_samples.json", logs_path);
-            let repl_fails_path = format!("{}/replacement_fails.json", logs_path);
-            let replacement_samples: ReplacementSamples =
+            let repl_sample_path = args.next().expect("Missing trace.json path");
+            let trace_data: Tracer =
                 serde_json::from_slice(&std::fs::read(repl_sample_path).unwrap()).unwrap();
-            let replacement_fails: ReplacementFails =
-                serde_json::from_slice(&std::fs::read(repl_fails_path).unwrap()).unwrap();
 
-            for (i, knd_stage_replacement) in replacement_samples.kneading_stage.iter().enumerate()
-            {
-                let classification =
-                    classify_success(&knd_stage_replacement.input, &knd_stage_replacement.output);
+            let mut success_cases = vec![];
+            let mut fail_cases = vec![];
+            trace_data
+                .kneading_stage
+                .iter()
+                .for_each(|step| match &step.replacement_fields.data {
+                    ReplacementStatus::Success(input, output) => {
+                        success_cases.push((step.current_step, input.clone(), output.clone()));
+                    }
+                    ReplacementStatus::Fail(circuit) => {
+                        fail_cases.push((step.current_step, circuit.clone()));
+                    }
+                });
+
+            success_cases.sort_by_key(|sample| sample.0);
+            fail_cases.sort_by_key(|sample| sample.0);
+
+            for (i, knd_stage_replacement) in success_cases.iter().enumerate() {
+                let input = &knd_stage_replacement.1;
+                let output = &knd_stage_replacement.2;
+                let classification = classify_success(input, output);
+
                 let input = Circuit {
                     num_wires: 64,
-                    gates: knd_stage_replacement
-                        .input
-                        .iter()
-                        .map(|&g| Gate::from(g))
-                        .collect(),
+                    gates: input.iter().map(|&g| Gate::from(g)).collect(),
                 };
                 let output = Circuit {
                     num_wires: 64,
-                    gates: knd_stage_replacement
-                        .output
-                        .iter()
-                        .map(|&g| Gate::from(g))
-                        .collect(),
+                    gates: output.iter().map(|&g| Gate::from(g)).collect(),
                 };
 
                 // Get # distinct targets
@@ -247,15 +238,12 @@ fn run() {
                 println!("{}\n", output.to_string());
             }
 
-            for (i, knd_stage_fails) in replacement_fails.kneading_stage.iter().enumerate() {
-                let classification = classify_fail(&knd_stage_fails.circuit);
+            for (i, knd_stage_fails) in fail_cases.iter().enumerate() {
+                let circuit = &knd_stage_fails.1;
+                let classification = classify_fail(circuit);
                 let input = Circuit {
                     num_wires: 64,
-                    gates: knd_stage_fails
-                        .circuit
-                        .iter()
-                        .map(|&g| Gate::from(g))
-                        .collect(),
+                    gates: circuit.iter().map(|&g| Gate::from(g)).collect(),
                 };
 
                 // Get # distinct targets
@@ -272,6 +260,29 @@ fn run() {
                 println!("type: {:?}", classification);
                 println!("input:");
                 println!("{}\n", input.to_string());
+            }
+
+            println!("Success type frequencies over time:");
+            let mut success_freq = vec![0; SuccessCase::COUNT];
+            for (i, knd_stage_replacement) in success_cases.iter().enumerate() {
+                let input = &knd_stage_replacement.1;
+                let output = &knd_stage_replacement.2;
+                let classification = classify_success(input, output);
+
+                if classification.contains(&SuccessCase::IdentitySubcircuits) {
+                    success_freq[0] += 1;
+                }
+                if classification.contains(&SuccessCase::NegatedCFs) {
+                    success_freq[1] += 1;
+                }
+                if classification.contains(&SuccessCase::Other) {
+                    success_freq[2] += 1;
+                }
+
+                println!(
+                    "sample/snapshot {}: IdentitySubcircuits: {}, NegatedCFs: {}, Other: {}",
+                    i, success_freq[0], success_freq[1], success_freq[2]
+                );
             }
         }
         _ => {

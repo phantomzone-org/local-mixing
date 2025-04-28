@@ -64,6 +64,11 @@ pub fn evaluate_usize(gate_slice: &[Gate], input: usize) -> usize {
 }
 
 #[inline]
+pub fn circuit_min_generation(gate_slice: &[Gate]) -> usize {
+    gate_slice.iter().map(|g| g.generation).min().unwrap_or(0)
+}
+
+#[inline]
 pub fn correct_controls(circuit: &mut [Gate]) {
     circuit
         .iter_mut()
@@ -287,6 +292,10 @@ pub struct GateData(pub usize, pub usize, pub usize, pub u8);
 impl GateData {
     pub fn wires(&self) -> [usize; 3] {
         [self.2, self.0, self.1]
+    }
+
+    pub fn target(&self) -> usize {
+        self.2
     }
 
     pub fn cf(&self) -> u8 {

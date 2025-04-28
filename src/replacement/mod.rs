@@ -2,12 +2,9 @@ pub mod replace_ct;
 pub mod strategy;
 pub mod test;
 
-use crate::{
-    circuit::{
-        analysis::{compute_active_wires, projection_circuit, truth_table},
-        Gate,
-    },
-    local_mixing::tracer::ReplacementTraceFields,
+use crate::circuit::{
+    analysis::{compute_active_wires, projection_circuit, truth_table},
+    Gate,
 };
 use rand::{seq::IndexedRandom, Rng, RngCore, SeedableRng};
 use rayon::{
@@ -60,7 +57,7 @@ pub fn find_replacement_circuit<
     strategy: ReplacementStrategy,
     cf_choice: ControlFnChoice,
     rng: &mut R,
-) -> Option<([Gate; N_IN], ReplacementTraceFields)> {
+) -> Option<([Gate; N_IN], usize)> {
     let (proj_circuit, proj_map) = projection_circuit(&circuit.to_vec());
     let tt = truth_table(proj_map.len(), &proj_circuit);
     let active_wires_vecs = compute_active_wires(proj_map.len(), &tt);
@@ -203,16 +200,7 @@ pub fn find_replacement_circuit<
             });
         });
 
-        return Some((
-            output_circuit,
-            ReplacementTraceFields {
-                num_input_wires: input_distinct.len(),
-                num_output_wires: output_distinct.len(),
-                num_active_wires,
-                min_generation,
-                num_circuits_sampled: sample_count_res,
-            },
-        ));
+        return Some((output_circuit, sample_count_res));
     }
 
     None

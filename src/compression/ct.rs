@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     circuit::{
-        analysis::{compute_active_wires, num_active_wires, optimal_projection_circuit, projection_circuit, truth_table},
+        analysis::{compute_active_wires, num_active_wires, projection_circuit, truth_table},
         cf::Base2GateControlFunc,
         circuit::evaluate_usize,
         Gate,
@@ -273,9 +273,7 @@ mod tests {
         let gates = 3;
         let wires = 9;
         let cf_choice = ControlFnChoice::TwoBit;
-        // let ct = CompressionTable::new(gates, wires, cf_choice);
-        // ct.save_to_file("bin/table-twobit.db");
-        let ct = CompressionTable::from_file("bin/table-twobit.db");
+        let ct = CompressionTable::new(gates, wires, cf_choice);
 
         let mut rng = rand::rng();
         for _ in 0..1000000 {

@@ -10,14 +10,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     circuit::{
-        circuit::{check_ckt_equiv_inout_map, evaluate, GateData},
+        circuit::{check_ckt_equiv_inout_map, circuit_min_generation, evaluate, GateData},
         Circuit, Gate,
     },
     compression::ct::CompressionTable,
     local_mixing::{
-        classify_replacements::{classify_fail, classify_success},
-        consts::{EPOCH_SIZE, REPLACEMENT_EPOCH_SIZE},
-        tracer::{SearchTraceFields, Tracer},
+        consts::EPOCH_SIZE,
+        tracer::{ReplacementStatus, ReplacementTraceFields, SearchTraceFields, Tracer},
     },
     replacement::{replace_ct::find_replacement, strategy::ControlFnChoice},
 };
@@ -159,7 +158,6 @@ impl LocalMixingJob {
                 &mut self.circuit.gates,
                 LocalMixingStage::Inflationary,
                 inf_steps,
-                inf_steps,
                 &self.ct,
                 self.gate_sample_limit,
                 &mut tracer,
@@ -191,7 +189,6 @@ impl LocalMixingJob {
                 &mut self.circuit.gates[..],
                 LocalMixingStage::Kneading,
                 knd_steps,
-                knd_steps,
                 &self.ct,
                 self.gate_sample_limit,
                 &mut tracer,
@@ -213,7 +210,7 @@ impl LocalMixingJob {
             self.circuit
                 .save_generation_data(format!("{}/generation.json", self.dir_path));
             tracer
-                .save_to_file(&self.dir_path)
+                .save_to_file(format!("{}/logs/trace.json", self.dir_path))
                 .expect("Failed to save trace");
             log::info!(target: "trace", "Finished.");
             log::info!(target: "trace", "Inflationary stage fails: {}", inf_fails);
@@ -232,7 +229,6 @@ impl LocalMixingJob {
                 self.circuit.num_wires,
                 &mut self.circuit.gates,
                 LocalMixingStage::Inflationary,
-                inf_steps,
                 inf_steps,
                 &self.ct,
                 self.gate_sample_limit,
@@ -277,14 +273,16 @@ impl LocalMixingJob {
             ]
         };
 
-        let mut knd_tracers = vec![Tracer::new(0, self.kneading_stage_steps); num_search_workers];
+        let mut knd_tracers = Vec::with_capacity(num_search_workers);
+        for _ in 0..num_search_workers {
+            knd_tracers.push(Tracer::new(0, self.kneading_stage_steps));
+        }
         let mut rngs: Vec<_> = (0..num_search_workers)
             .map(|_| ChaCha8Rng::from_os_rng())
             .collect();
 
         let mut knd_steps = 0;
         let mut knd_fails = 0;
-        let mut repl_save_steps = 0;
         let mut epoch_steps = 0;
 
         while knd_steps < self.kneading_stage_steps {
@@ -311,7 +309,6 @@ impl LocalMixingJob {
                             chunk,
                             LocalMixingStage::Kneading,
                             knd_steps,
-                            repl_save_steps,
                             &self.ct,
                             self.gate_sample_limit,
                             tracer,
@@ -325,11 +322,6 @@ impl LocalMixingJob {
                 knd_steps += num_success;
                 knd_fails += num_search_workers - num_success;
                 epoch_steps += num_success;
-                if repl_save_steps > REPLACEMENT_EPOCH_SIZE {
-                    repl_save_steps = 0;
-                } else {
-                    repl_save_steps += num_success;
-                }
             }
 
             if epoch_steps > EPOCH_SIZE {
@@ -345,9 +337,9 @@ impl LocalMixingJob {
 
                     let mut all_tracers = vec![inf_tracer.clone()];
                     all_tracers.extend(knd_tracers.clone());
-                    let tracer = Tracer::collect(all_tracers);
+                    let tracer = Tracer::collect(all_tracers.into_iter());
                     tracer
-                        .save_to_file(&self.dir_path)
+                        .save_to_file(format!("{}/logs/trace.json", self.dir_path))
                         .expect("Failed to save trace");
                     log::info!(target: "trace", "Saved at step {}", knd_steps);
                 }
@@ -366,9 +358,9 @@ impl LocalMixingJob {
 
             let mut all_tracers = vec![inf_tracer];
             all_tracers.extend(knd_tracers);
-            let tracer = Tracer::collect(all_tracers);
+            let tracer = Tracer::collect(all_tracers.into_iter());
             tracer
-                .save_to_file(&self.dir_path)
+            .save_to_file(format!("{}/logs/trace.json", self.dir_path))
                 .expect("Failed to save trace");
             log::info!(target: "trace", "Finished.");
             log::info!(target: "trace", "Inflationary stage fails: {}", inf_fails);
@@ -434,7 +426,6 @@ fn run_step<const N_OUT: usize, const N_IN: usize, G: Growable + ?Sized, R: Rng 
     circuit_gates: &mut G,
     stage: LocalMixingStage,
     current_step: usize,
-    repl_save_step: usize,
     ct: &CompressionTable,
     gate_sample_limit: usize,
     tracer: &mut Tracer,
@@ -460,20 +451,10 @@ fn run_step<const N_OUT: usize, const N_IN: usize, G: Growable + ?Sized, R: Rng 
     #[cfg(feature = "trace")]
     let _replacement_time = Instant::now() - repl_start;
 
-    if let Some((c_in, _replacement_fields)) = replacement_res {
+    if let Some((c_in, _n_circuits_sampled)) = replacement_res {
         #[cfg(feature = "trace")]
-        let c_out_data: Vec<_> = c_out.iter().map(|&g| GateData::from(g)).collect();
-        #[cfg(feature = "trace")]
-        let c_in_data: Vec<_> = c_in.iter().map(|&g| GateData::from(g)).collect();
+        let c_in_trace = c_in.clone();
 
-        #[cfg(feature = "trace")]
-        {
-            if repl_save_step > REPLACEMENT_EPOCH_SIZE {
-                tracer.add_replacement_sample(stage, c_out, c_in.clone(), current_step);
-            }
-        }
-
-        // generate input output table
         #[cfg(feature = "correctness")]
         let inout: Vec<(Vec<bool>, Vec<bool>)> = (0..CORRECTNESS_CHECK_ITER)
             .map(|_| {
@@ -492,9 +473,6 @@ fn run_step<const N_OUT: usize, const N_IN: usize, G: Growable + ?Sized, R: Rng 
         );
         circuit_gates.replace(c_out_start, c_out_start + N_OUT, c_in);
 
-        #[cfg(feature = "trace")]
-        let _final_end_time = Instant::now() - start_time;
-
         #[cfg(feature = "correctness")]
         {
             if check_ckt_equiv_inout_map(&inout, circuit_gates.as_slice_ref()) == false {
@@ -506,32 +484,65 @@ fn run_step<const N_OUT: usize, const N_IN: usize, G: Growable + ?Sized, R: Rng 
 
         #[cfg(feature = "trace")]
         {
+            let _elapsed = Instant::now() - start_time;
+            let n_gates = circuit_gates.as_slice_ref().len();
+
+            log::info!(target: "trace", "{}", format!("{}, step={}, SUCCESS: n_gates={}, n_circuits_sampled={}, n_search_attempts={}, replacement_time={:?}, total_time={:?}", 
+                stage, 
+                current_step, 
+                n_gates, 
+                _n_circuits_sampled,
+                _n_search_attempts, 
+                _replacement_time, 
+                _elapsed));
+
             let search_fields = SearchTraceFields {
-                n_gates: circuit_gates.as_slice_ref().len(),
+                gate_indices: selected_gate_idx.to_vec(),
                 n_search_attempts: _n_search_attempts,
-                time: _final_end_time,
+            };
+            let c_out_data = c_out.iter().map(|&g| GateData::from(g)).collect();
+            let c_in_data = c_in_trace.iter().map(|&g| GateData::from(g)).collect();
+            let replacement_fields = ReplacementTraceFields {
+                data: ReplacementStatus::Success(c_out_data, c_in_data),
+                replacement_time: _replacement_time,
+                n_circuits_sampled: _n_circuits_sampled,
+                min_generation: circuit_min_generation(&c_out),
             };
             tracer.add_entry(
                 stage,
-                search_fields.clone(),
-                _replacement_fields.clone(),
-                _replacement_time,
+                current_step,
+                search_fields,
+                replacement_fields,
+                _elapsed,
             );
-
-            log::info!(target: "trace", "{}", format!("{}, step={}, SUCCESS: n_gates = {}, type = {:?}, n_circuits_sampled = {}, n_search_attempts = {}, time = {:?}", 
-                    stage, current_step, search_fields.n_gates, classify_success(&c_out_data, &c_in_data), _replacement_fields.num_circuits_sampled, search_fields.n_search_attempts, search_fields.time));
         }
 
         return true;
     } else {
         #[cfg(feature = "trace")]
         {
-            log::warn!(target: "trace", "{}, step = {}, FAILED: circuit = {:?}, type = {}",
-                        stage,  current_step, c_out, classify_fail(&c_out.iter().map(|&g| GateData::from(g)).collect()));
+            let _elapsed = Instant::now() - start_time;
 
-            if current_step % 10000 == 0 {
-                tracer.add_failed_replacement(stage, c_out, current_step);
-            }
+            log::warn!(target: "trace", "{}, step={} FAIL, replacement_time={:?}", stage, current_step, _replacement_time);
+
+            let search_fields = SearchTraceFields {
+                gate_indices: selected_gate_idx.to_vec(),
+                n_search_attempts: _n_search_attempts,
+            };
+            let c_out_data = c_out.iter().map(|&g| GateData::from(g)).collect();
+            let replacement_fields = ReplacementTraceFields {
+                data: ReplacementStatus::Fail(c_out_data),
+                replacement_time: _replacement_time,
+                n_circuits_sampled: gate_sample_limit,
+                min_generation: circuit_min_generation(&c_out),
+            };
+            tracer.add_entry(
+                stage,
+                current_step,
+                search_fields,
+                replacement_fields,
+                _elapsed,
+            );
         }
 
         return false;

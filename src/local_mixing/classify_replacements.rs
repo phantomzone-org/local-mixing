@@ -2,11 +2,15 @@ use std::collections::HashSet;
 
 use crate::circuit::{cf::Base2GateControlFunc, circuit::GateData};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum SuccessCase {
     IdentitySubcircuits,
     NegatedCFs,
     Other,
+}
+
+impl SuccessCase {
+    pub const COUNT: usize = 3;
 }
 
 impl std::fmt::Display for SuccessCase {
@@ -76,8 +80,25 @@ pub fn classify_success(input: &Vec<GateData>, output: &Vec<GateData>) -> Vec<Su
                 && g1.wires() == g2.wires()
                 && g1.cf() == Base2GateControlFunc::negated(g2.cf())
             {
-                input_negated_cf_idx[i] = true;
-                output_negated_cf_idx[j] = true;
+                // Search for g3 > g1, g4 > g2 that are like above, and are on same target bitline
+                for i2 in i + 1..input.len() {
+                    for j2 in j + 1..output.len() {
+                        let g3 = input[i2];
+                        let g4 = output[j2];
+                        if g1.target() == g3.target()
+                            && g2.target() == g4.target()
+                            && !input_identity_subcircuit_idx[i2]
+                            && !output_identity_subcircuit_idx[j2]
+                            && g3.wires() == g4.wires()
+                            && g3.cf() == Base2GateControlFunc::negated(g4.cf())
+                        {
+                            input_negated_cf_idx[i] = true;
+                            input_negated_cf_idx[i2] = true;
+                            output_negated_cf_idx[j] = true;
+                            output_negated_cf_idx[j2] = true;
+                        }
+                    }
+                }
             }
         }
     }
