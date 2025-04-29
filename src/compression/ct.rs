@@ -69,6 +69,10 @@ impl CompressionTable {
         Some(self.ct.get(&tt)?.len())
     }
 
+    pub fn lookup_truth_table(&self, tt: &Vec<usize>) -> Option<usize> {
+        Some(self.ct.get(tt)?.len())
+    }
+
     pub fn compress_circuit(&mut self, circuit: &Vec<Gate>) -> Option<Vec<Gate>> {
         if let Some(saved) = self.cache.get(circuit) {
             return Some(saved.to_vec());

@@ -1,8 +1,7 @@
-use crate::circuit::analysis::projection_circuit;
+use crate::circuit::analysis::{projection_circuit, truth_table};
 use crate::circuit::circuit::{circuit_min_generation, correct_controls};
 use crate::circuit::Gate;
 use crate::compression::ct::CompressionTable;
-use crate::local_mixing::consts::ALL_BITLINES;
 use rand::seq::IndexedRandom;
 use rand::Rng;
 
@@ -16,32 +15,39 @@ pub fn find_replacement<R: Rng>(
     ct: &CompressionTable,
     rng: &mut R,
 ) -> Option<(Vec<Gate>, usize)> {
-    // TODO: handle bigger replacement sizes
     let (proj_circuit, proj_map) = projection_circuit(circuit);
-    let mut lhs_circuit = proj_circuit.clone();
-    let mut replacement_circuit = vec![Gate::default(); replacement_size];
-    let mut replacement_idx = 0;
+    let proj_tt = truth_table(ct.max_wires_supported, &proj_circuit);
+    let mut replacement_circuit = Vec::with_capacity(replacement_size);
     let mut num_samples = 0;
+
     loop {
-        while replacement_idx < replacement_size {
-            loop {
-                if num_samples >= gate_sample_limit {
-                    return None;
-                }
-                let g = sample_gate(ct.cf_choice, rng);
-                num_samples += 1;
-                let mut new_lhs = lhs_circuit.clone();
-                new_lhs.push(g);
-                if let Some(res) = ct.lookup_cxity(&new_lhs) {
-                    if res <= replacement_size - replacement_idx - 1 {
-                        lhs_circuit = new_lhs;
-                        replacement_circuit[replacement_size - replacement_idx - 1] = g;
-                        replacement_idx += 1;
-                        break;
-                    }
+        let mut curr_num_wires_used = proj_map.len();
+        let mut lhs_tt = proj_tt.clone();
+        let mut remaining_gates = replacement_size;
+        replacement_circuit.clear();
+
+        while remaining_gates > 0 {
+            if num_samples >= gate_sample_limit {
+                return None;
+            }
+            let (g, new_curr_num_wires_used) = sample_next_projection_gate(
+                curr_num_wires_used,
+                ct.max_wires_supported,
+                ct.cf_choice,
+                rng,
+            );
+            num_samples += 1;
+            let new_lhs_tt = lhs_tt.iter().map(|&x| g.evaluate_usize(x)).collect();
+            if let Some(res) = ct.lookup_truth_table(&new_lhs_tt) {
+                if res < remaining_gates {
+                    lhs_tt = new_lhs_tt;
+                    curr_num_wires_used = new_curr_num_wires_used;
+                    replacement_circuit.push(g);
+                    remaining_gates -= 1;
                 }
             }
         }
+        replacement_circuit.reverse();
 
         // map back to original num_wires
         let mut output_circuit = replacement_circuit.clone();
@@ -78,8 +84,6 @@ pub fn find_replacement<R: Rng>(
                     .any(|g| g.wires == gate.wires && g.control_func == gate.control_func)
             })
         {
-            replacement_idx = 0;
-            lhs_circuit = proj_circuit.clone();
             continue;
         }
 
@@ -95,11 +99,40 @@ pub fn find_replacement<R: Rng>(
 }
 
 #[inline]
-fn sample_gate<R: Rng>(cf_choice: ControlFnChoice, rng: &mut R) -> Gate {
-    Gate {
-        wires: ALL_BITLINES.choose(rng).copied().unwrap(),
-        control_func: cf_choice.cfs().choose(rng).copied().unwrap(),
-        generation: 0,
+fn sample_next_projection_gate<R: Rng>(
+    curr_num_wires_used: usize,
+    max_num_wires_supported: usize,
+    cf_choice: ControlFnChoice,
+    rng: &mut R,
+) -> (Gate, usize) {
+    loop {
+        let mut target = rng.random_range(0..max_num_wires_supported);
+        let mut control_one = rng.random_range(0..max_num_wires_supported);
+        let mut control_two = rng.random_range(0..max_num_wires_supported);
+        let mut new_num_wires_used = curr_num_wires_used;
+
+        if target != control_one && target != control_two && control_one != control_two {
+            if target >= curr_num_wires_used {
+                target = new_num_wires_used;
+                new_num_wires_used += 1;
+            }
+            if control_one >= curr_num_wires_used {
+                control_one = new_num_wires_used;
+                new_num_wires_used += 1;
+            }
+            if control_two >= curr_num_wires_used {
+                control_two = new_num_wires_used;
+                new_num_wires_used += 1;
+            }
+            return (
+                Gate {
+                    wires: [target, control_one, control_two],
+                    control_func: cf_choice.cfs().choose(rng).copied().unwrap(),
+                    generation: 0,
+                },
+                new_num_wires_used,
+            );
+        }
     }
 }
 
@@ -114,7 +147,7 @@ mod test {
         replacement::strategy::ControlFnChoice,
     };
 
-    use super::find_replacement;
+    use super::{find_replacement, sample_next_projection_gate};
 
     #[test]
     fn test_replacement_ct() {
@@ -140,5 +173,12 @@ mod test {
                 }
             }
         }
+    }
+
+    #[test]
+    fn test_sample_next_projection_gate() {
+        let mut rng = rand::rng();
+        let g = sample_next_projection_gate(5, 9, ControlFnChoice::TwoBit, &mut rng);
+        dbg!(g);
     }
 }
