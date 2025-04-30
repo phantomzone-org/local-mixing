@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use crate::{
     circuit::{
         analysis::{compute_active_wires, num_active_wires, projection_circuit, truth_table},
-        cf::Base2GateControlFunc,
         circuit::evaluate_usize,
         Gate,
     },
@@ -18,7 +17,7 @@ pub struct CompressionTable {
     pub max_gates_supported: usize,
     pub max_wires_supported: usize,
     pub cf_choice: ControlFnChoice,
-    ct: HashMap<Vec<usize>, Vec<Gate>>,
+    pub ct: HashMap<Vec<usize>, Vec<Gate>>,
     #[serde(skip_serializing, skip_deserializing)]
     cache: HashMap<Vec<Gate>, Vec<Gate>>,
 }
@@ -179,7 +178,7 @@ fn build_compression_table_recursive(
         return;
     }
 
-    for cf in 1..Base2GateControlFunc::COUNT {
+    for cf in cf_choice.cfs() {
         current_circuit[current_size].control_func = cf;
 
         // Three new wires
