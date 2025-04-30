@@ -20,26 +20,29 @@ pub fn find_replacement<R: Rng>(
     let mut replacement_circuit = Vec::with_capacity(replacement_size);
     let mut num_samples = 0;
 
-    loop {
+    'sample_circuit: loop {
+        if num_samples >= gate_sample_limit {
+            return None;
+        }
         let mut curr_num_wires_used = proj_map.len();
         let mut lhs_tt = proj_tt.clone();
         let mut remaining_gates = replacement_size;
         replacement_circuit.clear();
 
         while remaining_gates > 0 {
-            if num_samples >= gate_sample_limit {
-                return None;
-            }
             let (g, new_curr_num_wires_used) = sample_next_projection_gate(
                 curr_num_wires_used,
                 ct.max_wires_supported,
                 ct.cf_choice,
                 rng,
             );
-            num_samples += 1;
             let new_lhs_tt = lhs_tt.iter().map(|&x| g.evaluate_usize(x)).collect();
-            if let Some(res) = ct.lookup_truth_table(&new_lhs_tt) {
-                if res < remaining_gates {
+            if let Some(rhs_cxity) = ct.lookup_truth_table(&new_lhs_tt) {
+                if rhs_cxity < remaining_gates {
+                    if remaining_gates == 2 && rhs_cxity == 0 {
+                        // 1 gate left to sample but rhs_cxity = 0
+                        continue 'sample_circuit;
+                    }
                     lhs_tt = new_lhs_tt;
                     curr_num_wires_used = new_curr_num_wires_used;
                     replacement_circuit.push(g);
@@ -47,6 +50,7 @@ pub fn find_replacement<R: Rng>(
                 }
             }
         }
+        num_samples += 1;
         replacement_circuit.reverse();
 
         // map back to original num_wires
@@ -84,7 +88,7 @@ pub fn find_replacement<R: Rng>(
                     .any(|g| g.wires == gate.wires && g.control_func == gate.control_func)
             })
         {
-            continue;
+            continue 'sample_circuit;
         }
 
         // update gate generation
