@@ -1,10 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::circuit::{
-    analysis::{compute_active_wires, num_active_wires, projection_circuit, truth_table},
-    cf::GateLibrary,
-    Gate,
-};
+use crate::circuit::{cf::GateLibrary, Gate};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
@@ -14,9 +10,7 @@ pub struct CompressionTable {
     pub max_gates_supported: usize,
     pub max_wires_supported: usize,
     pub gate_library: GateLibrary,
-    pub ct: HashMap<Vec<usize>, Vec<Gate>>,
-    #[serde(skip_serializing, skip_deserializing)]
-    cache: HashMap<Vec<Gate>, Vec<Gate>>,
+    pub table: HashMap<Vec<usize>, Vec<Gate>>,
 }
 
 impl CompressionTable {
@@ -28,9 +22,8 @@ impl CompressionTable {
         Self {
             max_gates_supported,
             max_wires_supported,
-            ct: build_compression_table(max_gates_supported, max_wires_supported, gate_library),
+            table: build_compression_table(max_gates_supported, max_wires_supported, gate_library),
             gate_library,
-            cache: HashMap::new(),
         }
     }
 
@@ -48,68 +41,8 @@ impl CompressionTable {
         fs::write(path, data).expect("Failed to write file");
     }
 
-    pub fn lookup_cxity(&self, circuit: &Vec<Gate>) -> Option<usize> {
-        if let Some(saved) = self.cache.get(circuit) {
-            return Some(saved.len());
-        }
-        let (proj_circuit, proj_map) = projection_circuit(circuit);
-        let num_wires = proj_map.len();
-        let tt = truth_table(num_wires, &proj_circuit);
-        let num_active_wires = num_active_wires(num_wires, compute_active_wires(num_wires, &tt));
-        if num_active_wires > self.max_wires_supported {
-            return None;
-        }
-
-        let tt = truth_table(self.max_wires_supported, &proj_circuit);
-
-        Some(self.ct.get(&tt)?.len())
-    }
-
     pub fn lookup_truth_table(&self, tt: &Vec<usize>) -> Option<usize> {
-        Some(self.ct.get(tt)?.len())
-    }
-
-    pub fn compress_circuit(&mut self, circuit: &Vec<Gate>) -> Option<Vec<Gate>> {
-        if let Some(saved) = self.cache.get(circuit) {
-            return Some(saved.to_vec());
-        }
-        let (proj_circuit, proj_map) = projection_circuit(circuit);
-        let num_wires = proj_map.len();
-        let num_active_wires = num_active_wires(
-            num_wires,
-            compute_active_wires(num_wires, &truth_table(num_wires, &proj_circuit)),
-        );
-        if num_active_wires > self.max_wires_supported {
-            return None;
-        }
-
-        let truth_table = truth_table(self.max_wires_supported, &proj_circuit);
-
-        let match_circuit = self.ct.get(&truth_table.to_vec())?;
-
-        let output_circuit: Vec<Gate> = match_circuit
-            .iter()
-            .map(|g| {
-                let mut wires = [0; 3];
-                for i in 0..3 {
-                    let match_wire = g.wires[i];
-                    wires[i] = if match_wire < proj_map.len() {
-                        proj_map[match_wire]
-                    } else {
-                        // TODO: Fix. [0, 0, 0], cf = 5 will not be reversible
-                        0
-                    };
-                }
-                Gate {
-                    wires,
-                    control_func: g.control_func,
-                    generation: 0,
-                }
-            })
-            .collect();
-
-        self.cache.insert(circuit.to_vec(), output_circuit.clone());
-        Some(output_circuit)
+        Some(self.table.get(tt)?.len())
     }
 }
 
@@ -123,9 +56,9 @@ pub fn build_compression_table(
 
     let tt_size = 1 << max_wires_supported;
 
-    let mut ct = HashMap::new();
+    let mut table = HashMap::new();
     // Identity gate
-    ct.insert((0..tt_size).collect(), vec![]);
+    table.insert((0..tt_size).collect(), vec![]);
 
     let mut current_circuit = vec![Gate::default(); max_gates_supported];
     current_circuit[0].wires = [0, 1, 2];
@@ -140,11 +73,11 @@ pub fn build_compression_table(
             &(0..tt_size).collect(),
             1,
             3,
-            &mut ct,
+            &mut table,
         );
     }
 
-    ct
+    table
 }
 
 fn build_compression_table_recursive(
@@ -155,7 +88,7 @@ fn build_compression_table_recursive(
     current_tt: &Vec<usize>,
     current_size: usize,
     wires_used: usize,
-    ct: &mut HashMap<Vec<usize>, Vec<Gate>>,
+    table: &mut HashMap<Vec<usize>, Vec<Gate>>,
 ) {
     if wires_used > max_wires_supported {
         return;
@@ -166,7 +99,8 @@ fn build_compression_table_recursive(
         .map(|&x| current_circuit[current_size - 1].evaluate_usize(x))
         .collect();
 
-    ct.entry(tt.clone())
+    table
+        .entry(tt.clone())
         .and_modify(|e| {
             if current_size < e.len() {
                 *e = current_circuit[0..current_size].to_vec()
@@ -191,7 +125,7 @@ fn build_compression_table_recursive(
             &tt,
             current_size + 1,
             wires_used + 3,
-            ct,
+            table,
         );
 
         for w in 0..3 {
@@ -209,7 +143,7 @@ fn build_compression_table_recursive(
                     &tt,
                     current_size + 1,
                     wires_used + 2,
-                    ct,
+                    table,
                 );
             }
 
@@ -228,7 +162,7 @@ fn build_compression_table_recursive(
                             &tt,
                             current_size + 1,
                             wires_used + 1,
-                            ct,
+                            table,
                         );
 
                         // Three old wires
@@ -243,7 +177,7 @@ fn build_compression_table_recursive(
                                     &tt,
                                     current_size + 1,
                                     wires_used,
-                                    ct,
+                                    table,
                                 );
                             }
                         }
@@ -270,7 +204,7 @@ mod tests {
 
     use super::CompressionTable;
     use crate::circuit::{
-        analysis::{compute_active_wires, projection_circuit, truth_table},
+        analysis::{projection_circuit, truth_table},
         cf::GateLibrary,
         Circuit,
     };
@@ -289,15 +223,12 @@ mod tests {
         for _ in 0..1000000 {
             let circuit =
                 Circuit::random_with_cf(wires, gates, GateLibrary::TwoBit, &mut rng).gates;
-
-            let res = ct.lookup_cxity(&circuit);
+            let tt = truth_table(wires, &circuit);
+            let res = ct.lookup_truth_table(&tt);
             if res.is_none() {
                 dbg!(&circuit);
                 let proj_circuit = projection_circuit(&circuit).0;
                 dbg!(&proj_circuit);
-                let proj_tt = truth_table(9, &proj_circuit);
-                let proj_active = compute_active_wires(9, &proj_tt);
-                dbg!(proj_active);
             }
             assert!(res.is_some());
         }

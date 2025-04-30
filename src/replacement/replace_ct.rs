@@ -6,7 +6,7 @@ use crate::compression::ct::CompressionTable;
 use rand::seq::IndexedRandom;
 use rand::Rng;
 
-pub fn find_replacement<R: Rng>(
+pub fn find_replacement_with_ct<R: Rng>(
     circuit: &[Gate],
     num_wires: usize,
     replacement_size: usize,
@@ -189,7 +189,7 @@ mod test {
         compression::ct::CompressionTable,
     };
 
-    use super::{find_replacement, sample_next_projection_gate};
+    use super::{find_replacement_with_ct, sample_next_projection_gate};
 
     #[test]
     fn test_replacement_ct() {
@@ -199,7 +199,7 @@ mod test {
         let mut replacement_success_count = 0;
         while replacement_success_count < 10 {
             let ckt_one = Circuit::random_with_cf(wires, 4, GateLibrary::TwoBit, &mut rng).gates;
-            let ckt_two = match find_replacement(&ckt_one, wires, 4, 20, &ct, &mut rng) {
+            let ckt_two = match find_replacement_with_ct(&ckt_one, wires, 4, 20, &ct, &mut rng) {
                 Some((r, _)) => {
                     replacement_success_count += 1;
                     r

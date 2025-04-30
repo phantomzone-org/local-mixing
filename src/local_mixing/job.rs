@@ -16,8 +16,7 @@ use crate::{
     local_mixing::{
         consts::EPOCH_SIZE,
         tracer::{ReplacementStatus, ReplacementTraceFields, SearchTraceFields, Tracer},
-    },
-    replacement::replace_ct::find_replacement,
+    }, replacement::{find_replacement_random_sample, replace_ct::find_replacement_with_ct},
 };
 
 use super::{
@@ -145,7 +144,7 @@ impl LocalMixingJob {
         println!("-- Finished running in {:?}", elapsed);
     }
 
-    pub fn run_one_thread<R: Rng + RngCore>(&mut self, rng: &mut R) {
+    pub fn run_one_thread<R: Send + Sync + RngCore + SeedableRng>(&mut self, rng: &mut R) {
         let mut tracer = Tracer::new(self.inflationary_stage_steps, self.kneading_stage_steps);
 
         println!("-- Inflationary stage");
@@ -420,7 +419,7 @@ impl Growable for &mut [Gate] {
     }
 }
 
-fn run_step<const N_OUT: usize, const N_IN: usize, G: Growable + ?Sized, R: Rng + RngCore>(
+fn run_step<const N_OUT: usize, const N_IN: usize, G: Growable + ?Sized, R: Send + Sync + RngCore + SeedableRng>(
     circuit_num_wires: usize,
     circuit_gates: &mut G,
     stage: LocalMixingStage,
@@ -444,8 +443,12 @@ fn run_step<const N_OUT: usize, const N_IN: usize, G: Growable + ?Sized, R: Rng 
     #[cfg(feature = "trace")]
     let repl_start = Instant::now();
 
-    let replacement_res =
-        find_replacement(&c_out, circuit_num_wires, N_IN, max_circuit_samples, ct, rng);
+    // let replacement_res =
+        // find_replacement(&c_out, circuit_num_wires, N_IN, max_circuit_samples, ct, rng);
+    let replacement_res = match stage {
+        LocalMixingStage::Inflationary => find_replacement_random_sample(&c_out, circuit_num_wires, N_IN, 1_000_000_000, ct.gate_library, rng),
+        LocalMixingStage::Kneading => find_replacement_with_ct(&c_out, circuit_num_wires, N_IN, max_circuit_samples, &ct, rng),
+    };
 
     #[cfg(feature = "trace")]
     let _replacement_time = Instant::now() - repl_start;

@@ -1,5 +1,6 @@
 use local_mixing::{
     circuit::{
+        analysis::num_distinct_wires,
         cf::{GateControlFunc, GateLibrary},
         circuit::{par_check_equiv_probabilistic, Circuit},
         Gate,
@@ -203,6 +204,36 @@ fn run() {
 
             success_cases.sort_by_key(|sample| sample.0);
             fail_cases.sort_by_key(|sample| sample.0);
+
+            for (i, inf_stage_replacement) in trace_data.inflationary_stage.iter().enumerate() {
+                match &inf_stage_replacement.replacement_fields.data {
+                    ReplacementStatus::Success(input, output) => {
+                        let input = Circuit {
+                            num_wires: 64,
+                            gates: input.iter().map(|&g| Gate::from(g)).collect(),
+                        };
+                        let output = Circuit {
+                            num_wires: 64,
+                            gates: output.iter().map(|&g| Gate::from(g)).collect(),
+                        };
+
+                        println!("Inflationary sample {}:", i);
+                        println!(
+                            "input # distinct wires: {}",
+                            num_distinct_wires(&input.gates)
+                        );
+                        println!(
+                            "output # distinct wires: {}",
+                            num_distinct_wires(&output.gates)
+                        );
+                        println!("input:");
+                        println!("{}\n", input.to_string());
+                        println!("output:");
+                        println!("{}\n", output.to_string());
+                    }
+                    ReplacementStatus::Fail(_) => todo!(),
+                }
+            }
 
             for (i, knd_stage_replacement) in success_cases.iter().enumerate() {
                 let input = &knd_stage_replacement.1;

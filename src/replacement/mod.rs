@@ -3,6 +3,7 @@ pub mod replace_ct;
 use crate::circuit::{
     analysis::{compute_active_wires, projection_circuit, truth_table},
     cf::GateLibrary,
+    circuit::correct_controls,
     Gate,
 };
 use rand::{seq::IndexedRandom, Rng, RngCore, SeedableRng};
@@ -38,57 +39,23 @@ pub fn is_weakly_connected<const N: usize>(circuit: &[Gate]) -> bool {
     visited.iter().all(|&v| v)
 }
 
-pub fn find_replacement_circuit<
-    const N_OUT: usize,
-    const N_IN: usize,
-    const N_PROJ_WIRES: usize,
-    const N_PROJ_INPUTS: usize,
-    R: Send + Sync + RngCore + SeedableRng,
->(
-    circuit: &[Gate; N_OUT],
+pub fn find_replacement_random_sample<R: Send + Sync + RngCore + SeedableRng>(
+    circuit: &[Gate],
     num_wires: usize,
-    num_attempts: usize,
+    replacement_size: usize,
+    max_circuit_samples: usize,
     gate_library: GateLibrary,
     rng: &mut R,
-) -> Option<([Gate; N_IN], usize)> {
-    let (proj_circuit, proj_map) = projection_circuit(&circuit.to_vec());
-    let tt = truth_table(proj_map.len(), &proj_circuit);
-    let active_wires_vecs = compute_active_wires(proj_map.len(), &tt);
-
-    let mut num_active_wires = 0;
-    let mut active_wires = [[false; N_PROJ_WIRES]; 2];
-    active_wires_vecs.0.iter().for_each(|&w| {
-        num_active_wires += 1;
-        active_wires[0][w] = true;
-    });
-    active_wires_vecs.1.iter().for_each(|&w| {
-        if !active_wires[1][w] && !active_wires[0][w] {
-            num_active_wires += 1;
-        }
-        active_wires[1][w] = true;
-    });
-
-    if num_active_wires > N_PROJ_WIRES {
-        println!(
-            "num_active_wires > N_PROJ_WIRES: {} > {}",
-            num_active_wires, N_PROJ_WIRES
-        );
-        return None;
-    }
-
-    let eval_table = truth_table(N_PROJ_WIRES, &proj_circuit);
-
-    let mut input_distinct = vec![];
-    proj_circuit.iter().for_each(|g| {
-        g.wires.iter().for_each(|w| {
-            if !input_distinct.contains(w) {
-                input_distinct.push(*w);
-            }
-        })
-    });
+) -> Option<(Vec<Gate>, usize)> {
+    let (proj_circuit, proj_map) = projection_circuit(circuit);
+    let num_projection_wires = proj_map.len() + 2;
+    let input_inout_table = truth_table(num_projection_wires, &proj_circuit);
+    let tt_size = 1 << num_projection_wires;
+    let (active_targets, active_controls) =
+        compute_active_wires(proj_map.len(), &input_inout_table);
 
     let num_threads = current_num_threads();
-    let max_iterations = num_attempts / num_threads;
+    let max_iterations = max_circuit_samples / num_threads;
 
     let found = AtomicBool::new(false);
     let replacement_res = Arc::new(OnceLock::new());
@@ -97,37 +64,35 @@ pub fn find_replacement_circuit<
         .par_bridge()
         .map(|mut rng| {
             let epoch_size = rng.random_range(10..20);
-            let mut replacement_circuit = [Gate::default(); N_IN];
+            let mut replacement_circuit;
             for iter in 1..=max_iterations {
                 if iter % epoch_size == 0 && found.load(Relaxed) {
                     return iter;
                 }
 
-                sample_random_circuit(
-                    &mut replacement_circuit,
-                    &active_wires,
+                replacement_circuit = sample_random_circuit(
+                    replacement_size,
+                    num_projection_wires,
+                    &active_targets,
+                    &active_controls,
                     gate_library,
                     &mut rng,
                 );
 
                 // functional equivalence
                 let mut func_equiv = true;
-                for i in 0..N_PROJ_INPUTS {
+                for i in 0..tt_size {
                     let mut input = i;
                     replacement_circuit
                         .iter()
                         .for_each(|g| input = g.evaluate_usize(input));
-                    if input != eval_table[i] {
+                    if input != input_inout_table[i] {
                         func_equiv = false;
                         break;
                     }
                 }
 
                 if !func_equiv {
-                    continue;
-                }
-
-                if !is_weakly_connected::<N_IN>(&replacement_circuit) {
                     continue;
                 }
 
@@ -167,22 +132,14 @@ pub fn find_replacement_circuit<
             });
         });
 
+        correct_controls(&mut output_circuit);
+
         // update gate generation
         let min_generation = circuit.iter().map(|g| g.generation).min().unwrap_or(0);
         let new_generation = min_generation + 1;
         output_circuit
             .iter_mut()
             .for_each(|g| g.generation = new_generation);
-
-        // output distinct wires
-        let mut output_distinct = vec![];
-        output_circuit.iter().for_each(|g| {
-            g.wires.iter().for_each(|w| {
-                if !output_distinct.contains(w) {
-                    output_distinct.push(*w);
-                }
-            });
-        });
 
         return Some((output_circuit, sample_count_res));
     }
@@ -191,27 +148,24 @@ pub fn find_replacement_circuit<
 }
 
 #[inline]
-pub fn sample_random_circuit<
-    const N_IN: usize,
-    const N_PROJ_WIRES: usize,
-    R: Send + Sync + RngCore + SeedableRng,
->(
-    circuit: &mut [Gate; N_IN],
-    active_wires: &[[bool; N_PROJ_WIRES]; 2],
+pub fn sample_random_circuit<R: Send + Sync + RngCore + SeedableRng>(
+    replacement_size: usize,
+    num_projection_wires: usize,
+    active_targets: &Vec<usize>,
+    active_controls: &Vec<usize>,
     gate_library: GateLibrary,
     rng: &mut R,
-) {
-    let mut placed_wire_in_gate = [[false; N_IN]; 3];
+) -> Vec<Gate> {
+    let mut circuit = vec![Gate::default(); replacement_size];
+    let mut placed_wire_in_gate: [Vec<bool>; 3] =
+        std::array::from_fn(|_| vec![false; replacement_size]);
 
     // Place active target wires
-    for i in 0..N_PROJ_WIRES {
-        if !active_wires[0][i] {
-            continue;
-        }
+    for w in active_targets {
         loop {
-            let gate_idx = rng.random_range(0..N_IN);
+            let gate_idx = rng.random_range(0..replacement_size);
             if !placed_wire_in_gate[0][gate_idx] {
-                circuit[gate_idx].wires[0] = i;
+                circuit[gate_idx].wires[0] = *w;
                 placed_wire_in_gate[0][gate_idx] = true;
                 break;
             }
@@ -220,26 +174,21 @@ pub fn sample_random_circuit<
 
     // Place active control wires
     'active_control: loop {
-        for w in 0..N_PROJ_WIRES {
-            if !active_wires[1][w] {
-                continue;
-            }
-
-            let mut placed = false;
-
+        for w in active_controls {
             // Probability that any slot (there are 2*N_IN) is not sampled in 3*N_IN iterations
             // is 1/( 2*N_IN )^{3*N_IN} which is very low.
             // For ex, when N_IN=4 non-sampling probability is 1/(8^12) = 1/2^{36}
-            for _ in 0..3 * N_IN {
-                let index = rng.random_range(0..2 * N_IN);
+            let mut placed = false;
+            for _ in 0..3 * replacement_size {
+                let index = rng.random_range(0..2 * replacement_size);
                 let (gate_idx, control_idx) = (index >> 1, (index & 1) + 1);
                 // Check if the same wire is acting as target (and is placed)
-                if placed_wire_in_gate[0][gate_idx] && circuit[gate_idx].wires[0] == w {
+                if placed_wire_in_gate[0][gate_idx] && circuit[gate_idx].wires[0] == *w {
                     continue;
                 }
 
                 if !placed_wire_in_gate[control_idx][gate_idx] {
-                    circuit[gate_idx].wires[control_idx] = w;
+                    circuit[gate_idx].wires[control_idx] = *w;
                     placed_wire_in_gate[control_idx][gate_idx] = true;
                     placed = true;
                     break;
@@ -248,8 +197,8 @@ pub fn sample_random_circuit<
 
             // Placement is impossible with very high probability, try setting active control wires again
             if !placed {
-                placed_wire_in_gate[1] = [false; N_IN];
-                placed_wire_in_gate[2] = [false; N_IN];
+                placed_wire_in_gate[1] = vec![false; replacement_size];
+                placed_wire_in_gate[2] = vec![false; replacement_size];
                 continue 'active_control;
             }
         }
@@ -257,8 +206,8 @@ pub fn sample_random_circuit<
         break;
     }
 
-    for gate_idx in 0..N_IN {
-        let mut set: [bool; N_PROJ_WIRES] = [false; N_PROJ_WIRES];
+    for gate_idx in 0..replacement_size {
+        let mut set = vec![false; num_projection_wires];
         for i in 0..3 {
             if placed_wire_in_gate[i][gate_idx] {
                 set[circuit[gate_idx].wires[i]] = true;
@@ -267,7 +216,7 @@ pub fn sample_random_circuit<
         for i in 0..3 {
             if !placed_wire_in_gate[i][gate_idx] {
                 circuit[gate_idx].wires[i] = loop {
-                    let v = rng.random_range(0..N_PROJ_WIRES);
+                    let v = rng.random_range(0..num_projection_wires);
                     if !set[v] {
                         set[v] = true;
                         break v;
@@ -277,6 +226,8 @@ pub fn sample_random_circuit<
         }
         circuit[gate_idx].control_func = gate_library.cfs().choose(rng).copied().unwrap();
     }
+
+    circuit
 }
 
 #[cfg(test)]
@@ -286,7 +237,7 @@ mod tests {
 
     use crate::circuit::{cf::GateLibrary, circuit::par_check_equiv_probabilistic, Circuit};
 
-    use super::find_replacement_circuit;
+    use super::find_replacement_random_sample;
 
     #[test]
     fn test_find_replacement_random_sample() {
@@ -294,10 +245,11 @@ mod tests {
         let mut rng = ChaCha8Rng::from_os_rng();
         for _ in 0..10 {
             let ckt_one =
-                Circuit::random_with_cf(wires, 2, GateLibrary::NoIdentity, &mut rng).gates;
-            let replacement = match find_replacement_circuit::<2, 4, 9, { 1 << 9 }, _>(
-                &[ckt_one[0], ckt_one[1]],
+                Circuit::random_with_cf(wires, 2, GateLibrary::OnlyUnique, &mut rng).gates;
+            let replacement = match find_replacement_random_sample(
+                &ckt_one,
                 wires,
+                4,
                 1_000_000_000,
                 GateLibrary::OnlyUnique,
                 &mut rng,
@@ -305,21 +257,11 @@ mod tests {
                 Some((r, _)) => r,
                 None => panic!(),
             };
-            let ckt_two = Circuit {
-                num_wires: wires,
-                gates: Vec::from(replacement),
-            };
-            match par_check_equiv_probabilistic(
-                wires,
-                &ckt_one,
-                &Vec::from(replacement),
-                1000,
-                &mut rng,
-            ) {
+            match par_check_equiv_probabilistic(wires, &ckt_one, &replacement, 1000, &mut rng) {
                 Ok(()) => continue,
                 _ => {
                     dbg!(ckt_one);
-                    dbg!(ckt_two);
+                    dbg!(replacement);
                     panic!();
                 }
             }
