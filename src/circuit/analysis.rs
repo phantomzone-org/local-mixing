@@ -5,10 +5,9 @@ type ProjMap = Vec<usize>;
 type TruthTable = Vec<usize>;
 type ActiveWires = Vec<usize>;
 
-pub fn projection_circuit(circuit: &[Gate]) -> (Circuit, ProjMap) {
+pub fn projection_circuit(circuit: &[Gate]) -> (Vec<Gate>, Vec<usize>) {
     let mut proj_circuit = vec![Gate::default(); circuit.len()];
     let mut proj_map = vec![];
-    let mut proj_ctr = 0;
 
     for i in 0..circuit.len() {
         for w in 0..3 {
@@ -16,9 +15,8 @@ pub fn projection_circuit(circuit: &[Gate]) -> (Circuit, ProjMap) {
             if let Some(pos) = proj_map.iter().position(|&x| x == wire) {
                 proj_circuit[i].wires[w] = pos;
             } else {
+                proj_circuit[i].wires[w] = proj_map.len();
                 proj_map.push(wire);
-                proj_circuit[i].wires[w] = proj_ctr;
-                proj_ctr += 1;
             }
         }
         proj_circuit[i].control_func = circuit[i].control_func;
