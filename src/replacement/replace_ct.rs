@@ -1,5 +1,5 @@
 use crate::circuit::analysis::{projection_circuit, truth_table};
-use crate::circuit::circuit::{circuit_min_generation, correct_controls};
+use crate::circuit::circuit::{circuit_min_generation, correct_controls, evaluate_usize};
 use crate::circuit::Gate;
 use crate::compression::ct::CompressionTable;
 use rand::seq::IndexedRandom;
@@ -16,9 +16,19 @@ pub fn find_replacement<R: Rng>(
     rng: &mut R,
 ) -> Option<(Vec<Gate>, usize)> {
     let (proj_circuit, proj_map) = projection_circuit(circuit);
+    if proj_map.len() > ct.max_wires_supported {
+        return None;
+    }
+
     let proj_tt = truth_table(ct.max_wires_supported, &proj_circuit);
     let mut replacement_circuit = Vec::with_capacity(replacement_size);
     let mut num_samples = 0;
+
+    let initial_gate_sample_size = if replacement_size > ct.max_gates_supported + 1 {
+        replacement_size - ct.max_gates_supported
+    } else {
+        0
+    };
 
     'sample_circuit: loop {
         if num_samples >= gate_sample_limit {
@@ -28,6 +38,36 @@ pub fn find_replacement<R: Rng>(
         let mut lhs_tt = proj_tt.clone();
         let mut remaining_gates = replacement_size;
         replacement_circuit.clear();
+
+        if initial_gate_sample_size > 0 {
+            loop {
+                let mut new_curr_num_wires_used = curr_num_wires_used;
+                let mut initial_gates = Vec::with_capacity(initial_gate_sample_size);
+                for _ in 0..initial_gate_sample_size {
+                    let (gate, num_wires) = sample_next_projection_gate(
+                        new_curr_num_wires_used,
+                        ct.max_wires_supported,
+                        ct.cf_choice,
+                        rng,
+                    );
+                    new_curr_num_wires_used = num_wires;
+                    initial_gates.push(gate);
+                }
+                let new_lhs_tt: Vec<_> = lhs_tt
+                    .iter()
+                    .map(|&x| evaluate_usize(&initial_gates, x))
+                    .collect();
+                if let Some(rhs_cxity) = ct.lookup_truth_table(&new_lhs_tt) {
+                    if rhs_cxity < remaining_gates {
+                        lhs_tt = new_lhs_tt;
+                        curr_num_wires_used = new_curr_num_wires_used;
+                        replacement_circuit.extend(initial_gates);
+                        remaining_gates -= initial_gate_sample_size;
+                        break;
+                    }
+                }
+            }
+        }
 
         while remaining_gates > 0 {
             let (g, new_curr_num_wires_used) = sample_next_projection_gate(
@@ -155,13 +195,14 @@ mod test {
 
     #[test]
     fn test_replacement_ct() {
-        let ct = CompressionTable::new(3, 9, ControlFnChoice::TwoBit);
+        let ct = CompressionTable::from_file("bin/table-twobit.db");
         let wires = 15;
         let mut rng = ChaCha8Rng::from_os_rng();
         let mut replacement_success_count = 0;
         while replacement_success_count < 10 {
-            let ckt_one = Circuit::random_with_cf(wires, 2, ControlFnChoice::All, &mut rng).gates;
-            let ckt_two = match find_replacement(&ckt_one, wires, 4, 1000000, &ct, &mut rng) {
+            let ckt_one =
+                Circuit::random_with_cf(wires, 4, ControlFnChoice::TwoBit, &mut rng).gates;
+            let ckt_two = match find_replacement(&ckt_one, wires, 4, 20, &ct, &mut rng) {
                 Some((r, _)) => {
                     replacement_success_count += 1;
                     r

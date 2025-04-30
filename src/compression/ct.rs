@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use crate::{
     circuit::{
         analysis::{compute_active_wires, num_active_wires, projection_circuit, truth_table},
-        cf::Base2GateControlFunc,
         Gate,
     },
     replacement::strategy::ControlFnChoice,
