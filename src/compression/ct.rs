@@ -1,11 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    circuit::{
-        analysis::{compute_active_wires, num_active_wires, projection_circuit, truth_table},
-        Gate,
-    },
-    replacement::strategy::ControlFnChoice,
+use crate::circuit::{
+    analysis::{compute_active_wires, num_active_wires, projection_circuit, truth_table},
+    cf::GateLibrary,
+    Gate,
 };
 use std::collections::HashMap;
 use std::fs;
@@ -15,7 +13,7 @@ use std::path::Path;
 pub struct CompressionTable {
     pub max_gates_supported: usize,
     pub max_wires_supported: usize,
-    pub cf_choice: ControlFnChoice,
+    pub gate_library: GateLibrary,
     pub ct: HashMap<Vec<usize>, Vec<Gate>>,
     #[serde(skip_serializing, skip_deserializing)]
     cache: HashMap<Vec<Gate>, Vec<Gate>>,
@@ -25,13 +23,13 @@ impl CompressionTable {
     pub fn new(
         max_gates_supported: usize,
         max_wires_supported: usize,
-        cf_choice: ControlFnChoice,
+        gate_library: GateLibrary,
     ) -> Self {
         Self {
             max_gates_supported,
             max_wires_supported,
-            ct: build_compression_table(max_gates_supported, max_wires_supported, cf_choice),
-            cf_choice,
+            ct: build_compression_table(max_gates_supported, max_wires_supported, gate_library),
+            gate_library,
             cache: HashMap::new(),
         }
     }
@@ -118,7 +116,7 @@ impl CompressionTable {
 pub fn build_compression_table(
     max_gates_supported: usize,
     max_wires_supported: usize,
-    cf_choice: ControlFnChoice,
+    gate_library: GateLibrary,
 ) -> HashMap<Vec<usize>, Vec<Gate>> {
     assert!(max_gates_supported >= 1);
     assert!(max_wires_supported >= 3);
@@ -132,12 +130,12 @@ pub fn build_compression_table(
     let mut current_circuit = vec![Gate::default(); max_gates_supported];
     current_circuit[0].wires = [0, 1, 2];
 
-    for cf in cf_choice.cfs() {
+    for cf in gate_library.cfs() {
         current_circuit[0].control_func = cf;
         build_compression_table_recursive(
             max_gates_supported,
             max_wires_supported,
-            cf_choice,
+            gate_library,
             &mut current_circuit,
             &(0..tt_size).collect(),
             1,
@@ -152,7 +150,7 @@ pub fn build_compression_table(
 fn build_compression_table_recursive(
     max_gates_supported: usize,
     max_wires_supported: usize,
-    cf_choice: ControlFnChoice,
+    gate_library: GateLibrary,
     current_circuit: &mut Vec<Gate>,
     current_tt: &Vec<usize>,
     current_size: usize,
@@ -180,7 +178,7 @@ fn build_compression_table_recursive(
         return;
     }
 
-    for cf in cf_choice.cfs() {
+    for cf in gate_library.cfs() {
         current_circuit[current_size].control_func = cf;
 
         // Three new wires
@@ -188,7 +186,7 @@ fn build_compression_table_recursive(
         build_compression_table_recursive(
             max_gates_supported,
             max_wires_supported,
-            cf_choice,
+            gate_library,
             current_circuit,
             &tt,
             current_size + 1,
@@ -206,7 +204,7 @@ fn build_compression_table_recursive(
                 build_compression_table_recursive(
                     max_gates_supported,
                     max_wires_supported,
-                    cf_choice,
+                    gate_library,
                     current_circuit,
                     &tt,
                     current_size + 1,
@@ -225,7 +223,7 @@ fn build_compression_table_recursive(
                         build_compression_table_recursive(
                             max_gates_supported,
                             max_wires_supported,
-                            cf_choice,
+                            gate_library,
                             current_circuit,
                             &tt,
                             current_size + 1,
@@ -240,7 +238,7 @@ fn build_compression_table_recursive(
                                 build_compression_table_recursive(
                                     max_gates_supported,
                                     max_wires_supported,
-                                    cf_choice,
+                                    gate_library,
                                     current_circuit,
                                     &tt,
                                     current_size + 1,
@@ -271,28 +269,26 @@ mod tests {
     use std::time::Instant;
 
     use super::CompressionTable;
-    use crate::{
-        circuit::{
-            analysis::{compute_active_wires, projection_circuit, truth_table},
-            Circuit,
-        },
-        replacement::strategy::ControlFnChoice,
+    use crate::circuit::{
+        analysis::{compute_active_wires, projection_circuit, truth_table},
+        cf::GateLibrary,
+        Circuit,
     };
 
     #[test]
     fn test_compression_table() {
         let gates = 3;
         let wires = 9;
-        let cf_choice = ControlFnChoice::TwoBit;
+        let gate_library = GateLibrary::TwoBit;
         let s = Instant::now();
-        let ct = CompressionTable::new(gates, wires, cf_choice);
+        let ct = CompressionTable::new(gates, wires, gate_library);
         let d = Instant::now() - s;
         dbg!(d);
 
         let mut rng = rand::rng();
         for _ in 0..1000000 {
             let circuit =
-                Circuit::random_with_cf(wires, gates, ControlFnChoice::TwoBit, &mut rng).gates;
+                Circuit::random_with_cf(wires, gates, GateLibrary::TwoBit, &mut rng).gates;
 
             let res = ct.lookup_cxity(&circuit);
             if res.is_none() {

@@ -1,9 +1,8 @@
 pub mod replace_ct;
-pub mod strategy;
-pub mod test;
 
 use crate::circuit::{
     analysis::{compute_active_wires, projection_circuit, truth_table},
+    cf::GateLibrary,
     Gate,
 };
 use rand::{seq::IndexedRandom, Rng, RngCore, SeedableRng};
@@ -11,15 +10,10 @@ use rayon::{
     current_num_threads,
     iter::{ParallelBridge, ParallelIterator},
 };
-use std::{
-    array::from_fn,
-    iter::repeat_with,
-    sync::{
-        atomic::{AtomicBool, Ordering::Relaxed},
-        Arc, OnceLock,
-    },
+use std::sync::{
+    atomic::{AtomicBool, Ordering::Relaxed},
+    Arc, OnceLock,
 };
-use strategy::{ControlFnChoice, ReplacementStrategy};
 
 #[inline]
 pub fn is_weakly_connected<const N: usize>(circuit: &[Gate]) -> bool {
@@ -54,8 +48,7 @@ pub fn find_replacement_circuit<
     circuit: &[Gate; N_OUT],
     num_wires: usize,
     num_attempts: usize,
-    strategy: ReplacementStrategy,
-    cf_choice: ControlFnChoice,
+    gate_library: GateLibrary,
     rng: &mut R,
 ) -> Option<([Gate; N_IN], usize)> {
     let (proj_circuit, proj_map) = projection_circuit(&circuit.to_vec());
@@ -94,20 +87,6 @@ pub fn find_replacement_circuit<
         })
     });
 
-    let sample_function: Box<dyn Fn(&mut [Gate; N_IN], &mut R) + Send + Sync> = match strategy {
-        ReplacementStrategy::SampleUnguided => Box::new(|replacement_circuit, rng| {
-            sample_random_circuit_unguided::<N_IN, N_PROJ_WIRES, _>(
-                replacement_circuit,
-                cf_choice,
-                rng,
-            );
-        }),
-        ReplacementStrategy::SampleActive0 => Box::new(|replacement_circuit, rng| {
-            sample_random_circuit(replacement_circuit, &active_wires, cf_choice, rng);
-        }),
-        _ => todo!(),
-    };
-
     let num_threads = current_num_threads();
     let max_iterations = num_attempts / num_threads;
 
@@ -124,7 +103,12 @@ pub fn find_replacement_circuit<
                     return iter;
                 }
 
-                sample_function(&mut replacement_circuit, &mut rng);
+                sample_random_circuit(
+                    &mut replacement_circuit,
+                    &active_wires,
+                    gate_library,
+                    &mut rng,
+                );
 
                 // functional equivalence
                 let mut func_equiv = true;
@@ -206,6 +190,7 @@ pub fn find_replacement_circuit<
     None
 }
 
+#[inline]
 pub fn sample_random_circuit<
     const N_IN: usize,
     const N_PROJ_WIRES: usize,
@@ -213,7 +198,7 @@ pub fn sample_random_circuit<
 >(
     circuit: &mut [Gate; N_IN],
     active_wires: &[[bool; N_PROJ_WIRES]; 2],
-    cf_choice: ControlFnChoice,
+    gate_library: GateLibrary,
     rng: &mut R,
 ) {
     let mut placed_wire_in_gate = [[false; N_IN]; 3];
@@ -290,33 +275,8 @@ pub fn sample_random_circuit<
                 };
             }
         }
-        circuit[gate_idx].control_func = cf_choice.cfs().choose(rng).copied().unwrap();
+        circuit[gate_idx].control_func = gate_library.cfs().choose(rng).copied().unwrap();
     }
-}
-
-pub fn sample_random_circuit_unguided<const N_IN: usize, const N_PROJ_WIRES: usize, R: Rng>(
-    circuit: &mut [Gate; N_IN],
-    cf_choice: ControlFnChoice,
-    rng: &mut R,
-) {
-    let mut rng0 = repeat_with(|| rng.random_range(0..N_PROJ_WIRES));
-
-    circuit.iter_mut().for_each(|gate| {
-        let mut set: [bool; N_PROJ_WIRES] = [false; N_PROJ_WIRES];
-        let [t, c0, c1] = from_fn(|_| loop {
-            let v = rng0.next().unwrap();
-            if !set[v] {
-                set[v] = true;
-                break v;
-            }
-        });
-
-        gate.wires = [t, c0, c1];
-    });
-
-    circuit.iter_mut().for_each(|gate| {
-        gate.control_func = cf_choice.cfs().choose(rng).copied().unwrap();
-    });
 }
 
 #[cfg(test)]
@@ -324,12 +284,9 @@ mod tests {
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 
-    use crate::circuit::{circuit::par_check_equiv_probabilistic, Circuit};
+    use crate::circuit::{cf::GateLibrary, circuit::par_check_equiv_probabilistic, Circuit};
 
-    use super::{
-        find_replacement_circuit,
-        strategy::{ControlFnChoice, ReplacementStrategy},
-    };
+    use super::find_replacement_circuit;
 
     #[test]
     fn test_find_replacement_random_sample() {
@@ -337,13 +294,12 @@ mod tests {
         let mut rng = ChaCha8Rng::from_os_rng();
         for _ in 0..10 {
             let ckt_one =
-                Circuit::random_with_cf(wires, 2, ControlFnChoice::NoIdentity, &mut rng).gates;
+                Circuit::random_with_cf(wires, 2, GateLibrary::NoIdentity, &mut rng).gates;
             let replacement = match find_replacement_circuit::<2, 4, 9, { 1 << 9 }, _>(
                 &[ckt_one[0], ckt_one[1]],
                 wires,
                 1_000_000_000,
-                ReplacementStrategy::SampleActive0,
-                ControlFnChoice::OnlyUnique,
+                GateLibrary::OnlyUnique,
                 &mut rng,
             ) {
                 Some((r, _)) => r,

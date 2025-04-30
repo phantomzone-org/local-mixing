@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::circuit::{cf::Base2GateControlFunc, circuit::GateData};
+use crate::circuit::{cf::GateControlFunc, circuit::GateData};
 
 #[derive(Debug, PartialEq)]
 pub enum SuccessCase {
@@ -78,7 +78,7 @@ pub fn classify_success(input: &Vec<GateData>, output: &Vec<GateData>) -> Vec<Su
             if !input_identity_subcircuit_idx[i]
                 && !output_identity_subcircuit_idx[j]
                 && g1.wires() == g2.wires()
-                && g1.cf() == Base2GateControlFunc::negated(g2.cf())
+                && g1.cf() == GateControlFunc::negated(g2.cf())
             {
                 // Search for g3 > g1, g4 > g2 that are like above, and are on same target bitline
                 for i2 in i + 1..input.len() {
@@ -90,7 +90,7 @@ pub fn classify_success(input: &Vec<GateData>, output: &Vec<GateData>) -> Vec<Su
                             && !input_identity_subcircuit_idx[i2]
                             && !output_identity_subcircuit_idx[j2]
                             && g3.wires() == g4.wires()
-                            && g3.cf() == Base2GateControlFunc::negated(g4.cf())
+                            && g3.cf() == GateControlFunc::negated(g4.cf())
                         {
                             input_negated_cf_idx[i] = true;
                             input_negated_cf_idx[i2] = true;

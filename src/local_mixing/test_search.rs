@@ -9,7 +9,7 @@ use rayon::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{circuit::Circuit, replacement::strategy::ControlFnChoice};
+use crate::circuit::{cf::GateLibrary, Circuit};
 
 use super::search::{find_convex_gate_ids3, permute_circuit};
 
@@ -17,7 +17,7 @@ use super::search::{find_convex_gate_ids3, permute_circuit};
 pub struct SearchTestConfig {
     num_wires: usize,
     num_gates: usize,
-    cf: ControlFnChoice,
+    cf: GateLibrary,
     run_parallel: bool,
     permute: bool,
     iterations: usize,

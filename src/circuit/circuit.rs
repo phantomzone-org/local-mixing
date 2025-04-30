@@ -1,10 +1,10 @@
-use crate::{local_mixing::consts::CONTROL_FUNC_TABLE, replacement::strategy::ControlFnChoice};
+use crate::local_mixing::consts::CONTROL_FUNC_TABLE;
 use rand::{seq::IndexedRandom, Rng};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, path::Path};
 
-use super::cf::Base2GateControlFunc;
+use super::cf::{GateControlFunc, GateLibrary};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Gate {
@@ -75,7 +75,7 @@ pub fn correct_controls(circuit: &mut [Gate]) {
         .filter(|g| g.wires[2] < g.wires[1])
         .for_each(|g| {
             g.wires = [g.wires[0], g.wires[2], g.wires[1]];
-            g.control_func = Base2GateControlFunc::opposite_on_controls(g.control_func);
+            g.control_func = GateControlFunc::opposite_on_controls(g.control_func);
         });
 }
 
@@ -89,7 +89,7 @@ impl Circuit {
     pub fn random_with_cf<R: Rng>(
         num_wires: usize,
         num_gates: usize,
-        cf_choice: ControlFnChoice,
+        gate_library: GateLibrary,
         rng: &mut R,
     ) -> Self {
         let mut gates = vec![];
@@ -103,13 +103,13 @@ impl Circuit {
                     if control_one < control_two {
                         gates.push(Gate {
                             wires: [target, control_one, control_two],
-                            control_func: cf_choice.cfs().choose(rng).copied().unwrap(),
+                            control_func: gate_library.cfs().choose(rng).copied().unwrap(),
                             generation: 0,
                         });
                     } else {
                         gates.push(Gate {
                             wires: [target, control_two, control_one],
-                            control_func: cf_choice.cfs().choose(rng).copied().unwrap(),
+                            control_func: gate_library.cfs().choose(rng).copied().unwrap(),
                             generation: 0,
                         });
                     }
@@ -184,7 +184,7 @@ impl Circuit {
         let control_fn_strings: Vec<String> = self
             .gates
             .iter()
-            .map(|gate| Base2GateControlFunc::from_u8(gate.control_func).to_string())
+            .map(|gate| GateControlFunc::from_u8(gate.control_func).to_string())
             .collect();
         result.push_str("\ncfs: ");
         result.push_str(&control_fn_strings.join(", "));
@@ -355,9 +355,7 @@ mod tests {
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 
-    use crate::{
-        circuit::circuit::par_check_equiv_probabilistic, replacement::strategy::ControlFnChoice,
-    };
+    use crate::circuit::{cf::GateLibrary, circuit::par_check_equiv_probabilistic};
 
     use super::{Circuit, Gate};
 
@@ -442,7 +440,7 @@ mod tests {
 
     #[test]
     fn test_to_string() {
-        let circuit = Circuit::random_with_cf(10, 3, ControlFnChoice::All, &mut rand::rng());
+        let circuit = Circuit::random_with_cf(10, 3, GateLibrary::All, &mut rand::rng());
         let s = circuit.to_string();
         println!("{}", s);
     }

@@ -1,6 +1,10 @@
+use std::error::Error;
+
+use serde::{Deserialize, Serialize};
+
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Base2GateControlFunc {
+pub enum GateControlFunc {
     F = 0,     // false,
     AND = 1,   // a & b,
     ANDNB = 2, // a & (!b),
@@ -19,7 +23,7 @@ pub enum Base2GateControlFunc {
     T = 15,    // true,
 }
 
-impl Base2GateControlFunc {
+impl GateControlFunc {
     pub const COUNT: u8 = 16;
     pub const fn from_u8(v: u8) -> Self {
         match v {
@@ -80,22 +84,22 @@ impl Base2GateControlFunc {
 
     pub const fn negated(v: u8) -> u8 {
         match v {
-            0 => 15,  // F -> T
-            1 => 14,  // AND -> NAND
-            2 => 13,  // ANDNB -> ORNA
-            3 => 12,  // A -> NA
-            4 => 11,  // ANDNA -> ORNB
-            5 => 10,  // B -> NB
-            6 => 9,   // XOR -> EQUIV
-            7 => 8,   // OR -> NOR
-            8 => 7,   // NOR -> OR
-            9 => 6,   // EQUIV -> XOR
-            10 => 5,  // NB -> B
-            11 => 4,  // ORNB -> ANDNA
-            12 => 3,  // NA -> A
-            13 => 2,  // ORNA -> ANDNB
-            14 => 1,  // NAND -> AND
-            15 => 0,  // T -> F
+            0 => 15, // F -> T
+            1 => 14, // AND -> NAND
+            2 => 13, // ANDNB -> ORNA
+            3 => 12, // A -> NA
+            4 => 11, // ANDNA -> ORNB
+            5 => 10, // B -> NB
+            6 => 9,  // XOR -> EQUIV
+            7 => 8,  // OR -> NOR
+            8 => 7,  // NOR -> OR
+            9 => 6,  // EQUIV -> XOR
+            10 => 5, // NB -> B
+            11 => 4, // ORNB -> ANDNA
+            12 => 3, // NA -> A
+            13 => 2, // ORNA -> ANDNB
+            14 => 1, // NAND -> AND
+            15 => 0, // T -> F
             _ => unreachable!(),
         }
     }
@@ -118,6 +122,51 @@ impl Base2GateControlFunc {
             Self::ORNA => "!a|b".to_string(),
             Self::NAND => "!(a&b)".to_string(),
             Self::T => "1".to_string(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Default, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum GateLibrary {
+    #[default]
+    All,
+    NoIdentity,
+    OnlyUnique,
+    UniqueNo0Bit,
+    TwoBit,
+}
+
+impl GateLibrary {
+    pub fn cfs(&self) -> Vec<u8> {
+        match self {
+            Self::All => (0..GateControlFunc::COUNT).collect(),
+            Self::NoIdentity => (1..GateControlFunc::COUNT).collect(),
+            Self::OnlyUnique => vec![15, 3, 12, 1, 4, 7, 13, 6, 9, 14, 8],
+            Self::UniqueNo0Bit => vec![3, 12, 1, 4, 7, 13, 6, 9, 14, 8],
+            Self::TwoBit => vec![1, 2, 4, 6, 7, 8, 9, 11, 13, 14],
+        }
+    }
+
+    pub fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            0 => Some(Self::All),
+            1 => Some(Self::NoIdentity),
+            2 => Some(Self::OnlyUnique),
+            _ => None,
+        }
+    }
+
+    pub fn from_str(raw_gate_library: &str) -> Result<Self, Box<dyn Error>> {
+        match raw_gate_library {
+            "All" => Ok(Self::All),
+            "NoIdentity" => Ok(Self::NoIdentity),
+            "OnlyUnique" => Ok(Self::OnlyUnique),
+            "UniqueNo0Bit" => Ok(Self::UniqueNo0Bit),
+            "TwoBit" => Ok(Self::TwoBit),
+            _ => Err(Box::<dyn Error>::from(format!(
+                "Cannot parse '{}'",
+                raw_gate_library
+            ))),
         }
     }
 }

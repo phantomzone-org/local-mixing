@@ -520,7 +520,7 @@ pub fn is_convex(
 #[cfg(test)]
 mod tests {
     use crate::{
-        circuit::Circuit,
+        circuit::{cf::GateLibrary, Circuit},
         local_mixing::{consts::N_OUT_KND, search::is_convex},
     };
 
@@ -532,12 +532,8 @@ mod tests {
         let num_gates = 10000;
         let mut rng = rand::rng();
         for i in 0..100000 {
-            let circuit = Circuit::random_with_cf(
-                num_wires,
-                num_gates,
-                crate::replacement::strategy::ControlFnChoice::All,
-                &mut rng,
-            );
+            let circuit =
+                Circuit::random_with_cf(num_wires, num_gates, GateLibrary::All, &mut rng);
             let (convex_gate_ids, _) =
                 find_convex_gate_ids3::<N_OUT_KND, _>(circuit.num_wires, &circuit.gates, &mut rng);
             assert!(

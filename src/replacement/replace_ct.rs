@@ -1,17 +1,16 @@
 use crate::circuit::analysis::{projection_circuit, truth_table};
+use crate::circuit::cf::GateLibrary;
 use crate::circuit::circuit::{circuit_min_generation, correct_controls, evaluate_usize};
 use crate::circuit::Gate;
 use crate::compression::ct::CompressionTable;
 use rand::seq::IndexedRandom;
 use rand::Rng;
 
-use super::strategy::ControlFnChoice;
-
 pub fn find_replacement<R: Rng>(
     circuit: &[Gate],
     num_wires: usize,
     replacement_size: usize,
-    gate_sample_limit: usize,
+    max_circuit_samples: usize,
     ct: &CompressionTable,
     rng: &mut R,
 ) -> Option<(Vec<Gate>, usize)> {
@@ -31,7 +30,7 @@ pub fn find_replacement<R: Rng>(
     };
 
     'sample_circuit: loop {
-        if num_samples >= gate_sample_limit {
+        if num_samples >= max_circuit_samples {
             return None;
         }
         let mut curr_num_wires_used = proj_map.len();
@@ -47,7 +46,7 @@ pub fn find_replacement<R: Rng>(
                     let (gate, num_wires) = sample_next_projection_gate(
                         new_curr_num_wires_used,
                         ct.max_wires_supported,
-                        ct.cf_choice,
+                        ct.gate_library,
                         rng,
                     );
                     new_curr_num_wires_used = num_wires;
@@ -73,7 +72,7 @@ pub fn find_replacement<R: Rng>(
             let (g, new_curr_num_wires_used) = sample_next_projection_gate(
                 curr_num_wires_used,
                 ct.max_wires_supported,
-                ct.cf_choice,
+                ct.gate_library,
                 rng,
             );
             let new_lhs_tt = lhs_tt.iter().map(|&x| g.evaluate_usize(x)).collect();
@@ -146,7 +145,7 @@ pub fn find_replacement<R: Rng>(
 fn sample_next_projection_gate<R: Rng>(
     curr_num_wires_used: usize,
     max_num_wires_supported: usize,
-    cf_choice: ControlFnChoice,
+    gate_library: GateLibrary,
     rng: &mut R,
 ) -> (Gate, usize) {
     loop {
@@ -171,7 +170,7 @@ fn sample_next_projection_gate<R: Rng>(
             return (
                 Gate {
                     wires: [target, control_one, control_two],
-                    control_func: cf_choice.cfs().choose(rng).copied().unwrap(),
+                    control_func: gate_library.cfs().choose(rng).copied().unwrap(),
                     generation: 0,
                 },
                 new_num_wires_used,
@@ -186,9 +185,8 @@ mod test {
     use rand_chacha::ChaCha8Rng;
 
     use crate::{
-        circuit::{circuit::par_check_equiv_probabilistic, Circuit},
+        circuit::{cf::GateLibrary, circuit::par_check_equiv_probabilistic, Circuit},
         compression::ct::CompressionTable,
-        replacement::strategy::ControlFnChoice,
     };
 
     use super::{find_replacement, sample_next_projection_gate};
@@ -200,8 +198,7 @@ mod test {
         let mut rng = ChaCha8Rng::from_os_rng();
         let mut replacement_success_count = 0;
         while replacement_success_count < 10 {
-            let ckt_one =
-                Circuit::random_with_cf(wires, 4, ControlFnChoice::TwoBit, &mut rng).gates;
+            let ckt_one = Circuit::random_with_cf(wires, 4, GateLibrary::TwoBit, &mut rng).gates;
             let ckt_two = match find_replacement(&ckt_one, wires, 4, 20, &ct, &mut rng) {
                 Some((r, _)) => {
                     replacement_success_count += 1;
@@ -223,7 +220,7 @@ mod test {
     #[test]
     fn test_sample_next_projection_gate() {
         let mut rng = rand::rng();
-        let g = sample_next_projection_gate(5, 9, ControlFnChoice::TwoBit, &mut rng);
+        let g = sample_next_projection_gate(5, 9, GateLibrary::TwoBit, &mut rng);
         dbg!(g);
     }
 }

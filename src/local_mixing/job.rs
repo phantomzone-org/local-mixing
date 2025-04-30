@@ -10,15 +10,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     circuit::{
-        circuit::{check_ckt_equiv_inout_map, circuit_min_generation, evaluate, GateData},
-        Circuit, Gate,
+        cf::GateLibrary, circuit::{check_ckt_equiv_inout_map, circuit_min_generation, evaluate, GateData}, Circuit, Gate
     },
     compression::ct::CompressionTable,
     local_mixing::{
         consts::EPOCH_SIZE,
         tracer::{ReplacementStatus, ReplacementTraceFields, SearchTraceFields, Tracer},
     },
-    replacement::{replace_ct::find_replacement, strategy::ControlFnChoice},
+    replacement::replace_ct::find_replacement,
 };
 
 use super::{
@@ -53,11 +52,11 @@ pub struct LocalMixingJob {
     /// Number of kneading steps
     kneading_stage_steps: usize,
     /// Control function choice in replacement
-    cf_choice: ControlFnChoice,
+    gate_library: GateLibrary,
     /// Number of worker-threads for search
     search_threads: usize,
     /// Max number of samples allowed during replacement
-    gate_sample_limit: usize,
+    max_circuit_samples: usize,
     /// Save circuit after inflationary stage
     save_inflationary: bool,
     /// Path to compression table
@@ -101,7 +100,7 @@ impl LocalMixingJob {
                     job.num_wires
                 },
                 DEFAULT_NUM_GATES,
-                job.cf_choice,
+                job.gate_library,
                 &mut rng,
             );
             job.circuit.save_as_json(input_circuit_path.clone());
@@ -115,14 +114,14 @@ impl LocalMixingJob {
                 job.compression_table_path
             );
             job.ct = CompressionTable::from_file(&job.compression_table_path);
-            assert!(job.cf_choice == job.ct.cf_choice);
+            assert!(job.gate_library == job.ct.gate_library);
             println!("-- Loading compression table done");
         } else {
             println!(
                 "-- No compression table found at {}, generating",
                 job.compression_table_path
             );
-            job.ct = CompressionTable::new(3, 9, job.cf_choice);
+            job.ct = CompressionTable::new(3, 9, job.gate_library);
             job.ct.save_to_file(&job.compression_table_path);
             println!(
                 "-- Save compression table into {}",
@@ -159,7 +158,7 @@ impl LocalMixingJob {
                 LocalMixingStage::Inflationary,
                 inf_steps,
                 &self.ct,
-                self.gate_sample_limit,
+                self.max_circuit_samples,
                 &mut tracer,
                 rng,
             );
@@ -190,7 +189,7 @@ impl LocalMixingJob {
                 LocalMixingStage::Kneading,
                 knd_steps,
                 &self.ct,
-                self.gate_sample_limit,
+                self.max_circuit_samples,
                 &mut tracer,
                 rng,
             );
@@ -231,7 +230,7 @@ impl LocalMixingJob {
                 LocalMixingStage::Inflationary,
                 inf_steps,
                 &self.ct,
-                self.gate_sample_limit,
+                self.max_circuit_samples,
                 &mut inf_tracer,
                 rng,
             );
@@ -310,7 +309,7 @@ impl LocalMixingJob {
                             LocalMixingStage::Kneading,
                             knd_steps,
                             &self.ct,
-                            self.gate_sample_limit,
+                            self.max_circuit_samples,
                             tracer,
                             rng,
                         );
@@ -360,7 +359,7 @@ impl LocalMixingJob {
             all_tracers.extend(knd_tracers);
             let tracer = Tracer::collect(all_tracers.into_iter());
             tracer
-            .save_to_file(format!("{}/logs/trace.json", self.dir_path))
+                .save_to_file(format!("{}/logs/trace.json", self.dir_path))
                 .expect("Failed to save trace");
             log::info!(target: "trace", "Finished.");
             log::info!(target: "trace", "Inflationary stage fails: {}", inf_fails);
@@ -427,7 +426,7 @@ fn run_step<const N_OUT: usize, const N_IN: usize, G: Growable + ?Sized, R: Rng 
     stage: LocalMixingStage,
     current_step: usize,
     ct: &CompressionTable,
-    gate_sample_limit: usize,
+    max_circuit_samples: usize,
     tracer: &mut Tracer,
     rng: &mut R,
 ) -> bool {
@@ -446,7 +445,7 @@ fn run_step<const N_OUT: usize, const N_IN: usize, G: Growable + ?Sized, R: Rng 
     let repl_start = Instant::now();
 
     let replacement_res =
-        find_replacement(&c_out, circuit_num_wires, N_IN, gate_sample_limit, ct, rng);
+        find_replacement(&c_out, circuit_num_wires, N_IN, max_circuit_samples, ct, rng);
 
     #[cfg(feature = "trace")]
     let _replacement_time = Instant::now() - repl_start;
@@ -533,7 +532,7 @@ fn run_step<const N_OUT: usize, const N_IN: usize, G: Growable + ?Sized, R: Rng 
             let replacement_fields = ReplacementTraceFields {
                 data: ReplacementStatus::Fail(c_out_data),
                 replacement_time: _replacement_time,
-                n_circuits_sampled: gate_sample_limit,
+                n_circuits_sampled: max_circuit_samples,
                 min_generation: circuit_min_generation(&c_out),
             };
             tracer.add_entry(

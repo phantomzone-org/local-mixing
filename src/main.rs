@@ -1,6 +1,6 @@
 use local_mixing::{
     circuit::{
-        cf::Base2GateControlFunc,
+        cf::{GateControlFunc, GateLibrary},
         circuit::{par_check_equiv_probabilistic, Circuit},
         Gate,
     },
@@ -11,7 +11,7 @@ use local_mixing::{
         tracer::{ReplacementStatus, Tracer},
         LocalMixingJob,
     },
-    replacement::{is_weakly_connected, strategy::ControlFnChoice},
+    replacement::is_weakly_connected,
 };
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
@@ -47,7 +47,7 @@ fn run() {
             Circuit::random_with_cf(
                 num_wires,
                 num_gates,
-                ControlFnChoice::All,
+                GateLibrary::All,
                 &mut ChaCha8Rng::from_os_rng(),
             )
             .save_as_json(&save_path);
@@ -64,8 +64,8 @@ fn run() {
         }
         "build-compression-table" => {
             let save_path = args.next().expect("Missing compression table save path");
-            let raw_cf_choice = args.next().expect("Missing cf choice");
-            let cf_choice = ControlFnChoice::from_str(&raw_cf_choice).unwrap_or_else(|e| {
+            let raw_gate_library = args.next().expect("Missing cf choice");
+            let gate_library = GateLibrary::from_str(&raw_gate_library).unwrap_or_else(|e| {
                 panic!("Failed to parse cf choice: {}", e);
             });
             let max_gates_supported: usize = args
@@ -79,7 +79,7 @@ fn run() {
                 .parse()
                 .expect("Invalid num wires");
 
-            let ct = CompressionTable::new(max_gates_supported, max_wires_supported, cf_choice);
+            let ct = CompressionTable::new(max_gates_supported, max_wires_supported, gate_library);
             ct.save_to_file(&save_path);
         }
         "equiv" => {
@@ -110,7 +110,7 @@ fn run() {
             let circuit_path = args.next().expect("Missing circuit path");
             let circuit = Circuit::load_from_json(circuit_path);
 
-            let mut cf_freq = [0u32; Base2GateControlFunc::COUNT as usize];
+            let mut cf_freq = [0u32; GateControlFunc::COUNT as usize];
             for g in &circuit.gates {
                 cf_freq[g.control_func as usize] += 1;
             }

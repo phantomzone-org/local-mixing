@@ -1,4 +1,4 @@
-use crate::circuit::cf::Base2GateControlFunc;
+use crate::circuit::cf::GateControlFunc;
 
 /// Size of replaced circuits (inflationary stage)
 pub const N_OUT_INF: usize = 2;
@@ -16,7 +16,7 @@ pub const CONTROL_FUNC_TABLE: [bool; 64] = {
     let mut table = [false; 64];
     let mut i = 0;
     while i < 64 {
-        let control_func = Base2GateControlFunc::from_u8((i >> 2) as _);
+        let control_func = GateControlFunc::from_u8((i >> 2) as _);
         let a = (i >> 1) & 1 == 1;
         let b = i & 1 == 1;
         table[i] = control_func.evaluate(a, b);
