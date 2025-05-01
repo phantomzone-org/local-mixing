@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::circuit::{cf::GateControlFunc, circuit::GateData};
+use crate::circuit::{cf::GateControlFunc, circuit::GateData, Gate};
 
 #[derive(Debug, PartialEq)]
 pub enum SuccessCase {
@@ -119,6 +119,36 @@ pub fn classify_success(input: &Vec<GateData>, output: &Vec<GateData>) -> Vec<Su
     }
 
     classifications
+}
+
+pub fn is_identity_subcircuits_replacement(input: &[Gate], output: &[Gate]) -> bool {
+    let mut input_identity_subcircuit_idx = vec![false; input.len()];
+    for i in 0..input.len() {
+        for j in i + 1..input.len() {
+            if input[i].wires == input[j].wires && input[i].control_func == input[j].control_func {
+                input_identity_subcircuit_idx[i] = true;
+                input_identity_subcircuit_idx[j] = true;
+            }
+        }
+    }
+
+    if !input_identity_subcircuit_idx.iter().any(|&b| b) {
+        return false;
+    }
+
+    let mut output_identity_subcircuit_idx = vec![false; output.len()];
+    for i in 0..output.len() {
+        for j in i + 1..output.len() {
+            if output[i].wires == output[j].wires
+                && output[i].control_func == output[j].control_func
+            {
+                output_identity_subcircuit_idx[i] = true;
+                output_identity_subcircuit_idx[j] = true;
+            }
+        }
+    }
+
+    return output_identity_subcircuit_idx.iter().any(|&b| b);
 }
 
 pub fn classify_fail(circuit: &Vec<GateData>) -> FailCase {

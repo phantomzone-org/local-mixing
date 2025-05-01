@@ -3,6 +3,7 @@ use crate::circuit::cf::GateLibrary;
 use crate::circuit::circuit::{circuit_min_generation, correct_controls, evaluate_usize};
 use crate::circuit::Gate;
 use crate::compression::ct::CompressionTable;
+use crate::local_mixing::classify_replacements::is_identity_subcircuits_replacement;
 use rand::seq::IndexedRandom;
 use rand::Rng;
 
@@ -127,6 +128,10 @@ pub fn find_replacement_with_ct<R: Rng>(
                     .any(|g| g.wires == gate.wires && g.control_func == gate.control_func)
             })
         {
+            continue 'sample_circuit;
+        }
+
+        if is_identity_subcircuits_replacement(&circuit, &output_circuit) {
             continue 'sample_circuit;
         }
 
