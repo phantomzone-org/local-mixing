@@ -458,7 +458,7 @@ fn run_step<const N_OUT: usize, const N_IN: usize, G: Growable + ?Sized, R: Send
     let start_time = Instant::now();
 
     let (selected_gate_idx, _n_search_attempts) =
-        find_convex_gate_ids3::<N_OUT, _>(circuit_num_wires, circuit_gates.as_slice_ref(), rng);
+        find_convex_gate_ids3(N_OUT, circuit_num_wires, circuit_gates.as_slice_ref(), rng);
 
     let c_out = selected_gate_idx
         .iter()

@@ -1,7 +1,7 @@
 use crate::circuit::{Circuit, Gate};
 use rand::{seq::IndexedRandom, Rng, RngCore};
 
-struct PathConnectedWires {
+pub struct PathConnectedWires {
     wires: Vec<bool>,
     count: usize,
 }
@@ -30,22 +30,23 @@ impl PathConnectedWires {
     }
 }
 
-pub fn find_convex_gate_ids3<const N_OUT: usize, R: RngCore>(
+pub fn find_convex_gate_ids3<R: RngCore>(
+    set_size: usize,
     circuit_num_wires: usize,
     circuit_gates: &[Gate],
     rng: &mut R,
-) -> ([usize; N_OUT], usize) {
+) -> (Vec<usize>, usize) {
     let num_gates = circuit_gates.len();
     let num_wires = circuit_num_wires;
     let mut search_attempts = 0;
     loop {
         search_attempts += 1;
 
-        let mut selected_gate_idx = [0; N_OUT];
+        let mut selected_gate_idx = vec![0; set_size];
         selected_gate_idx[0] = rng.random_range(0..num_gates);
         let mut selected_gate_ctr = 1;
 
-        while selected_gate_ctr < N_OUT {
+        while selected_gate_ctr < set_size {
             let mut candidates: Vec<usize> = vec![];
 
             // Left-most gate, go right
@@ -417,12 +418,15 @@ pub fn find_convex_gate_ids<const N_OUT: usize, R: RngCore>(
     (selected_gate_idx, max_candidate_dist)
 }
 
-pub fn permute_circuit<const N_OUT: usize>(
+pub fn permute_circuit(
     circuit_num_wires: usize,
     circuit_gates: &mut [Gate],
-    selected_gate_idx: &[usize; N_OUT],
+    selected_gate_idx: &Vec<usize>,
 ) -> usize {
-    let selected_gates = selected_gate_idx.map(|id| circuit_gates[id]);
+    let selected_gates: Vec<_> = selected_gate_idx
+        .iter()
+        .map(|&id| circuit_gates[id])
+        .collect();
     let mut to_before = vec![];
     let mut to_after = vec![];
     let mut path_connected_target_wires = vec![false; circuit_num_wires];
@@ -463,7 +467,7 @@ pub fn permute_circuit<const N_OUT: usize>(
         write_idx += 1;
     }
     let c_out_start = write_idx;
-    for i in 0..N_OUT {
+    for i in 0..selected_gate_idx.len() {
         circuit_gates[write_idx] = selected_gates[i];
         write_idx += 1;
     }
@@ -532,10 +536,9 @@ mod tests {
         let num_gates = 10000;
         let mut rng = rand::rng();
         for i in 0..100000 {
-            let circuit =
-                Circuit::random_with_cf(num_wires, num_gates, GateLibrary::All, &mut rng);
+            let circuit = Circuit::random_with_cf(num_wires, num_gates, GateLibrary::All, &mut rng);
             let (convex_gate_ids, _) =
-                find_convex_gate_ids3::<N_OUT_KND, _>(circuit.num_wires, &circuit.gates, &mut rng);
+                find_convex_gate_ids3(N_OUT_KND, circuit.num_wires, &circuit.gates, &mut rng);
             assert!(
                 is_convex(circuit.num_wires, &circuit.gates, &convex_gate_ids),
                 "failed at iteration {i}"

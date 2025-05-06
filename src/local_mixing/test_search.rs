@@ -69,7 +69,7 @@ fn test_parallel(circuit: &mut Circuit, permute: bool, iterations: usize) {
             .zip_eq(rngs.par_iter_mut())
             .for_each(|(chunk, rng)| {
                 let (selected_gate_idx, _) =
-                    find_convex_gate_ids3::<4, _>(circuit.num_wires, &chunk, rng);
+                    find_convex_gate_ids3(4, circuit.num_wires, &chunk, rng);
                 selected_gate_idx
                     .iter()
                     .for_each(|&id| chunk[id].generation += 1);
@@ -94,7 +94,7 @@ fn test_parallel(circuit: &mut Circuit, permute: bool, iterations: usize) {
             .zip_eq(rngs.par_iter_mut())
             .for_each(|(chunk, rng)| {
                 let (selected_gate_idx, _) =
-                    find_convex_gate_ids3::<4, _>(circuit.num_wires, &chunk, rng);
+                    find_convex_gate_ids3(4, circuit.num_wires, &chunk, rng);
                 selected_gate_idx
                     .iter()
                     .for_each(|&id| chunk[id].generation += 1);
@@ -119,7 +119,7 @@ fn test_parallel(circuit: &mut Circuit, permute: bool, iterations: usize) {
             .zip_eq(rngs.par_iter_mut())
             .for_each(|(chunk, rng)| {
                 let (selected_gate_idx, _) =
-                    find_convex_gate_ids3::<4, _>(circuit.num_wires, &chunk, rng);
+                    find_convex_gate_ids3(4, circuit.num_wires, &chunk, rng);
                 selected_gate_idx
                     .iter()
                     .for_each(|&id| chunk[id].generation += 1);
@@ -138,7 +138,7 @@ fn test_sequential(circuit: &mut Circuit, permute: bool, iterations: usize) {
 
     for _ in 1..=iterations {
         let (selected_gate_idx, _) =
-            find_convex_gate_ids3::<4, _>(circuit.num_wires, &circuit.gates, &mut rng);
+            find_convex_gate_ids3(4, circuit.num_wires, &circuit.gates, &mut rng);
         selected_gate_idx
             .iter()
             .for_each(|&id| circuit.gates[id].generation += 1);

@@ -45,6 +45,10 @@ impl Gate {
         let x = CONTROL_FUNC_TABLE[idx];
         input ^ ((x as usize) << self.wires[0])
     }
+
+    pub fn equal_to(&self, other: &Self) -> bool {
+        self.wires == other.wires && self.control_func == other.control_func
+    }
 }
 
 #[inline]

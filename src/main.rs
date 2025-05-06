@@ -5,7 +5,7 @@ use local_mixing::{
         circuit::{par_check_equiv_probabilistic, Circuit},
         Gate,
     },
-    compression::ct::CompressionTable,
+    compression::{compress::compress, ct::CompressionTable},
     local_mixing::{
         classify_replacements::{classify_fail, classify_success, SuccessCase},
         test_search::test_local_mixing_search,
@@ -122,6 +122,10 @@ fn run() {
                 let proportion = count as f32 / total_gates;
                 println!("{}: {:.2}%", i, proportion * 100.0);
             }
+        }
+        "compress" => {
+            let circuit_path = args.next().unwrap();
+            compress(circuit_path);
         }
         "distinguisher" => {
             // cargo run distinguisher <circuit_one_path> <circuit_two_path> <num_inputs> <save_json_path>

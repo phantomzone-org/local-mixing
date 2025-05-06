@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::circuit::analysis::{num_distinct_wires, projection_circuit};
+use crate::circuit::circuit::evaluate_usize;
 use crate::circuit::{cf::GateLibrary, Gate};
 use std::collections::HashMap;
 use std::fs;
@@ -43,6 +45,35 @@ impl CompressionTable {
 
     pub fn lookup_truth_table(&self, tt: &Vec<usize>) -> Option<usize> {
         Some(self.table.get(tt)?.len())
+    }
+
+    pub fn compress(&self, circuit_gates: &[Gate]) -> Option<Vec<Gate>> {
+        let (proj_circuit, proj_map) = projection_circuit(&circuit_gates);
+        let num_wires = num_distinct_wires(&proj_circuit);
+        if num_wires > self.max_wires_supported {
+            return None;
+        }
+
+        let tt: Vec<_> = (0..1 << self.max_wires_supported)
+            .map(|x| evaluate_usize(&proj_circuit, x))
+            .collect();
+        let res = self.table.get(&tt)?;
+        if res.len() >= circuit_gates.len() {
+            return None;
+        }
+        let mut output = res.clone();
+
+        for g in output.iter_mut() {
+            for i in 0..3 {
+                if g.wires[i] < proj_map.len() {
+                    g.wires[i] = proj_map[g.wires[i]];
+                } else {
+                    g.wires[i] = 0;
+                }
+            }
+        }
+
+        Some(output)
     }
 }
 
