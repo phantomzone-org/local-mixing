@@ -1,32 +1,41 @@
 use std::{cmp::min, error::Error, fs::File, io::BufReader, path::Path, time::Instant};
 
-use rand::{Rng, RngCore, SeedableRng};
+use rand::{RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use rayon::{
     current_num_threads,
     iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator},
 };
 use serde::{Deserialize, Serialize};
-
+use super::{
+    consts::{DEFAULT_NUM_GATES, DEFAULT_NUM_WIRES, N_IN, N_OUT_INF, N_OUT_KND},
+    search::{find_convex_gate_ids3, permute_circuit},
+};
 use crate::{
     circuit::{
-        cf::GateLibrary, circuit::{check_ckt_equiv_inout_map, circuit_min_generation, evaluate, GateData}, Circuit, Gate
+        cf::GateLibrary, Circuit, Gate
     },
     compression::ct::CompressionTable,
     local_mixing::{
         consts::EPOCH_SIZE,
-        tracer::{ReplacementStatus, ReplacementTraceFields, SearchTraceFields, Tracer},
+        tracer::Tracer,
     }, replacement::{find_replacement_random_sample, replace_ct::find_replacement_with_ct},
 };
 
-use super::{
-    consts::{DEFAULT_NUM_GATES, DEFAULT_NUM_WIRES, N_IN, N_OUT_INF, N_OUT_KND},
-    search::{find_convex_gate_ids3, permute_circuit},
-    tracer::init_logs,
+#[cfg(feature = "trace")]
+use super::tracer::init_logs;
+#[cfg(feature = "trace")]
+use crate::{
+    circuit::circuit::{circuit_min_generation, GateData},
+    local_mixing::tracer::{ReplacementStatus, ReplacementTraceFields, SearchTraceFields}
 };
 
 #[cfg(feature = "correctness")]
 use super::consts::CORRECTNESS_CHECK_ITER;
+#[cfg(feature = "correctness")]
+use crate::circuit::circuit::{check_ckt_equiv_inout_map, evaluate};
+#[cfg(feature = "correctness")]
+use rand::Rng;
 
 #[derive(Clone, Copy)]
 pub enum LocalMixingStage {
@@ -149,6 +158,7 @@ impl LocalMixingJob {
 
         println!("-- Inflationary stage");
         let mut inf_steps = 0;
+        #[cfg(feature = "trace")]
         let mut inf_fails = 0;
         while inf_steps < self.inflationary_stage_steps {
             let success = run_step::<N_OUT_INF, N_IN, _, _>(
@@ -164,7 +174,10 @@ impl LocalMixingJob {
             if success {
                 inf_steps += 1;
             } else {
-                inf_fails += 1;
+                #[cfg(feature = "trace")]
+                {
+                    inf_fails += 1;
+                }
             }
         }
         println!("-- Inflationary stage: done");
@@ -180,6 +193,7 @@ impl LocalMixingJob {
 
         println!("-- Kneading stage");
         let mut knd_steps = 0;
+        #[cfg(feature = "trace")]
         let mut knd_fails = 0;
         while knd_steps < self.kneading_stage_steps {
             let success = run_step::<N_OUT_KND, N_IN, _, _>(
@@ -195,7 +209,10 @@ impl LocalMixingJob {
             if success {
                 knd_steps += 1;
             } else {
-                knd_fails += 1;
+                #[cfg(feature = "trace")]
+                {
+                    knd_fails += 1;
+                }
             }
         }
         println!("-- Kneading stage: done");
@@ -221,6 +238,7 @@ impl LocalMixingJob {
 
         println!("-- Inflationary stage");
         let mut inf_steps = 0;
+        #[cfg(feature = "trace")]
         let mut inf_fails = 0;
         while inf_steps < self.inflationary_stage_steps {
             let success = run_step::<N_OUT_INF, N_IN, _, _>(
@@ -236,7 +254,10 @@ impl LocalMixingJob {
             if success {
                 inf_steps += 1;
             } else {
-                inf_fails += 1;
+                #[cfg(feature = "trace")]
+                {
+                    inf_fails += 1;
+                }
             }
         }
         println!("-- Inflationary stage: done");
@@ -280,6 +301,7 @@ impl LocalMixingJob {
             .collect();
 
         let mut knd_steps = 0;
+        #[cfg(feature = "trace")]
         let mut knd_fails = 0;
         let mut epoch_steps = 0;
 
@@ -318,7 +340,10 @@ impl LocalMixingJob {
                     .count();
 
                 knd_steps += num_success;
-                knd_fails += num_search_workers - num_success;
+                #[cfg(feature = "trace")]
+                {
+                    knd_fails += num_search_workers - num_success;
+                }
                 epoch_steps += num_success;
             }
 
@@ -423,10 +448,10 @@ fn run_step<const N_OUT: usize, const N_IN: usize, G: Growable + ?Sized, R: Send
     circuit_num_wires: usize,
     circuit_gates: &mut G,
     stage: LocalMixingStage,
-    current_step: usize,
+    _current_step: usize,
     ct: &CompressionTable,
     max_circuit_samples: usize,
-    tracer: &mut Tracer,
+    _tracer: &mut Tracer,
     rng: &mut R,
 ) -> bool {
     #[cfg(feature = "trace")]
@@ -478,7 +503,7 @@ fn run_step<const N_OUT: usize, const N_IN: usize, G: Growable + ?Sized, R: Send
         #[cfg(feature = "correctness")]
         {
             if check_ckt_equiv_inout_map(&inout, circuit_gates.as_slice_ref()) == false {
-                let error_str = format!("{}, step={}, Obfuscated circuit is functionally not equivalent to original input circuit", stage,  current_step);
+                let error_str = format!("{}, step={}, Obfuscated circuit is functionally not equivalent to original input circuit", stage,  _current_step);
                 log::error!(target: "trace", "{error_str}");
                 panic!("{error_str}");
             }
@@ -491,7 +516,7 @@ fn run_step<const N_OUT: usize, const N_IN: usize, G: Growable + ?Sized, R: Send
 
             log::info!(target: "trace", "{}", format!("{}, step={}, SUCCESS: n_gates={}, n_circuits_sampled={}, n_search_attempts={}, replacement_time={:?}, total_time={:?}", 
                 stage, 
-                current_step, 
+                _current_step, 
                 n_gates, 
                 _n_circuits_sampled,
                 _n_search_attempts, 
@@ -510,9 +535,9 @@ fn run_step<const N_OUT: usize, const N_IN: usize, G: Growable + ?Sized, R: Send
                 n_circuits_sampled: _n_circuits_sampled,
                 min_generation: circuit_min_generation(&c_out),
             };
-            tracer.add_entry(
+            _tracer.add_entry(
                 stage,
-                current_step,
+                _current_step,
                 search_fields,
                 replacement_fields,
                 _elapsed,
@@ -525,7 +550,7 @@ fn run_step<const N_OUT: usize, const N_IN: usize, G: Growable + ?Sized, R: Send
         {
             let _elapsed = Instant::now() - start_time;
 
-            log::warn!(target: "trace", "{}, step={} FAIL, replacement_time={:?}", stage, current_step, _replacement_time);
+            log::warn!(target: "trace", "{}, step={} FAIL, replacement_time={:?}", stage, _current_step, _replacement_time);
 
             let search_fields = SearchTraceFields {
                 gate_indices: selected_gate_idx.to_vec(),
@@ -538,9 +563,9 @@ fn run_step<const N_OUT: usize, const N_IN: usize, G: Growable + ?Sized, R: Send
                 n_circuits_sampled: max_circuit_samples,
                 min_generation: circuit_min_generation(&c_out),
             };
-            tracer.add_entry(
+            _tracer.add_entry(
                 stage,
-                current_step,
+                _current_step,
                 search_fields,
                 replacement_fields,
                 _elapsed,
