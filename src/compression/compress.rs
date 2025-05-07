@@ -44,28 +44,60 @@ pub fn compress(circuit_path: impl AsRef<Path>) {
             circuit.save_as_json("save.json");
             ctr = 1;
         }
-        let set_size = rng.random_range(2..=10);
-        let (selected_gate_idx, _) =
-            find_convex_gate_ids3(set_size, circuit.num_wires, &circuit.gates, &mut rng);
-        let selected_gates: Vec<_> = selected_gate_idx
-            .iter()
-            .map(|&i| circuit.gates[i])
-            .collect();
-
-        if let Some(replacement) = ct.compress(&selected_gates) {
-            // dbg!(selected_gates);
-            // dbg!(&replacement);
-            let repl_len = replacement.len();
-            let start = permute_circuit(circuit.num_wires, &mut circuit.gates, &selected_gate_idx);
-            circuit.gates.splice(start..start + set_size, replacement);
-            println!(
-                "Replaced {} gates with {}. # gates: {}",
-                set_size,
-                repl_len,
-                circuit.gates.len()
-            );
-        }
+        ct_compress_active_wires_single_step(circuit.num_wires, &mut circuit.gates, &ct, &mut rng);
         ctr += 1;
+    }
+}
+
+fn ct_compress_single_step<R: Rng>(
+    circuit_num_wires: usize,
+    circuit_gates: &mut Vec<Gate>,
+    ct: &CompressionTable,
+    rng: &mut R,
+) {
+    let set_size = rng.random_range(2..=10);
+    let (selected_gate_idx, _) =
+        find_convex_gate_ids3(set_size, circuit_num_wires, circuit_gates, rng);
+    let selected_gates: Vec<_> = selected_gate_idx
+        .iter()
+        .map(|&i| circuit_gates[i])
+        .collect();
+
+    if let Some(replacement) = ct.compress(&selected_gates) {
+        let repl_len = replacement.len();
+        let start = permute_circuit(circuit_num_wires, circuit_gates, &selected_gate_idx);
+        circuit_gates.splice(start..start + set_size, replacement);
+        println!(
+            "Removed {} gates by ct_compress_single_step. # gates: {}",
+            set_size - repl_len,
+            circuit_gates.len()
+        );
+    }
+}
+
+fn ct_compress_active_wires_single_step<R: Rng>(
+    circuit_num_wires: usize,
+    circuit_gates: &mut Vec<Gate>,
+    ct: &CompressionTable,
+    rng: &mut R,
+) {
+    let set_size = rng.random_range(2..=10);
+    let (selected_gate_idx, _) =
+        find_convex_gate_ids3(set_size, circuit_num_wires, circuit_gates, rng);
+    let selected_gates: Vec<_> = selected_gate_idx
+        .iter()
+        .map(|&i| circuit_gates[i])
+        .collect();
+
+    if let Some(replacement) = ct.compress_with_optimal_relabel(&selected_gates) {
+        let repl_len = replacement.len();
+        let start = permute_circuit(circuit_num_wires, circuit_gates, &selected_gate_idx);
+        circuit_gates.splice(start..start + set_size, replacement);
+        println!(
+            "Removed {} gates by ct_compress_single_step. # gates: {}",
+            set_size - repl_len,
+            circuit_gates.len()
+        );
     }
 }
 
