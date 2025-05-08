@@ -145,7 +145,7 @@ impl GateLibrary {
             Self::OnlyUnique => vec![15, 3, 12, 1, 4, 7, 13, 6, 9, 14, 8],
             Self::UniqueNo0Bit => vec![3, 12, 1, 4, 7, 13, 6, 9, 14, 8],
             Self::TwoBit => vec![1, 2, 4, 6, 7, 8, 9, 11, 13, 14],
-            Self::Nimply => vec![2],
+            Self::Nimply => vec![11],
         }
     }
 
@@ -206,7 +206,7 @@ mod test {
             }
             bitlines
         };
-        let gate_library = GateLibrary::All;
+        let gate_library = GateLibrary::Nimply;
         let mut ctr = 0;
 
         tt_found.insert((0..8).collect());
