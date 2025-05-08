@@ -134,6 +134,7 @@ pub enum GateLibrary {
     OnlyUnique,
     UniqueNo0Bit,
     TwoBit,
+    Nimply,
 }
 
 impl GateLibrary {
@@ -144,6 +145,7 @@ impl GateLibrary {
             Self::OnlyUnique => vec![15, 3, 12, 1, 4, 7, 13, 6, 9, 14, 8],
             Self::UniqueNo0Bit => vec![3, 12, 1, 4, 7, 13, 6, 9, 14, 8],
             Self::TwoBit => vec![1, 2, 4, 6, 7, 8, 9, 11, 13, 14],
+            Self::Nimply => vec![2],
         }
     }
 
@@ -168,5 +170,82 @@ impl GateLibrary {
                 raw_gate_library
             ))),
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::collections::HashSet;
+
+    use crate::circuit::{cf::GateLibrary, circuit::evaluate_usize, Gate};
+
+    #[test]
+    fn test_num_permutations_smallest_ckt() {
+        let total = 40320;
+        let mut tt_found = HashSet::<Vec<usize>>::new();
+        const ALL_WIRES: [[usize; 3]; 6] = {
+            let mut bitlines = [[0; 3]; 6];
+            let mut i = 0;
+            let mut t = 0;
+            while t < 3 {
+                let mut c1 = 0;
+                while c1 < 3 {
+                    if t != c1 {
+                        let mut c2 = 0;
+                        while c2 < 3 {
+                            if t != c2 && c1 != c2 {
+                                bitlines[i] = [t, c1, c2];
+                                i += 1;
+                            }
+                            c2 += 1;
+                        }
+                    }
+                    c1 += 1;
+                }
+                t += 1;
+            }
+            bitlines
+        };
+        let gate_library = GateLibrary::All;
+        let mut ctr = 0;
+
+        tt_found.insert((0..8).collect());
+        ctr += 1;
+        let mut sizes = vec![1];
+        let mut current_size = 1;
+        let mut last_gates: Vec<Vec<Gate>> = vec![vec![]];
+        'outer: loop {
+            sizes.push(0);
+            let mut new_gates = vec![];
+            for prev_gates in &last_gates {
+                for cf in gate_library.cfs() {
+                    for wires in ALL_WIRES {
+                        let next_gate = Gate {
+                            wires,
+                            control_func: cf,
+                            generation: 0,
+                        };
+                        let mut gates = prev_gates.clone();
+                        gates.push(next_gate);
+                        let tt: Vec<usize> = (0..8).map(|x| evaluate_usize(&gates, x)).collect();
+                        if !tt_found.contains(&tt) {
+                            ctr += 1;
+                            sizes[current_size] += 1;
+                            if ctr == total {
+                                break 'outer;
+                            }
+                            tt_found.insert(tt);
+                            new_gates.push(gates);
+                        }
+                    }
+                }
+            }
+
+            dbg!(sizes[current_size]);
+            last_gates = new_gates;
+            current_size += 1;
+        }
+
+        dbg!(sizes);
     }
 }
