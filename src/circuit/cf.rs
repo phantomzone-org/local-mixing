@@ -134,7 +134,7 @@ pub enum GateLibrary {
     OnlyUnique,
     UniqueNo0Bit,
     TwoBit,
-    Nimply,
+    R57,
 }
 
 impl GateLibrary {
@@ -145,7 +145,7 @@ impl GateLibrary {
             Self::OnlyUnique => vec![15, 3, 12, 1, 4, 7, 13, 6, 9, 14, 8],
             Self::UniqueNo0Bit => vec![3, 12, 1, 4, 7, 13, 6, 9, 14, 8],
             Self::TwoBit => vec![1, 2, 4, 6, 7, 8, 9, 11, 13, 14],
-            Self::Nimply => vec![11],
+            Self::R57 => vec![11],
         }
     }
 
@@ -165,6 +165,7 @@ impl GateLibrary {
             "OnlyUnique" => Ok(Self::OnlyUnique),
             "UniqueNo0Bit" => Ok(Self::UniqueNo0Bit),
             "TwoBit" => Ok(Self::TwoBit),
+            "r57" => Ok(Self::R57),
             _ => Err(Box::<dyn Error>::from(format!(
                 "Cannot parse '{}'",
                 raw_gate_library
@@ -206,7 +207,7 @@ mod test {
             }
             bitlines
         };
-        let gate_library = GateLibrary::Nimply;
+        let gate_library = GateLibrary::R57;
         let mut ctr = 0;
 
         tt_found.insert((0..8).collect());

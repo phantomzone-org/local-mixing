@@ -142,11 +142,20 @@ fn run() {
                 "Circuits have different sets of wires"
             );
 
+            let circuit_one_len = circuit_one.gates.len();
+            let circuit_two_len = circuit_two.gates.len();
+
             let mut rng = rand::rng();
             let mut results = HashMap::new();
+            for i1 in 0..circuit_one_len + 1 {
+                for i2 in 0..circuit_two_len + 1 {
+                    results.insert((i1, i2), 0 as f64);
+                }
+            }
 
             (0..num_inputs)
-                .map(|_| {
+                .map(|i| {
+                    println!("iteration {}/{}", i + 1, num_inputs);
                     (0..circuit_one.num_wires)
                         .map(|_| rng.random_bool(0.5))
                         .collect::<Vec<bool>>()
@@ -155,11 +164,8 @@ fn run() {
                     let evolution_one = circuit_one.evaluate_evolution(&input);
                     let evolution_two = circuit_two.evaluate_evolution(&input);
 
-                    let mut overlap_map = vec![];
-                    for i1 in 0..evolution_one.len() {
-                        for i2 in 0..evolution_two.len() {
-                            let tau1 = i1 as f64 / (evolution_one.len() - 1) as f64;
-                            let tau2 = i2 as f64 / (evolution_two.len() - 1) as f64;
+                    for i1 in 0..circuit_one_len + 1 {
+                        for i2 in 0..circuit_two_len + 1 {
                             let hamming_dist = evolution_one[i1]
                                 .iter()
                                 .zip(evolution_two[i2].iter())
@@ -167,21 +173,21 @@ fn run() {
                                 .count();
                             let overlap =
                                 (2 * hamming_dist) as f64 / circuit_one.num_wires as f64 - 1.0;
-                            overlap_map.push((tau1, tau2, overlap));
+                            let abs_overlap = overlap.abs();
+                            results.entry((i1, i2)).and_modify(|o| *o += abs_overlap);
                         }
                     }
-
-                    let input_key = input
-                        .iter()
-                        .map(|&bit| if bit { '1' } else { '0' })
-                        .collect::<String>();
-                    results.insert(input_key, overlap_map);
                 });
 
+            let results_as_vector: Vec<[f64; 3]> = results
+                .into_iter()
+                .map(|((i1, i2), value)| [i1 as f64, i2 as f64, value / num_inputs as f64])
+                .collect();
+
             let output_json = json!({
-                "circuit-one": circuit_one_path,
-                "circuit-two": circuit_two_path,
-                "results": results
+                "circuit-one-len": circuit_one_len,
+                "circuit-two-len": circuit_two_len,
+                "results": results_as_vector
             });
 
             file.write_all(output_json.to_string().as_bytes())
