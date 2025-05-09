@@ -4,7 +4,7 @@ use crate::{
         Circuit, Gate,
     },
     compression::ct::CompressionTable,
-    local_mixing::search::{find_convex_gate_ids3, permute_circuit},
+    local_mixing::search::{find_convex_gate_ids3, permute_circuit, random_convex},
 };
 use rand::Rng;
 use std::path::Path;
@@ -25,30 +25,56 @@ pub fn compress(circuit_path: impl AsRef<Path>) {
         })
         .collect();
 
-    simplify_identity_pairs(&mut circuit.gates);
-    let eq = check_ckt_equiv_inout_map(&inout, &circuit.gates);
-    dbg!(eq);
-
-    simplify_cxity_one_pairs(&mut circuit.gates);
-    let eq = check_ckt_equiv_inout_map(&inout, &circuit.gates);
-    dbg!(eq);
+    println!("inout computed");
 
     let ct = CompressionTable::from_file("bin/table-all.db");
 
-    let mut ctr = 1;
+    println!("ct loaded");
+
+    simplify_identity_pairs(&mut circuit.gates);
+    simplify_cxity_one_pairs(&mut circuit.gates);
+
     loop {
-        if ctr % 1000000 == 0 {
-            assert!(check_ckt_equiv_inout_map(&inout, &circuit.gates));
-            simplify_identity_pairs(&mut circuit.gates);
-            simplify_cxity_one_pairs(&mut circuit.gates);
-            circuit.save_as_json("save.json");
-            ctr = 1;
+        for _ in 0..100000 {
+            ct_compress_active_wires_single_step(
+                circuit.num_wires,
+                &mut circuit.gates,
+                &ct,
+                &mut rng,
+            );
         }
-        ct_compress_active_wires_single_step(circuit.num_wires, &mut circuit.gates, &ct, &mut rng);
-        ctr += 1;
+        simplify_identity_pairs(&mut circuit.gates);
+        simplify_cxity_one_pairs(&mut circuit.gates);
+        assert!(check_ckt_equiv_inout_map(&inout, &circuit.gates));
+        circuit.save_as_json("save.json");
+        dbg!(circuit.gates.len());
     }
 }
 
+#[allow(dead_code)]
+fn compress_block(circuit_gates: &mut Vec<Gate>, ct: &CompressionTable) {
+    println!("compress_block");
+    for set_size in (2..=10).rev() {
+        let mut i = 0;
+        while i < circuit_gates.len() - set_size {
+            if let Some(replacement) =
+                ct.compress_with_optimal_relabel(&circuit_gates[i..i + set_size])
+            {
+                let repl_len = replacement.len();
+                circuit_gates.splice(i..i + set_size, replacement);
+                println!(
+                    "Removed {} gates by compress_block. # gates: {}",
+                    set_size - repl_len,
+                    circuit_gates.len()
+                );
+            } else {
+                i += 1;
+            }
+        }
+    }
+}
+
+#[allow(dead_code)]
 fn ct_compress_single_step<R: Rng>(
     circuit_num_wires: usize,
     circuit_gates: &mut Vec<Gate>,
@@ -82,8 +108,12 @@ fn ct_compress_active_wires_single_step<R: Rng>(
     rng: &mut R,
 ) {
     let set_size = rng.random_range(2..=10);
-    let (selected_gate_idx, _) =
-        find_convex_gate_ids3(set_size, circuit_num_wires, circuit_gates, rng);
+    let max_wires = rng.random_range(set_size..set_size + 2);
+    let wc = rng.random_bool(0.5);
+    let (selected_gate_idx, _) = match wc {
+        true => find_convex_gate_ids3(set_size, circuit_num_wires, &circuit_gates, rng),
+        false => random_convex(set_size, max_wires, circuit_num_wires, &circuit_gates, rng),
+    };
     let selected_gates: Vec<_> = selected_gate_idx
         .iter()
         .map(|&i| circuit_gates[i])
@@ -102,6 +132,7 @@ fn ct_compress_active_wires_single_step<R: Rng>(
 }
 
 fn simplify_identity_pairs(circuit_gates: &mut Vec<Gate>) {
+    println!("simplify_identity_pairs");
     let old_len = circuit_gates.len();
     let mut prev_len = circuit_gates.len() + 1;
     while circuit_gates.len() < prev_len {
@@ -136,6 +167,7 @@ fn simplify_identity_pairs_single_pass(circuit_gates: &mut Vec<Gate>) {
 }
 
 fn simplify_cxity_one_pairs(circuit_gates: &mut Vec<Gate>) {
+    println!("simplify_cxity_one_pairs");
     let old_len = circuit_gates.len();
     let mut prev_len = circuit_gates.len() + 1;
     while circuit_gates.len() < prev_len {
