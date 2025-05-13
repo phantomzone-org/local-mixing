@@ -2,6 +2,7 @@ use crate::local_mixing::consts::CONTROL_FUNC_TABLE;
 use rand::{seq::IndexedRandom, Rng};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
+use std::fmt::Write;
 use std::{collections::HashSet, path::Path};
 
 use super::cf::{GateControlFunc, GateLibrary};
@@ -192,6 +193,47 @@ impl Circuit {
             .collect();
         result.push_str("\ncfs: ");
         result.push_str(&control_fn_strings.join(", "));
+        result
+    }
+
+    /// Returns a vertical string representation of the circuit.
+    /// Wire labels are at the top, gates are columns, and control functions are on the right.
+    pub fn to_string_vertical(&self) -> String {
+        let mut wires: HashSet<usize> = HashSet::new();
+        for gate in &self.gates {
+            wires.extend(gate.wires.iter());
+        }
+        let mut wire_list: Vec<usize> = wires.into_iter().collect();
+        wire_list.sort();
+
+        // Header: wire labels
+        let mut result = String::new();
+        result.push_str("   "); // space for gate index
+        for wire in &wire_list {
+            write!(result, "{:<2} ", wire).unwrap();
+        }
+        result.push('\n');
+
+        // For each gate, print a row
+        for (gate_idx, gate) in self.gates.iter().enumerate() {
+            write!(result, "{:<2} ", gate_idx).unwrap();
+            for wire in &wire_list {
+                let ch = if gate.wires[0] == *wire {
+                    'X'
+                } else if gate.wires[1] == *wire {
+                    'a'
+                } else if gate.wires[2] == *wire {
+                    'b'
+                } else {
+                    '-'
+                };
+                write!(result, "{}  ", ch).unwrap();
+            }
+            // Control function string
+            let cf_str = GateControlFunc::from_u8(gate.control_func).to_string();
+            write!(result, "| {}", cf_str).unwrap();
+            result.push('\n');
+        }
         result
     }
 }
