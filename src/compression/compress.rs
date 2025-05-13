@@ -10,8 +10,14 @@ use rand::Rng;
 use std::path::Path;
 
 pub fn compress(circuit_path: impl AsRef<Path>) {
-    let mut circuit = Circuit::load_from_json(circuit_path);
+    let mut circuit = Circuit::load_from_json(&circuit_path);
     dbg!(circuit.gates.len());
+    let save_dir = circuit_path
+        .as_ref()
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap();
+    dbg!(&save_dir);
     let mut rng = rand::rng();
     correct_controls(&mut circuit.gates);
 
@@ -35,7 +41,7 @@ pub fn compress(circuit_path: impl AsRef<Path>) {
     simplify_cxity_one_pairs(&mut circuit.gates);
 
     loop {
-        for _ in 0..100000 {
+        for _ in 0..10000 {
             ct_compress_active_wires_single_step(
                 circuit.num_wires,
                 &mut circuit.gates,
@@ -46,7 +52,11 @@ pub fn compress(circuit_path: impl AsRef<Path>) {
         simplify_identity_pairs(&mut circuit.gates);
         simplify_cxity_one_pairs(&mut circuit.gates);
         assert!(check_ckt_equiv_inout_map(&inout, &circuit.gates));
-        circuit.save_as_json("save.json");
+        circuit.save_as_json(format!(
+            "{}/latest.{}.json",
+            save_dir.display(),
+            circuit.gates.len()
+        ));
         dbg!(circuit.gates.len());
     }
 }
