@@ -3,29 +3,40 @@ import numpy as np
 import matplotlib.pyplot as plt
 import sys
 import os
+from scipy.interpolate import griddata
 
 def plot_heatmap(data, save_path):
     plt.clf()
-    
     points = np.array(data)
     x, y, values = points[:, 0], points[:, 1], points[:, 2]
-    
-    x_size = int(np.max(x) + 1)
-    y_size = int(np.max(y) + 1)
-    
-    matrix = np.zeros((y_size, x_size))
-    for x_pos, y_pos, val in points:
-        matrix[int(y_pos), int(x_pos)] = val
-    
-    plt.imshow(matrix, cmap='viridis', aspect='auto', interpolation='nearest')
-    plt.colorbar()
-    
+
+    # Create a 2D grid for the heatmap
+    x_unique = np.unique(x)
+    y_unique = np.unique(y)
+    x_indices = {val: idx for idx, val in enumerate(x_unique)}
+    y_indices = {val: idx for idx, val in enumerate(y_unique)}
+
+    heatmap = np.full((len(y_unique), len(x_unique)), np.nan)
+    for xi, yi, v in zip(x, y, values):
+        heatmap[y_indices[yi], x_indices[xi]] = v
+
+    plt.imshow(
+        heatmap,
+        cmap='viridis',
+        aspect='auto',
+        origin='lower',
+        extent=[x_unique[0], x_unique[-1], y_unique[0], y_unique[-1]]
+    )
+    plt.colorbar(label='Value')
+    plt.xlabel('x')
+    plt.ylabel('y')
+
     os.makedirs(os.path.dirname(os.path.abspath(save_path)), exist_ok=True)
-    
     try:
         plt.savefig(save_path)
     finally:
         plt.close()
+
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
