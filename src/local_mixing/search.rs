@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::circuit::Gate;
 use rand::{seq::IndexedRandom, Rng, RngCore};
 
@@ -184,6 +186,7 @@ pub fn random_convex<R: RngCore>(
 
 pub fn find_convex_gate_ids3<R: RngCore>(
     set_size: usize,
+    max_wires: usize,
     circuit_num_wires: usize,
     circuit_gates: &[Gate],
     rng: &mut R,
@@ -197,6 +200,8 @@ pub fn find_convex_gate_ids3<R: RngCore>(
         let mut selected_gate_idx = vec![0; set_size];
         selected_gate_idx[0] = rng.random_range(0..num_gates);
         let mut selected_gate_ctr = 1;
+        let mut curr_wires = HashSet::new();
+        curr_wires.extend(circuit_gates[selected_gate_idx[0]].wires);
 
         while selected_gate_ctr < set_size {
             let mut candidates: Vec<usize> = vec![];
@@ -235,7 +240,15 @@ pub fn find_convex_gate_ids3<R: RngCore>(
                             path_connected_control_wires.add_wire(c1);
                             path_connected_control_wires.add_wire(c2);
 
-                            if !indirect_path_connected {
+                            let num_new_wires = curr_gate
+                                .wires
+                                .iter()
+                                .filter(|&w| !curr_wires.contains(w))
+                                .count();
+
+                            if !indirect_path_connected
+                                && curr_wires.len() + num_new_wires <= max_wires
+                            {
                                 candidates.push(curr_idx);
                             }
                         }
@@ -282,7 +295,15 @@ pub fn find_convex_gate_ids3<R: RngCore>(
                             path_connected_control_wires.add_wire(c1);
                             path_connected_control_wires.add_wire(c2);
 
-                            if !indirect_path_connected {
+                            let num_new_wires = curr_gate
+                                .wires
+                                .iter()
+                                .filter(|&w| !curr_wires.contains(w))
+                                .count();
+
+                            if !indirect_path_connected
+                                && curr_wires.len() + num_new_wires <= max_wires
+                            {
                                 candidates.push(curr_idx);
                             }
                         }
@@ -306,6 +327,8 @@ pub fn find_convex_gate_ids3<R: RngCore>(
             }
             selected_gate_idx[insert_pos] = next_candidate;
             selected_gate_ctr += 1;
+
+            curr_wires.extend(circuit_gates[next_candidate].wires);
         }
 
         #[cfg(feature = "correctness")]

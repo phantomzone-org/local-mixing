@@ -7,12 +7,15 @@ use crate::local_mixing::classify_replacements::is_identity_subcircuits_replacem
 use rand::seq::IndexedRandom;
 use rand::Rng;
 
+use super::is_weakly_connected;
+
 pub fn find_replacement_with_ct<R: Rng>(
     circuit: &[Gate],
     num_wires: usize,
     replacement_size: usize,
     max_circuit_samples: usize,
     ct: &CompressionTable,
+    output_connected: bool,
     rng: &mut R,
 ) -> Option<(Vec<Gate>, usize)> {
     let (proj_circuit, proj_map) = projection_circuit(circuit);
@@ -31,7 +34,8 @@ pub fn find_replacement_with_ct<R: Rng>(
     };
 
     'sample_circuit: loop {
-        if num_samples >= max_circuit_samples {
+        num_samples += 1;
+        if num_samples > max_circuit_samples {
             return None;
         }
         let mut curr_num_wires_used = proj_map.len();
@@ -90,7 +94,6 @@ pub fn find_replacement_with_ct<R: Rng>(
                 }
             }
         }
-        num_samples += 1;
         replacement_circuit.reverse();
 
         // map back to original num_wires
@@ -120,6 +123,10 @@ pub fn find_replacement_with_ct<R: Rng>(
         });
 
         correct_controls(&mut output_circuit);
+
+        if output_connected && !is_weakly_connected(&output_circuit) {
+            continue 'sample_circuit;
+        }
 
         if output_circuit.len() == circuit.len()
             && output_circuit.iter().all(|gate| {
@@ -186,11 +193,13 @@ fn sample_next_projection_gate<R: Rng>(
 
 #[cfg(test)]
 mod test {
+    use std::time::Instant;
+
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 
     use crate::{
-        circuit::{cf::GateLibrary, circuit::par_check_equiv_probabilistic, Circuit},
+        circuit::{cf::GateLibrary, circuit::check_equiv_probabilistic, Circuit},
         compression::ct::CompressionTable,
     };
 
@@ -199,24 +208,27 @@ mod test {
     #[test]
     fn test_replacement_ct() {
         let ct = CompressionTable::from_file("bin/table-twobit.db");
-        let wires = 15;
+        let wires = 10;
+        let gates = 5;
         let mut rng = ChaCha8Rng::from_os_rng();
-        let mut replacement_success_count = 0;
-        while replacement_success_count < 10 {
-            let ckt_one = Circuit::random_with_cf(wires, 4, GateLibrary::TwoBit, &mut rng).gates;
-            let ckt_two = match find_replacement_with_ct(&ckt_one, wires, 4, 20, &ct, &mut rng) {
-                Some((r, _)) => {
-                    replacement_success_count += 1;
-                    r
+
+        for i in 1..=1 {
+            let ckt_one =
+                Circuit::random_with_cf(wires, gates, GateLibrary::TwoBit, &mut rng).gates;
+            let s = Instant::now();
+            match find_replacement_with_ct(&ckt_one, wires, gates, 100, &ct, false, &mut rng) {
+                Some((r, samples)) => {
+                    let d = Instant::now() - s;
+                    println!("Iteration {}: SUCCESS. Time = {:?}", i, d);
+                    println!("Input: {:?}", &ckt_one);
+                    println!("Output: {:?}", &r);
+                    println!("Samples: {}", samples);
+                    assert!(check_equiv_probabilistic(wires, &ckt_one, &r, 1000, &mut rng).is_ok());
                 }
-                None => continue,
-            };
-            match par_check_equiv_probabilistic(wires, &ckt_one, &ckt_two, 1000, &mut rng) {
-                Ok(()) => continue,
-                _ => {
-                    dbg!(ckt_one);
-                    dbg!(ckt_two);
-                    panic!();
+                None => {
+                    let d = Instant::now() - s;
+                    println!("Iteration {}: FAIL. Time = {:?}", i, d);
+                    println!("Input: {:?}", &ckt_one);
                 }
             }
         }

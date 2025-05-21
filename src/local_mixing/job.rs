@@ -8,7 +8,7 @@ use rayon::{
 };
 use serde::{Deserialize, Serialize};
 use super::{
-    consts::{DEFAULT_NUM_GATES, DEFAULT_NUM_WIRES, N_IN, N_OUT_INF, N_OUT_KND},
+    consts::{N_OUT_INF, N_OUT_KND},
     search::{find_convex_gate_ids3, permute_circuit},
 };
 use crate::{
@@ -17,7 +17,7 @@ use crate::{
     },
     compression::ct::CompressionTable,
     local_mixing::{
-        consts::EPOCH_SIZE,
+        consts::{EPOCH_SIZE, N_IN_INF, N_IN_KND},
         tracer::Tracer,
     }, replacement::{find_replacement_random_sample, replace_ct::find_replacement_with_ct},
 };
@@ -72,6 +72,8 @@ pub struct LocalMixingJob {
     /// Number of wires in auto-generated circuit
     #[serde(default)]
     num_wires: usize,
+    #[serde(default)]
+    original_num_gates: usize,
     /// Circuit
     #[serde(default, skip_serializing)]
     circuit: Circuit,
@@ -100,14 +102,16 @@ impl LocalMixingJob {
             println!("-- Loaded circuit at {}", input_circuit_path);
         } else {
             println!("-- No input circuit found, generating");
+            if job.num_wires == 0 {
+                return Err("num_wires must be set in config.json or input.json must exist".into());
+            }
+            if job.original_num_gates == 0 {
+                return Err("original_num_gates must be set in config.json or input.json must exist".into());
+            }
             let mut rng = ChaCha8Rng::from_os_rng();
             job.circuit = Circuit::random_with_cf(
-                if job.num_wires == 0 {
-                    DEFAULT_NUM_WIRES
-                } else {
-                    job.num_wires
-                },
-                DEFAULT_NUM_GATES,
+                job.num_wires,
+                job.original_num_gates,
                 job.gate_library,
                 &mut rng,
             );
@@ -161,7 +165,7 @@ impl LocalMixingJob {
         #[cfg(feature = "trace")]
         let mut inf_fails = 0;
         while inf_steps < self.inflationary_stage_steps {
-            let success = run_step::<N_OUT_INF, N_IN, _, _>(
+            let success = run_step::<N_OUT_INF, N_IN_INF, _, _>(
                 self.circuit.num_wires,
                 &mut self.circuit.gates,
                 LocalMixingStage::Inflationary,
@@ -196,7 +200,7 @@ impl LocalMixingJob {
         #[cfg(feature = "trace")]
         let mut knd_fails = 0;
         while knd_steps < self.kneading_stage_steps {
-            let success = run_step::<N_OUT_KND, N_IN, _, _>(
+            let success = run_step::<N_OUT_KND, N_IN_KND, _, _>(
                 self.circuit.num_wires,
                 &mut self.circuit.gates[..],
                 LocalMixingStage::Kneading,
@@ -241,7 +245,7 @@ impl LocalMixingJob {
         #[cfg(feature = "trace")]
         let mut inf_fails = 0;
         while inf_steps < self.inflationary_stage_steps {
-            let success = run_step::<N_OUT_INF, N_IN, _, _>(
+            let success = run_step::<N_OUT_INF, N_IN_INF, _, _>(
                 self.circuit.num_wires,
                 &mut self.circuit.gates,
                 LocalMixingStage::Inflationary,
@@ -324,7 +328,7 @@ impl LocalMixingJob {
                     .zip(knd_tracers.par_iter_mut())
                     .zip(rngs.par_iter_mut())
                     .map(|((chunk, tracer), rng)| {
-                        let success = run_step::<N_OUT_KND, N_IN, _, _>(
+                        let success = run_step::<N_OUT_KND, N_IN_KND, _, _>(
                             self.circuit.num_wires,
                             chunk,
                             LocalMixingStage::Kneading,
@@ -458,7 +462,7 @@ fn run_step<const N_OUT: usize, const N_IN: usize, G: Growable + ?Sized, R: Send
     let start_time = Instant::now();
 
     let (selected_gate_idx, _n_search_attempts) =
-        find_convex_gate_ids3(N_OUT, circuit_num_wires, circuit_gates.as_slice_ref(), rng);
+        find_convex_gate_ids3(N_OUT, 9, circuit_num_wires, circuit_gates.as_slice_ref(), rng);
 
     let c_out = selected_gate_idx
         .iter()
@@ -467,12 +471,10 @@ fn run_step<const N_OUT: usize, const N_IN: usize, G: Growable + ?Sized, R: Send
 
     #[cfg(feature = "trace")]
     let repl_start = Instant::now();
-
-    // let replacement_res =
-        // find_replacement(&c_out, circuit_num_wires, N_IN, max_circuit_samples, ct, rng);
+    
     let replacement_res = match stage {
-        LocalMixingStage::Inflationary => find_replacement_random_sample(&c_out, circuit_num_wires, N_IN, 1_000_000_000, ct.gate_library, rng),
-        LocalMixingStage::Kneading => find_replacement_with_ct(&c_out, circuit_num_wires, N_IN, max_circuit_samples, &ct, rng),
+        LocalMixingStage::Inflationary => find_replacement_random_sample(&c_out, circuit_num_wires, N_IN, 1_000_000_000, ct.gate_library, true, rng),
+        LocalMixingStage::Kneading => find_replacement_with_ct(&c_out, circuit_num_wires, N_IN, max_circuit_samples, &ct, false, rng),
     };
 
     #[cfg(feature = "trace")]

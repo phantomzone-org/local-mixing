@@ -1,5 +1,6 @@
 {
   "num_wires": 64,
+  "original_num_gates": 1000,
   "inflationary_stage_steps": 1000,
   "kneading_stage_steps": 1000,
   "gate_library": "TwoBit",

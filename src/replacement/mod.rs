@@ -17,17 +17,17 @@ use std::sync::{
 };
 
 #[inline]
-pub fn is_weakly_connected<const N: usize>(circuit: &[Gate]) -> bool {
+pub fn is_weakly_connected(circuit: &[Gate]) -> bool {
     // weak-connectedness
-    let mut visited = [false; N];
-    let mut stack = [0; N];
+    let mut visited = vec![false; circuit.len()];
+    let mut stack = vec![0; circuit.len()];
     let mut stack_size = 1;
     visited[0] = true;
 
     while stack_size > 0 {
         stack_size -= 1;
         let current = stack[stack_size];
-        for i in 0..N {
+        for i in 0..circuit.len() {
             if !visited[i] && circuit[current].collides_with(&circuit[i]) {
                 visited[i] = true;
                 stack[stack_size] = i;
@@ -45,6 +45,7 @@ pub fn find_replacement_random_sample<R: Send + Sync + RngCore + SeedableRng>(
     replacement_size: usize,
     max_circuit_samples: usize,
     gate_library: GateLibrary,
+    output_connected: bool,
     rng: &mut R,
 ) -> Option<(Vec<Gate>, usize)> {
     let (proj_circuit, proj_map) = projection_circuit(circuit);
@@ -93,6 +94,10 @@ pub fn find_replacement_random_sample<R: Send + Sync + RngCore + SeedableRng>(
                 }
 
                 if !func_equiv {
+                    continue;
+                }
+
+                if output_connected && !is_weakly_connected(&replacement_circuit) {
                     continue;
                 }
 
@@ -252,6 +257,7 @@ mod tests {
                 4,
                 1_000_000_000,
                 GateLibrary::OnlyUnique,
+                true,
                 &mut rng,
             ) {
                 Some((r, _)) => r,

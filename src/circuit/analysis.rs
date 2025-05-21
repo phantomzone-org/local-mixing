@@ -39,6 +39,14 @@ pub fn truth_table(num_wires: usize, proj_circuit: &Vec<Gate>) -> Vec<usize> {
     tt
 }
 
+pub fn inverse_truth_table(tt: &Vec<usize>) -> Vec<usize> {
+    let mut inv = vec![0; tt.len()];
+    for i in 0..tt.len() {
+        inv[tt[i]] = i;
+    }
+    inv
+}
+
 /*
  * Computes the 'active' wires: which bitlines are significant in input/output.
  */

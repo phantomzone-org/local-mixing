@@ -104,6 +104,50 @@ impl GateControlFunc {
         }
     }
 
+    pub const fn negate_control_a(v: u8) -> u8 {
+        match v {
+            0 => 0,
+            1 => 4,
+            2 => 8,
+            3 => 12,
+            4 => 1,
+            5 => 5,
+            6 => 9,
+            7 => 13,
+            8 => 2,
+            9 => 6,
+            10 => 10,
+            11 => 14,
+            12 => 3,
+            13 => 7,
+            14 => 11,
+            15 => 15,
+            _ => unreachable!(),
+        }
+    }
+
+    pub const fn negate_control_b(v: u8) -> u8 {
+        match v {
+            0 => 0,
+            1 => 2,
+            2 => 1,
+            3 => 3,
+            4 => 8,
+            5 => 10,
+            6 => 9,
+            7 => 11,
+            8 => 4,
+            9 => 6,
+            10 => 5,
+            11 => 7,
+            12 => 12,
+            13 => 14,
+            14 => 13,
+            15 => 15,
+            _ => unreachable!(),
+        }
+    }
+
     pub fn to_string(&self) -> String {
         match self {
             Self::F => "0".to_string(),
@@ -145,7 +189,7 @@ impl GateLibrary {
             Self::OnlyUnique => vec![15, 3, 12, 1, 4, 7, 13, 6, 9, 14, 8],
             Self::UniqueNo0Bit => vec![3, 12, 1, 4, 7, 13, 6, 9, 14, 8],
             Self::TwoBit => vec![1, 2, 4, 6, 7, 8, 9, 11, 13, 14],
-            Self::R57 => vec![11],
+            Self::R57 => vec![11, 13],
         }
     }
 
@@ -165,7 +209,7 @@ impl GateLibrary {
             "OnlyUnique" => Ok(Self::OnlyUnique),
             "UniqueNo0Bit" => Ok(Self::UniqueNo0Bit),
             "TwoBit" => Ok(Self::TwoBit),
-            "r57" => Ok(Self::R57),
+            "R57" => Ok(Self::R57),
             _ => Err(Box::<dyn Error>::from(format!(
                 "Cannot parse '{}'",
                 raw_gate_library
