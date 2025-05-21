@@ -39,9 +39,17 @@ pub fn compress(circuit_path: impl AsRef<Path>) {
 
     simplify_identity_pairs(&mut circuit.gates);
     simplify_cxity_one_pairs(&mut circuit.gates);
+    assert!(check_ckt_equiv_inout_map(&inout, &circuit.gates));
+
+    circuit.save_as_json(format!(
+        "{}/latest.{}.json",
+        save_dir.display(),
+        circuit.gates.len()
+    ));
+    dbg!(circuit.gates.len());
 
     loop {
-        for _ in 0..10000 {
+        for _ in 0..100 {
             ct_compress_active_wires_single_step(
                 circuit.num_wires,
                 &mut circuit.gates,
@@ -63,7 +71,6 @@ pub fn compress(circuit_path: impl AsRef<Path>) {
 
 #[allow(dead_code)]
 fn compress_block(circuit_gates: &mut Vec<Gate>, ct: &CompressionTable) {
-    println!("compress_block");
     for set_size in (2..=10).rev() {
         let mut i = 0;
         while i < circuit_gates.len() - set_size {
@@ -92,8 +99,13 @@ fn ct_compress_single_step<R: Rng>(
     rng: &mut R,
 ) {
     let set_size = rng.random_range(2..=10);
-    let (selected_gate_idx, _) =
-        find_convex_gate_ids3(set_size, circuit_num_wires, circuit_gates, rng);
+    let (selected_gate_idx, _) = find_convex_gate_ids3(
+        set_size,
+        ct.max_wires_supported,
+        circuit_num_wires,
+        circuit_gates,
+        rng,
+    );
     let selected_gates: Vec<_> = selected_gate_idx
         .iter()
         .map(|&i| circuit_gates[i])
@@ -121,7 +133,13 @@ fn ct_compress_active_wires_single_step<R: Rng>(
     let max_wires = rng.random_range(set_size..set_size + 2);
     let wc = rng.random_bool(0.5);
     let (selected_gate_idx, _) = match wc {
-        true => find_convex_gate_ids3(set_size, circuit_num_wires, &circuit_gates, rng),
+        true => find_convex_gate_ids3(
+            set_size,
+            ct.max_wires_supported,
+            circuit_num_wires,
+            &circuit_gates,
+            rng,
+        ),
         false => random_convex(set_size, max_wires, circuit_num_wires, &circuit_gates, rng),
     };
     let selected_gates: Vec<_> = selected_gate_idx
@@ -142,7 +160,6 @@ fn ct_compress_active_wires_single_step<R: Rng>(
 }
 
 fn simplify_identity_pairs(circuit_gates: &mut Vec<Gate>) {
-    println!("simplify_identity_pairs");
     let old_len = circuit_gates.len();
     let mut prev_len = circuit_gates.len() + 1;
     while circuit_gates.len() < prev_len {
@@ -177,7 +194,6 @@ fn simplify_identity_pairs_single_pass(circuit_gates: &mut Vec<Gate>) {
 }
 
 fn simplify_cxity_one_pairs(circuit_gates: &mut Vec<Gate>) {
-    println!("simplify_cxity_one_pairs");
     let old_len = circuit_gates.len();
     let mut prev_len = circuit_gates.len() + 1;
     while circuit_gates.len() < prev_len {
