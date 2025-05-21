@@ -1,22 +1,20 @@
 use local_mixing::{
     circuit::{
-        analysis::{num_distinct_wires, projection_circuit, truth_table},
+        analysis::num_distinct_wires,
         cf::{GateControlFunc, GateLibrary},
-        circuit::{
-            check_equiv_probabilistic, correct_controls, par_check_equiv_probabilistic, Circuit,
-        },
+        circuit::{par_check_equiv_probabilistic, Circuit},
         Gate,
     },
-    compression::{compress::compress, ct::CompressionTable},
+    compression::{compress::compress, ct::CompressionTable, inflate_gate},
     local_mixing::{
         classify_replacements::{classify_fail, classify_success, SuccessCase},
         test_search::test_local_mixing_search,
         tracer::{ReplacementStatus, Tracer},
         LocalMixingJob,
     },
-    replacement::{is_weakly_connected, replace_ct::find_replacement_with_ct},
+    replacement::is_weakly_connected,
 };
-use rand::{seq::IndexedRandom, Rng, SeedableRng};
+use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
@@ -24,174 +22,8 @@ use std::env::args;
 use std::fs::File;
 use std::io::Write;
 
-fn tmp2() {
-    let mut rng = rand::rng();
-    let original = Circuit::random_with_cf(16, 256, GateLibrary::TwoBit, &mut rng);
-    let mut evolved = original.gates.clone();
-    let ct = CompressionTable::from_file("bin/table-twobit.db");
-
-    let num_iterations = 20;
-    for iter in 0..num_iterations {
-        println!("iter: {}", iter);
-        let first_gate = evolved.remove(0);
-        let mut i = 0;
-        while i < evolved.len() {
-            // println!("{} / {}", i, evolved.len());
-            if evolved[i].collides_with(&first_gate) {
-                let repl = vec![first_gate, evolved[i], first_gate];
-                if let Some(_) =
-                    ct.lookup_truth_table(&truth_table(9, &projection_circuit(&repl).0))
-                {
-                    let new_repl =
-                        find_replacement_with_ct(&repl, 16, 5, 100, &ct, false, &mut rng).unwrap();
-                    evolved.splice(i..i + 1, new_repl.0);
-
-                    i += 5;
-                } else {
-                    panic!();
-                }
-            } else {
-                i += 1;
-            }
-        }
-        evolved.push(first_gate);
-
-        let evolved_ckt = Circuit {
-            num_wires: 16,
-            gates: evolved.clone(),
-        };
-        evolved_ckt.save_as_json("evolved.json");
-        original.save_as_json("original.json");
-    }
-
-    assert!(check_equiv_probabilistic(16, &original.gates, &evolved, 10000, &mut rng).is_ok());
-}
-
-fn tmp() {
-    let wires = 16;
-    let mut rng = rand::rng();
-    let original = Circuit::random_with_cf(wires, 256, GateLibrary::TwoBit, &mut rng);
-    let id_table: Vec<Vec<Gate>> = bincode::deserialize_from(
-        std::fs::File::open("bin/id_table.db").expect("Failed to open bin/id_table.db"),
-    )
-    .expect("Failed to deserialize id_table");
-
-    let mut input_gates = original.gates.clone();
-    // for i in (0..input_gates.len()).rev() {
-    for i in (1..input_gates.len()).rev() {
-        let mut rand_gates = id_table.choose(&mut rng).unwrap().clone();
-        // let mut new_wires = [0; 3];
-        // let mut iter = 0;
-        // while iter < 3 {
-        //     let w = rng.random_range(0..wires);
-        //     if !new_wires.contains(&w) {
-        //         new_wires[iter] = w;
-        //         iter += 1;
-        //     }
-        // }
-        let mut new_wires = [0; 3];
-        new_wires[0] = input_gates[i].wires[rng.random_range(0..3)];
-        // new_wires[1] = input_gates[i - 1].wires[rng.random_range(0..3)];
-        new_wires[1] = {
-            loop {
-                let w = input_gates[i - 1].wires[rng.random_range(0..3)];
-                if w != new_wires[0] {
-                    break w;
-                }
-            }
-        };
-        new_wires[2] = {
-            loop {
-                let w = rng.random_range(0..wires);
-                if w != new_wires[0] && w != new_wires[1] {
-                    break w;
-                }
-            }
-        };
-
-        rand_gates.iter_mut().for_each(|g| {
-            g.wires[0] = new_wires[g.wires[0]];
-            g.wires[1] = new_wires[g.wires[1]];
-            g.wires[2] = new_wires[g.wires[2]];
-        });
-
-        input_gates.splice(i..i, rand_gates.clone());
-    }
-
-    correct_controls(&mut input_gates);
-
-    let input = Circuit {
-        num_wires: wires,
-        gates: input_gates.clone(),
-    };
-
-    assert!(check_equiv_probabilistic(16, &original.gates, &input_gates, 10000, &mut rng).is_ok());
-
-    original.save_as_json("original.json");
-    input.save_as_json("input.json");
-}
-
 fn main() {
-    // tmp();
     run();
-
-    // let mut rng = rand::rng();
-    // let ct = CompressionTable::from_file("bin/table-r57.db");
-    // for _ in 0..100 {
-    //     let c = Circuit::random_with_cf(5, 5, GateLibrary::R57, &mut rng).gates;
-    //     let tt = truth_table(ct.max_wires_supported, &projection_circuit(&c).0);
-    //     if let Some(cxity) = ct.lookup_truth_table(&tt) {
-    //         println!("cxity = {}", cxity);
-    //     } else {
-    //         println!("cxity > {}", ct.max_gates_supported);
-    //     }
-    // }
-
-    // let mut rng = rand::rng();
-    // let original = Circuit::random_with_cf(16, 256, GateLibrary::TwoBit, &mut rng);
-    // let id_table: Vec<Vec<Gate>> = bincode::deserialize_from(
-    //     std::fs::File::open("bin/id_table.db").expect("Failed to open bin/id_table.db"),
-    // )
-    // .expect("Failed to deserialize id_table");
-    // let mut new_gates: Vec<Gate> = Vec::with_capacity(original.gates.len() * 8);
-
-    // for g in &original.gates {
-    //     let g_proj = Gate {
-    //         wires: [0, 1, 2],
-    //         control_func: g.control_func,
-    //         generation: 0,
-    //     };
-    //     loop {
-    //         let replacement: Vec<Gate> = id_table.choose(&mut rng).unwrap().to_vec();
-    //         if let Some(pos) = replacement.iter().position(|r| r.equal_to(&g_proj)) {
-    //             let mut final_repl: Vec<Gate> = vec![];
-    //             final_repl.extend(&replacement[pos + 1..]);
-    //             final_repl.extend(&replacement[..pos]);
-    //             final_repl.iter_mut().for_each(|r| {
-    //                 r.wires[0] = g.wires[r.wires[0]];
-    //                 r.wires[1] = g.wires[r.wires[1]];
-    //                 r.wires[2] = g.wires[r.wires[2]];
-    //             });
-    //             new_gates.extend(final_repl);
-    //             break;
-    //         }
-    //     }
-    // }
-
-    // let res = check_equiv_probabilistic(16, &original.gates, &new_gates, 10000, &mut rng);
-    // if res.is_err() {
-    //     dbg!(original.gates);
-    //     dbg!(new_gates);
-    //     panic!();
-    // }
-
-    // let input = Circuit {
-    //     num_wires: 16,
-    //     gates: new_gates,
-    // };
-
-    // input.save_as_json("input.json");
-    // original.save_as_json("original.json");
 }
 
 fn run() {
@@ -221,6 +53,43 @@ fn run() {
             )
             .save_as_json(&save_path);
             println!("Random circuit generated and saved to {}", save_path);
+        }
+        "random-inflated" => {
+            let identity_compenents: (Vec<Vec<Gate>>, HashMap<Vec<usize>, Vec<Vec<Gate>>>) =
+                bincode::deserialize_from(
+                    std::fs::File::open("bin/4-gate-3-wire-TwoBit-optimal-halves.bin")
+                        .expect("Failed to open bin/id_table.db"),
+                )
+                .expect("Failed to deserialize id_table");
+            let ct = CompressionTable::from_file("bin/table-twobit.db");
+
+            let num_wires = 16;
+            let num_gates = 256;
+            let gate_library = GateLibrary::TwoBit;
+
+            let mut rng = rand::rng();
+            let original = Circuit::random_with_cf(num_wires, num_gates, gate_library, &mut rng);
+            let mut new_gates: Vec<Gate> = vec![];
+
+            for i in 0..original.gates.len() {
+                let inflated = inflate_gate(
+                    &original.gates[i],
+                    &identity_compenents.0,
+                    3,
+                    &identity_compenents.1,
+                    &ct,
+                    &mut rng,
+                );
+                new_gates.extend(inflated);
+            }
+
+            let input = Circuit {
+                num_wires,
+                gates: new_gates,
+            };
+
+            original.save_as_json("original.json");
+            input.save_as_json("input.json");
         }
         "local-mixing" => {
             let job_dir = args.next().expect("Missing job directory");

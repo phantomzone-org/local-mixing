@@ -159,83 +159,85 @@ impl Circuit {
     }
 
     pub fn to_string(&self) -> String {
-        let mut wires: HashSet<usize> = HashSet::new();
-        for gate in &self.gates {
-            wires.extend(gate.wires.iter());
-        }
-        let mut wire_list: Vec<usize> = wires.into_iter().collect();
-        wire_list.sort();
-
-        let mut result = String::new();
-        for (i, wire) in wire_list.iter().enumerate() {
-            result.push_str(&format!("{:<2} ", wire));
-            for gate in &self.gates {
-                if gate.wires[0] == *wire {
-                    result.push('X');
-                } else if gate.wires[1] == *wire {
-                    result.push('a');
-                } else if gate.wires[2] == *wire {
-                    result.push('b');
-                } else {
-                    result.push('-');
-                }
-                result.push_str(" - ");
-            }
-            if i != wire_list.len() - 1 {
-                result.push_str("\n");
-            }
-        }
-
-        let control_fn_strings: Vec<String> = self
-            .gates
-            .iter()
-            .map(|gate| GateControlFunc::from_u8(gate.control_func).to_string())
-            .collect();
-        result.push_str("\ncfs: ");
-        result.push_str(&control_fn_strings.join(", "));
-        result
+        to_string(&self.gates)
     }
 
-    /// Returns a vertical string representation of the circuit.
-    /// Wire labels are at the top, gates are columns, and control functions are on the right.
     pub fn to_string_vertical(&self) -> String {
-        let mut wires: HashSet<usize> = HashSet::new();
-        for gate in &self.gates {
-            wires.extend(gate.wires.iter());
-        }
-        let mut wire_list: Vec<usize> = wires.into_iter().collect();
-        wire_list.sort();
-
-        // Header: wire labels
-        let mut result = String::new();
-        result.push_str("   "); // space for gate index
-        for wire in &wire_list {
-            write!(result, "{:<2} ", wire).unwrap();
-        }
-        result.push('\n');
-
-        // For each gate, print a row
-        for (gate_idx, gate) in self.gates.iter().enumerate() {
-            write!(result, "{:<2} ", gate_idx).unwrap();
-            for wire in &wire_list {
-                let ch = if gate.wires[0] == *wire {
-                    'X'
-                } else if gate.wires[1] == *wire {
-                    'a'
-                } else if gate.wires[2] == *wire {
-                    'b'
-                } else {
-                    '-'
-                };
-                write!(result, "{}  ", ch).unwrap();
-            }
-            // Control function string
-            let cf_str = GateControlFunc::from_u8(gate.control_func).to_string();
-            write!(result, "| {}", cf_str).unwrap();
-            result.push('\n');
-        }
-        result
+        to_string_vertical(&self.gates)
     }
+}
+
+pub fn to_string(circuit_gates: &[Gate]) -> String {
+    let mut wires: HashSet<usize> = HashSet::new();
+    for gate in circuit_gates {
+        wires.extend(gate.wires.iter());
+    }
+    let mut wire_list: Vec<usize> = wires.into_iter().collect();
+    wire_list.sort();
+
+    let mut result = String::new();
+    for (i, wire) in wire_list.iter().enumerate() {
+        result.push_str(&format!("{:<2} ", wire));
+        for gate in circuit_gates {
+            if gate.wires[0] == *wire {
+                result.push('X');
+            } else if gate.wires[1] == *wire {
+                result.push('a');
+            } else if gate.wires[2] == *wire {
+                result.push('b');
+            } else {
+                result.push('-');
+            }
+            result.push_str(" - ");
+        }
+        if i != wire_list.len() - 1 {
+            result.push_str("\n");
+        }
+    }
+
+    let control_fn_strings: Vec<String> = circuit_gates
+        .iter()
+        .map(|gate| GateControlFunc::from_u8(gate.control_func).to_string())
+        .collect();
+    result.push_str("\ncfs: ");
+    result.push_str(&control_fn_strings.join(", "));
+    result
+}
+
+pub fn to_string_vertical(circuit_gates: &[Gate]) -> String {
+    let mut wires: HashSet<usize> = HashSet::new();
+    for gate in circuit_gates {
+        wires.extend(gate.wires.iter());
+    }
+    let mut wire_list: Vec<usize> = wires.into_iter().collect();
+    wire_list.sort();
+
+    let mut result = String::new();
+    result.push_str("   ");
+    for wire in &wire_list {
+        write!(result, "{:<2} ", wire).unwrap();
+    }
+    result.push('\n');
+
+    for (gate_idx, gate) in circuit_gates.iter().enumerate() {
+        write!(result, "{:<2} ", gate_idx).unwrap();
+        for wire in &wire_list {
+            let ch = if gate.wires[0] == *wire {
+                'X'
+            } else if gate.wires[1] == *wire {
+                'a'
+            } else if gate.wires[2] == *wire {
+                'b'
+            } else {
+                '-'
+            };
+            write!(result, "{}  ", ch).unwrap();
+        }
+        let cf_str = GateControlFunc::from_u8(gate.control_func).to_string();
+        write!(result, "| {}", cf_str).unwrap();
+        result.push('\n');
+    }
+    result
 }
 
 pub fn check_equiv_probabilistic<R: Rng>(
