@@ -70,9 +70,9 @@ pub struct LocalMixingJob {
     /// Path to compression table
     compression_table_path: String,
     /// Number of wires in auto-generated circuit
-    #[serde(default)]
+    #[serde(default, skip_serializing)]
     num_wires: usize,
-    #[serde(default)]
+    #[serde(default, skip_serializing)]
     original_num_gates: usize,
     /// Circuit
     #[serde(default, skip_serializing)]
@@ -144,6 +144,11 @@ impl LocalMixingJob {
         Ok(job)
     }
 
+    pub fn save_config_json(&self, path: &str) -> Result<(), Box<dyn Error>> {
+         std::fs::write(path, serde_json::to_vec_pretty(&self)?)?;
+         Ok(())
+    }
+
     pub fn run(&mut self) {
         println!("-- Running");
         let mut rng = ChaCha8Rng::from_os_rng();
@@ -151,13 +156,13 @@ impl LocalMixingJob {
         if self.search_threads > 1 {
             self.run_multiple_threads(&mut rng);
         } else {
-            self.run_one_thread(&mut rng);
+            self.run_single_threaded(&mut rng);
         }
         let elapsed = Instant::now() - start;
         println!("-- Finished running in {:?}", elapsed);
     }
 
-    pub fn run_one_thread<R: Send + Sync + RngCore + SeedableRng>(&mut self, rng: &mut R) {
+    pub fn run_single_threaded<R: Send + Sync + RngCore + SeedableRng>(&mut self, rng: &mut R) {
         let mut tracer = Tracer::new(self.inflationary_stage_steps, self.kneading_stage_steps);
 
         println!("-- Inflationary stage");
@@ -196,10 +201,10 @@ impl LocalMixingJob {
         self.circuit.reset_generations();
 
         println!("-- Kneading stage");
-        let mut knd_steps = 0;
+        let mut knd_steps = 1;
         #[cfg(feature = "trace")]
         let mut knd_fails = 0;
-        while knd_steps < self.kneading_stage_steps {
+        while knd_steps <= self.kneading_stage_steps {
             let success = run_step::<N_OUT_KND, N_IN_KND, _, _>(
                 self.circuit.num_wires,
                 &mut self.circuit.gates[..],
@@ -212,6 +217,21 @@ impl LocalMixingJob {
             );
             if success {
                 knd_steps += 1;
+                if knd_steps % EPOCH_SIZE == 0 {
+                    self.circuit
+                    .save_as_json(format!("{}/save.json", self.dir_path));
+
+                #[cfg(feature = "trace")]
+                {
+                    self.circuit
+                        .save_generation_data(format!("{}/generation.json", self.dir_path));
+
+                    tracer
+                        .save_to_file(format!("{}/logs/trace.json", self.dir_path))
+                        .expect("Failed to save trace");
+                    log::info!(target: "trace", "Saved at step {}", knd_steps);
+                }
+                }
             } else {
                 #[cfg(feature = "trace")]
                 {
@@ -392,6 +412,27 @@ impl LocalMixingJob {
             log::info!(target: "trace", "Finished.");
             log::info!(target: "trace", "Inflationary stage fails: {}", inf_fails);
             log::info!(target: "trace", "Kneading stage fails: {}", knd_fails);
+        }
+    }
+
+    pub fn results(self) -> (Circuit, CompressionTable) {
+        (self.circuit, self.ct)
+    }
+
+    pub fn experiment_config(dir_path: &str, circuit: Circuit, ct: CompressionTable) -> Self {
+        Self { 
+            inflationary_stage_steps: 0, 
+            kneading_stage_steps: 500000,
+            gate_library: GateLibrary::TwoBit, 
+            search_threads: 1,
+            max_circuit_samples: 10,
+            save_inflationary: false,
+            compression_table_path: "bin/table-twobit.db".to_string(), 
+            num_wires: 16, 
+            original_num_gates: 1, 
+            circuit, 
+            ct, 
+            dir_path: dir_path.to_string() 
         }
     }
 }

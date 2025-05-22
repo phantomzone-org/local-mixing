@@ -16,7 +16,7 @@ for i in {1..5}; do
     echo "Iteration $i:"
     CURR_DIR="$BASE_DIR/$i"
     mkdir -p $CURR_DIR
-    cp $SCRIPT_DIR/configs/test-local-mixing-config.json "$CURR_DIR/config.json"
+    cp $SCRIPT_DIR/test-local-mixing-config.json "$CURR_DIR/config.json"
     cargo run --release --features="correctness,trace" local-mixing $CURR_DIR
     echo "Completed iteration $i."
 done

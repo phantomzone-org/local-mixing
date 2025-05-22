@@ -12,6 +12,6 @@ curr_date_time=$(date +"%Y-%m-%d_%H-%M-%S")
 BASE_DIR=".experiments/$curr_date_time"
 mkdir -p "$BASE_DIR"
 
-cp $SCRIPT_DIR/configs/test-search-config.json "$BASE_DIR/config.json"
+cp $SCRIPT_DIR/test-search-config.json "$BASE_DIR/config.json"
 cargo run --release search-test $BASE_DIR
 
