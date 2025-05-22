@@ -16,9 +16,9 @@ cp $SCRIPT_DIR/inf-config.json $BASE_DIR/inflationary/config.json
 ### Generate input.json
 
 # Uncomment for identity-inflation
-# cargo run --release --features="trace" random-inflated
-# mv original.json $BASE_DIR/inflationary
-# mv input.json $BASE_DIR/inflationary
+cargo run --release --features="trace" random-inflated
+mv original.json $BASE_DIR/inflationary
+mv input.json $BASE_DIR/inflationary
 
 # Uncomment for just inflationary stage
 cargo run --release --features="trace" random-circuit input.json 16 256 TwoBit

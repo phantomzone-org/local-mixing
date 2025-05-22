@@ -217,8 +217,13 @@ fn random_inflated(path: String) {
         gates: new_gates,
     };
 
-    original.save_as_json(path.clone() + "/original.json");
-    input.save_as_json(path + "/input.json");
+    if path == "" {
+        original.save_as_json("original.json");
+        input.save_as_json("input.json");
+    } else {
+        original.save_as_json(path.clone() + "/original.json");
+        input.save_as_json(path + "/input.json");
+    }
 }
 
 fn run_stats(circuit_path: String) {
