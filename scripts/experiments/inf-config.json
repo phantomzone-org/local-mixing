@@ -1,5 +1,5 @@
 {
-  "inflationary_stage_steps": 1000,
+  "inflationary_stage_steps": 100,
   "kneading_stage_steps": 0,
   "gate_library": "TwoBit",
   "search_threads": 1,

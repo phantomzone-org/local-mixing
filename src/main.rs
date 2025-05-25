@@ -5,7 +5,10 @@ use local_mixing::{
         circuit::{par_check_equiv_probabilistic, Circuit},
         Gate,
     },
-    compression::{compress::compress, ct::CompressionTable, inflate_gate},
+    compression::{
+        compress::compress, ct::CompressionTable, inflate_gate, inflate_gate_to_block,
+        IncompressibleCircuitsTable,
+    },
     local_mixing::{
         classify_replacements::{classify_fail, classify_success, SuccessCase},
         test_search::test_local_mixing_search,
@@ -16,11 +19,12 @@ use local_mixing::{
 };
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde_json::json;
-use std::collections::{HashMap, HashSet};
 use std::env::args;
 use std::fs::File;
 use std::io::Write;
+use std::{collections::HashSet, time::Instant};
 
 fn main() {
     run();
@@ -62,46 +66,16 @@ fn run() {
             }
             None => random_inflated("".to_string()),
         },
+        "random-inflated-block" => match args.next() {
+            Some(save_dir) => {
+                random_inflated_block(save_dir);
+            }
+            None => random_inflated_block("".to_string()),
+        },
         "local-mixing" => {
             let job_dir = args.next().expect("Missing job directory");
             let mut job = LocalMixingJob::load(&job_dir).expect("Failed to load job");
             job.run();
-        }
-        "experiment" => {
-            // Make sure <job>/inflationary directory already has input.json and config.json
-            let job_dir = args.next().expect("Missing job directory");
-            let inf_dir = job_dir.clone() + "/inflationary";
-            let mut inflationary_job = LocalMixingJob::load(&inf_dir).expect("Failed to load job");
-            inflationary_job.run();
-            run_distinguisher(
-                inf_dir.clone() + "/input.json",
-                inf_dir.clone() + "/target.json",
-                1000,
-                inf_dir + "/input-target-plot.json",
-            );
-            let mut latest = inflationary_job.results();
-
-            let mut iter = 0;
-            loop {
-                let knd_dir = job_dir.clone() + "/kneading/" + &iter.to_string();
-                std::fs::create_dir(&knd_dir).unwrap_or_else(|error| panic!("{error:?}"));
-                std::fs::create_dir(&(knd_dir.clone() + "/logs"))
-                    .unwrap_or_else(|error| panic!("{error:?}"));
-                latest.0.save_as_json(knd_dir.clone() + "/input.json");
-                let mut knd_job = LocalMixingJob::experiment_config(&knd_dir, latest.0, latest.1);
-                knd_job
-                    .save_config_json(&(knd_dir.clone() + "/config.json"))
-                    .unwrap_or_else(|error| panic!("{error:?}"));
-                knd_job.run();
-                run_distinguisher(
-                    knd_dir.clone() + "/input.json",
-                    knd_dir.clone() + "/target.json",
-                    1000,
-                    knd_dir + "/input-target-plot.json",
-                );
-                latest = knd_job.results();
-                iter += 1;
-            }
         }
         "search-test" => {
             let test_dir = args.next().expect("Missing test directory");
@@ -184,12 +158,8 @@ fn run() {
 }
 
 fn random_inflated(path: String) {
-    let identity_compenents: (Vec<Vec<Gate>>, HashMap<Vec<usize>, Vec<Vec<Gate>>>) =
-        bincode::deserialize_from(
-            std::fs::File::open("bin/4-gate-3-wire-TwoBit-optimal-halves.bin")
-                .expect("Failed to open bin/id_table.db"),
-        )
-        .expect("Failed to deserialize id_table");
+    let identity_compenents =
+        IncompressibleCircuitsTable::from_file("bin/4-gate-4-wire-TwoBit-optimal-halves.bin");
     let ct = CompressionTable::from_file("bin/table-twobit.db");
 
     let num_wires = 16;
@@ -203,9 +173,46 @@ fn random_inflated(path: String) {
     for i in 0..original.gates.len() {
         let inflated = inflate_gate(
             &original.gates[i],
-            &identity_compenents.0,
-            3,
-            &identity_compenents.1,
+            num_wires,
+            &identity_compenents,
+            &ct,
+            &mut rng,
+        );
+        new_gates.extend(inflated);
+    }
+
+    let input = Circuit {
+        num_wires,
+        gates: new_gates,
+    };
+
+    if path == "" {
+        original.save_as_json("original.json");
+        input.save_as_json("input.json");
+    } else {
+        original.save_as_json(path.clone() + "/original.json");
+        input.save_as_json(path + "/input.json");
+    }
+}
+
+fn random_inflated_block(path: String) {
+    let identity_compenents =
+        IncompressibleCircuitsTable::from_file("bin/4-gate-4-wire-TwoBit-optimal-halves.bin");
+    let ct = CompressionTable::from_file("bin/table-twobit.db");
+
+    let num_wires = 16;
+    let num_gates = 256;
+    let gate_library = GateLibrary::TwoBit;
+
+    let mut rng = rand::rng();
+    let original = Circuit::random_with_cf(num_wires, num_gates, gate_library, &mut rng);
+    let mut new_gates: Vec<Gate> = vec![];
+
+    for i in 0..original.gates.len() {
+        let inflated = inflate_gate_to_block(
+            &original.gates[i],
+            num_wires,
+            &identity_compenents,
             &ct,
             &mut rng,
         );
@@ -260,47 +267,106 @@ fn run_distinguisher(
     let circuit_one_len = circuit_one.gates.len();
     let circuit_two_len = circuit_two.gates.len();
 
-    let mut rng = rand::rng();
-    let mut results = HashMap::new();
-    for i1 in 0..circuit_one_len + 1 {
-        for i2 in 0..circuit_two_len + 1 {
-            results.insert((i1, i2), 0 as f64);
-        }
-    }
+    // let mut results = HashMap::new();
 
-    (0..num_inputs)
+    // for i1 in 0..circuit_one_len + 1 {
+    //     for i2 in 0..circuit_two_len + 1 {
+    //         results.insert((i1, i2), 0 as f64);
+    //     }
+    // }
+
+    // (0..num_inputs)
+    //     .map(|i| {
+    //         println!("Iteration {}/{}", i, num_inputs);
+    //         (0..circuit_one.num_wires)
+    //             .map(|_| rng.random_bool(0.5))
+    //             .collect::<Vec<bool>>()
+    //     })
+    //     .for_each(|input| {
+    //         let evolution_one = circuit_one.evaluate_evolution(&input);
+    //         let evolution_two = circuit_two.evaluate_evolution(&input);
+
+    //         for i1 in 0..circuit_one_len + 1 {
+    //             for i2 in 0..circuit_two_len + 1 {
+    //                 let hamming_dist = evolution_one[i1]
+    //                     .iter()
+    //                     .zip(evolution_two[i2].iter())
+    //                     .filter(|(&b1, &b2)| b1 != b2)
+    //                     .count();
+    //                 let overlap = (2 * hamming_dist) as f64 / circuit_one.num_wires as f64 - 1.0;
+    //                 let abs_overlap = overlap.abs();
+    //                 results.entry((i1, i2)).and_modify(|o| *o += abs_overlap);
+    //             }
+    //         }
+    //     });
+
+    // let results_as_vector: Vec<[f64; 3]> = results
+    //     .into_iter()
+    //     .map(|((i1, i2), value)| [i1 as f64, i2 as f64, value / num_inputs as f64])
+    //     .collect();
+
+    let mut rng = rand::rng();
+    let inputs: Vec<Vec<bool>> = (0..num_inputs)
         .map(|_| {
             (0..circuit_one.num_wires)
                 .map(|_| rng.random_bool(0.5))
-                .collect::<Vec<bool>>()
+                .collect()
         })
-        .for_each(|input| {
+        .collect();
+
+    let s = Instant::now();
+    let all_results: Vec<Vec<[f64; 3]>> = (0..num_inputs)
+        .into_par_iter()
+        .map(|i| {
+            println!("{}/{}", i, num_inputs);
+            let input = inputs[i].clone();
+
             let evolution_one = circuit_one.evaluate_evolution(&input);
             let evolution_two = circuit_two.evaluate_evolution(&input);
 
-            for i1 in 0..circuit_one_len + 1 {
-                for i2 in 0..circuit_two_len + 1 {
-                    let hamming_dist = evolution_one[i1]
-                        .iter()
-                        .zip(evolution_two[i2].iter())
-                        .filter(|(&b1, &b2)| b1 != b2)
-                        .count();
-                    let overlap = (2 * hamming_dist) as f64 / circuit_one.num_wires as f64 - 1.0;
-                    let abs_overlap = overlap.abs();
-                    results.entry((i1, i2)).and_modify(|o| *o += abs_overlap);
-                }
-            }
-        });
-
-    let results_as_vector: Vec<[f64; 3]> = results
-        .into_iter()
-        .map(|((i1, i2), value)| [i1 as f64, i2 as f64, value / num_inputs as f64])
+            let iter_result: Vec<[f64; 3]> = (0..circuit_one_len + 1)
+                .map(|i1| {
+                    (0..circuit_two_len + 1)
+                        .map(|i2| {
+                            let hamming_dist = evolution_one[i1]
+                                .iter()
+                                .zip(evolution_two[i2].iter())
+                                .filter(|(&b1, &b2)| b1 != b2)
+                                .count();
+                            let overlap =
+                                (2 * hamming_dist) as f64 / circuit_one.num_wires as f64 - 1.0;
+                            let abs_overlap = overlap.abs();
+                            [i1 as f64, i2 as f64, abs_overlap]
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .flatten()
+                .collect();
+            iter_result
+        })
         .collect();
+
+    println!("average");
+    let mut average =
+        vec![[0 as f64, 0 as f64, 0.0]; (circuit_one_len + 1) * (circuit_two_len + 1)];
+    for i1 in 0..circuit_one_len + 1 {
+        for i2 in 0..circuit_two_len + 1 {
+            let index = i1 * (circuit_two_len + 1) + i2;
+            for i in 0..num_inputs {
+                average[index][2] += all_results[i][index][2];
+            }
+            average[index][0] = i1 as f64;
+            average[index][1] = i2 as f64;
+            average[index][2] /= num_inputs as f64;
+        }
+    }
+    let d = Instant::now() - s;
+    println!("time: {:?}", d);
 
     let output_json = json!({
         "circuit-one-len": circuit_one_len,
         "circuit-two-len": circuit_two_len,
-        "results": results_as_vector
+        "results": average,
     });
 
     file.write_all(output_json.to_string().as_bytes())
