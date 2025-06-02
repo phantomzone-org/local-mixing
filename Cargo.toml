@@ -24,6 +24,9 @@ codegen-units = 1
 [features]
 trace = []
 correctness = []
+search-1 = []
+search-2 = []
+search-3 = []
 
 [[bench]]
 name = "benchmark_sample"

@@ -31,7 +31,7 @@ def plot_heatmap(data, save_path):
         cmap='viridis',
         aspect='auto',
         origin='lower',
-        extent=[x_unique[0], x_unique[-1], y_unique[0], y_unique[-1]]
+        extent=[x_unique[0], x_unique[-1], y_unique[0], y_unique[-1]],
     )
     plt.colorbar(label='Standard deviations from mean')
     plt.xlabel('x')
@@ -39,7 +39,7 @@ def plot_heatmap(data, save_path):
 
     os.makedirs(os.path.dirname(os.path.abspath(save_path)), exist_ok=True)
     try:
-        plt.savefig(save_path)
+        plt.savefig(save_path, dpi=300)
     finally:
         plt.close()
 

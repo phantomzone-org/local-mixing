@@ -37,8 +37,8 @@ pub fn compress(circuit_path: impl AsRef<Path>) {
 
     println!("ct loaded");
 
-    simplify_identity_pairs(&mut circuit.gates);
-    simplify_cxity_one_pairs(&mut circuit.gates);
+    // simplify_identity_pairs(&mut circuit.gates);
+    // simplify_cxity_one_pairs(&mut circuit.gates);
     assert!(check_ckt_equiv_inout_map(&inout, &circuit.gates));
 
     circuit.save_as_json(format!(
@@ -49,7 +49,7 @@ pub fn compress(circuit_path: impl AsRef<Path>) {
     dbg!(circuit.gates.len());
 
     loop {
-        for _ in 0..100 {
+        for _ in 0..100000 {
             ct_compress_active_wires_single_step(
                 circuit.num_wires,
                 &mut circuit.gates,
@@ -57,8 +57,8 @@ pub fn compress(circuit_path: impl AsRef<Path>) {
                 &mut rng,
             );
         }
-        simplify_identity_pairs(&mut circuit.gates);
-        simplify_cxity_one_pairs(&mut circuit.gates);
+        // simplify_identity_pairs(&mut circuit.gates);
+        // simplify_cxity_one_pairs(&mut circuit.gates);
         assert!(check_ckt_equiv_inout_map(&inout, &circuit.gates));
         circuit.save_as_json(format!(
             "{}/latest.{}.json",
@@ -131,7 +131,8 @@ fn ct_compress_active_wires_single_step<R: Rng>(
 ) {
     let set_size = rng.random_range(2..=10);
     let max_wires = rng.random_range(set_size..set_size + 2);
-    let wc = rng.random_bool(0.5);
+    // let wc = rng.random_bool(0.5);
+    let wc = true;
     let (selected_gate_idx, _) = match wc {
         true => find_convex_gate_ids3(
             set_size,

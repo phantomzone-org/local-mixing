@@ -9,7 +9,7 @@ use rayon::{
 use serde::{Deserialize, Serialize};
 use super::{
     consts::{N_OUT_INF, N_OUT_KND},
-    search::{find_convex_gate_ids3, permute_circuit},
+    search::{find_convex_gate_ids3, find_convex_gate_ids_max_spread, find_convex_gate_ids_max_spread_overall, permute_circuit},
 };
 use crate::{
     circuit::{
@@ -219,7 +219,7 @@ impl LocalMixingJob {
                 knd_steps += 1;
                 if knd_steps % EPOCH_SIZE == 0 {
                     self.circuit
-                    .save_as_json(format!("{}/save.json", self.dir_path));
+                    .save_as_json(format!("{}/save-{}-kneading.json", self.dir_path, knd_steps));
 
                 #[cfg(feature = "trace")]
                 {
@@ -375,7 +375,7 @@ impl LocalMixingJob {
                 epoch_steps = 0;
 
                 self.circuit
-                    .save_as_json(format!("{}/save.json", self.dir_path));
+                    .save_as_json(format!("{}/save-{}-kneading.json", self.dir_path, knd_steps));
 
                 #[cfg(feature = "trace")]
                 {
@@ -502,8 +502,17 @@ fn run_step<const N_OUT: usize, const N_IN: usize, G: Growable + ?Sized, R: Send
     #[cfg(feature = "trace")]
     let start_time = Instant::now();
 
+    #[cfg(feature = "search-1")]
     let (selected_gate_idx, _n_search_attempts) =
         find_convex_gate_ids3(N_OUT, 9, circuit_num_wires, circuit_gates.as_slice_ref(), rng);
+
+    #[cfg(feature = "search-2")]
+    let (selected_gate_idx, _n_search_attempts) =
+        find_convex_gate_ids_max_spread(N_OUT, 9, circuit_num_wires, circuit_gates.as_slice_ref(), rng);
+
+    #[cfg(feature = "search-3")]
+    let (selected_gate_idx, _n_search_attempts) =
+        find_convex_gate_ids_max_spread_overall(10, N_OUT, 9, circuit_num_wires, circuit_gates.as_slice_ref(), rng);
 
     let c_out = selected_gate_idx
         .iter()
@@ -556,11 +565,14 @@ fn run_step<const N_OUT: usize, const N_IN: usize, G: Growable + ?Sized, R: Send
         {
             let _elapsed = Instant::now() - start_time;
             let n_gates = circuit_gates.as_slice_ref().len();
+            let target_idx = c_out_start..c_out_start + N_OUT;
 
-            log::info!(target: "trace", "{}", format!("{}, step={}, SUCCESS: n_gates={}, n_circuits_sampled={}, n_search_attempts={}, replacement_time={:?}, total_time={:?}", 
+            log::info!(target: "trace", "{}", format!("{}, step={}, SUCCESS: n_gates={}, gate_ids={:?}, target_gate_ids={:?}, n_circuits_sampled={}, n_search_attempts={}, replacement_time={:?}, total_time={:?}", 
                 stage, 
                 _current_step, 
-                n_gates, 
+                n_gates,
+                selected_gate_idx,
+                target_idx,
                 _n_circuits_sampled,
                 _n_search_attempts, 
                 _replacement_time, 
@@ -593,7 +605,7 @@ fn run_step<const N_OUT: usize, const N_IN: usize, G: Growable + ?Sized, R: Send
         {
             let _elapsed = Instant::now() - start_time;
 
-            log::warn!(target: "trace", "{}, step={} FAIL, replacement_time={:?}", stage, _current_step, _replacement_time);
+            log::warn!(target: "trace", "{}, step={} FAIL, gate_ids={:?}, replacement_time={:?}", stage, _current_step, selected_gate_idx, _replacement_time);
 
             let search_fields = SearchTraceFields {
                 gate_indices: selected_gate_idx.to_vec(),

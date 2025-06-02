@@ -77,6 +77,63 @@ fn run() {
             let mut job = LocalMixingJob::load(&job_dir).expect("Failed to load job");
             job.run();
         }
+        "shuffle" => {
+            let job_dir = args.next().expect("Missing directory");
+            let ckt_path = job_dir.clone() + "/input.json";
+            let c = Circuit::load_from_json(ckt_path);
+            let mut rng = rand::rng();
+
+            let mut indegrees = vec![0; c.gates.len()];
+            for i in 0..c.gates.len() {
+                for j in i + 1..c.gates.len() {
+                    if c.gates[i].collides_with(&c.gates[j]) {
+                        indegrees[j] += 1;
+                    }
+                }
+            }
+            println!("indegrees computed");
+
+            let mut out: Vec<Gate> = Vec::with_capacity(c.gates.len());
+            let mut available: Vec<usize> = (0..c.gates.len()).collect();
+
+            while available.len() > 0 {
+                println!("gates left to insert: {}", available.len());
+                // Find all available gates with indegree 0
+                let zero_indegree: Vec<usize> = available
+                    .iter()
+                    .cloned()
+                    .filter(|&idx| indegrees[idx] == 0)
+                    .collect();
+
+                assert!(
+                    !zero_indegree.is_empty(),
+                    "No available gate with indegree 0, possible cycle"
+                );
+
+                // Pick a random gate from zero_indegree
+                let pick_idx = rng.random_range(0..zero_indegree.len());
+                let gate_idx = zero_indegree[pick_idx];
+
+                // Push the gate to output
+                out.push(c.gates[gate_idx].clone());
+
+                // Remove the gate from available
+                available.retain(|&x| x != gate_idx);
+
+                // Decrement indegrees for gates that collide with this gate and are still available
+                for &other_idx in &available {
+                    if c.gates[gate_idx].collides_with(&c.gates[other_idx]) {
+                        indegrees[other_idx] -= 1;
+                    }
+                }
+            }
+
+            let target = Circuit {
+                num_wires: c.num_wires,
+                gates: out,
+            };
+            target.save_as_json(job_dir + "/target.json");
+        }
         "search-test" => {
             let test_dir = args.next().expect("Missing test directory");
             test_local_mixing_search(&test_dir);
@@ -266,44 +323,6 @@ fn run_distinguisher(
 
     let circuit_one_len = circuit_one.gates.len();
     let circuit_two_len = circuit_two.gates.len();
-
-    // let mut results = HashMap::new();
-
-    // for i1 in 0..circuit_one_len + 1 {
-    //     for i2 in 0..circuit_two_len + 1 {
-    //         results.insert((i1, i2), 0 as f64);
-    //     }
-    // }
-
-    // (0..num_inputs)
-    //     .map(|i| {
-    //         println!("Iteration {}/{}", i, num_inputs);
-    //         (0..circuit_one.num_wires)
-    //             .map(|_| rng.random_bool(0.5))
-    //             .collect::<Vec<bool>>()
-    //     })
-    //     .for_each(|input| {
-    //         let evolution_one = circuit_one.evaluate_evolution(&input);
-    //         let evolution_two = circuit_two.evaluate_evolution(&input);
-
-    //         for i1 in 0..circuit_one_len + 1 {
-    //             for i2 in 0..circuit_two_len + 1 {
-    //                 let hamming_dist = evolution_one[i1]
-    //                     .iter()
-    //                     .zip(evolution_two[i2].iter())
-    //                     .filter(|(&b1, &b2)| b1 != b2)
-    //                     .count();
-    //                 let overlap = (2 * hamming_dist) as f64 / circuit_one.num_wires as f64 - 1.0;
-    //                 let abs_overlap = overlap.abs();
-    //                 results.entry((i1, i2)).and_modify(|o| *o += abs_overlap);
-    //             }
-    //         }
-    //     });
-
-    // let results_as_vector: Vec<[f64; 3]> = results
-    //     .into_iter()
-    //     .map(|((i1, i2), value)| [i1 as f64, i2 as f64, value / num_inputs as f64])
-    //     .collect();
 
     let mut rng = rand::rng();
     let inputs: Vec<Vec<bool>> = (0..num_inputs)
