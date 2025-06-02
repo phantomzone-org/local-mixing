@@ -12,11 +12,10 @@ BASE_DIR=".experiments/test-$CMD_ARG/$curr_date_time"
 mkdir -p $BASE_DIR
 cp $SCRIPT_DIR/test-$CMD_ARG-config.json $BASE_DIR/config.json
 
-FEATURES="trace,search-3"
 
-cargo run --release --features="$FEATURES" local-mixing $BASE_DIR
-cargo run --release --features="$FEATURES" distinguisher $BASE_DIR/input.json $BASE_DIR/inflationary.json 100 $BASE_DIR/data-inf.json
-cargo run --release --features="$FEATURES" distinguisher $BASE_DIR/input.json $BASE_DIR/target.json 100 $BASE_DIR/data-knd.json
+cargo run --release --features="trace" local-mixing $BASE_DIR
+cargo run --release --features="trace" distinguisher $BASE_DIR/input.json $BASE_DIR/inflationary.json 100 $BASE_DIR/data-inf.json
+cargo run --release --features="trace" distinguisher $BASE_DIR/input.json $BASE_DIR/target.json 100 $BASE_DIR/data-knd.json
 
 cd plot
 source venv/bin/Activate

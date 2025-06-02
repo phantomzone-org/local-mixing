@@ -502,17 +502,14 @@ fn run_step<const N_OUT: usize, const N_IN: usize, G: Growable + ?Sized, R: Send
     #[cfg(feature = "trace")]
     let start_time = Instant::now();
 
-    #[cfg(feature = "search-1")]
-    let (selected_gate_idx, _n_search_attempts) =
-        find_convex_gate_ids3(N_OUT, 9, circuit_num_wires, circuit_gates.as_slice_ref(), rng);
+    // let (selected_gate_idx, _n_search_attempts) =
+    //     find_convex_gate_ids3(N_OUT, 16, circuit_num_wires, circuit_gates.as_slice_ref(), rng);
 
-    #[cfg(feature = "search-2")]
-    let (selected_gate_idx, _n_search_attempts) =
-        find_convex_gate_ids_max_spread(N_OUT, 9, circuit_num_wires, circuit_gates.as_slice_ref(), rng);
+    // let (selected_gate_idx, _n_search_attempts) =
+    //     find_convex_gate_ids_max_spread(N_OUT, 16, circuit_num_wires, circuit_gates.as_slice_ref(), rng);
 
-    #[cfg(feature = "search-3")]
     let (selected_gate_idx, _n_search_attempts) =
-        find_convex_gate_ids_max_spread_overall(10, N_OUT, 9, circuit_num_wires, circuit_gates.as_slice_ref(), rng);
+        find_convex_gate_ids_max_spread_overall(10, N_OUT, 16, circuit_num_wires, circuit_gates.as_slice_ref(), rng);
 
     let c_out = selected_gate_idx
         .iter()
