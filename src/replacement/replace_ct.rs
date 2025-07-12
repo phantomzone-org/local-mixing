@@ -1,4 +1,4 @@
-use crate::circuit::analysis::{projection_circuit, truth_table};
+use crate::circuit::analysis::{num_distinct_wires, projection_circuit, truth_table};
 use crate::circuit::cf::GateLibrary;
 use crate::circuit::circuit::{circuit_min_generation, correct_controls, evaluate_usize};
 use crate::circuit::Gate;
@@ -16,6 +16,7 @@ pub fn find_replacement_with_ct<R: Rng>(
     max_circuit_samples: usize,
     ct: &CompressionTable,
     output_connected: bool,
+    strictly_more_wires: bool,
     rng: &mut R,
 ) -> Option<(Vec<Gate>, usize)> {
     let (proj_circuit, proj_map) = projection_circuit(circuit);
@@ -128,6 +129,12 @@ pub fn find_replacement_with_ct<R: Rng>(
             continue 'sample_circuit;
         }
 
+        if strictly_more_wires
+            && num_distinct_wires(&output_circuit) <= num_distinct_wires(&circuit)
+        {
+            continue 'sample_circuit;
+        }
+
         if output_circuit.len() == circuit.len()
             && output_circuit.iter().all(|gate| {
                 circuit
@@ -216,7 +223,8 @@ mod test {
             let ckt_one =
                 Circuit::random_with_cf(wires, gates, GateLibrary::TwoBit, &mut rng).gates;
             let s = Instant::now();
-            match find_replacement_with_ct(&ckt_one, wires, gates, 100, &ct, false, &mut rng) {
+            match find_replacement_with_ct(&ckt_one, wires, gates, 100, &ct, false, false, &mut rng)
+            {
                 Some((r, samples)) => {
                     let d = Instant::now() - s;
                     println!("Iteration {}: SUCCESS. Time = {:?}", i, d);

@@ -4,9 +4,11 @@ use crate::{
         Circuit, Gate,
     },
     compression::ct::CompressionTable,
-    local_mixing::search::{find_convex_gate_ids3, permute_circuit, random_convex},
+    local_mixing::search::{find_convex_gate_ids3, permute_circuit},
+    replacement::find_replacement_random_sample,
 };
-use rand::Rng;
+use rand::{Rng, SeedableRng};
+use rand_chacha::ChaCha8Rng;
 use std::path::Path;
 
 pub fn compress(circuit_path: impl AsRef<Path>) {
@@ -37,8 +39,8 @@ pub fn compress(circuit_path: impl AsRef<Path>) {
 
     println!("ct loaded");
 
-    // simplify_identity_pairs(&mut circuit.gates);
-    // simplify_cxity_one_pairs(&mut circuit.gates);
+    simplify_identity_pairs(&mut circuit.gates);
+    simplify_cxity_one_pairs(&mut circuit.gates);
     assert!(check_ckt_equiv_inout_map(&inout, &circuit.gates));
 
     circuit.save_as_json(format!(
@@ -49,7 +51,7 @@ pub fn compress(circuit_path: impl AsRef<Path>) {
     dbg!(circuit.gates.len());
 
     loop {
-        for _ in 0..100000 {
+        for _ in 0..10000 {
             ct_compress_active_wires_single_step(
                 circuit.num_wires,
                 &mut circuit.gates,
@@ -57,8 +59,6 @@ pub fn compress(circuit_path: impl AsRef<Path>) {
                 &mut rng,
             );
         }
-        // simplify_identity_pairs(&mut circuit.gates);
-        // simplify_cxity_one_pairs(&mut circuit.gates);
         assert!(check_ckt_equiv_inout_map(&inout, &circuit.gates));
         circuit.save_as_json(format!(
             "{}/latest.{}.json",
@@ -98,7 +98,7 @@ fn ct_compress_single_step<R: Rng>(
     ct: &CompressionTable,
     rng: &mut R,
 ) {
-    let set_size = rng.random_range(2..=10);
+    let set_size = rng.random_range(2..=6);
     let (selected_gate_idx, _) = find_convex_gate_ids3(
         set_size,
         ct.max_wires_supported,
@@ -126,29 +126,31 @@ fn ct_compress_single_step<R: Rng>(
 fn ct_compress_active_wires_single_step<R: Rng>(
     circuit_num_wires: usize,
     circuit_gates: &mut Vec<Gate>,
-    ct: &CompressionTable,
+    _ct: &CompressionTable,
     rng: &mut R,
 ) {
-    let set_size = rng.random_range(2..=10);
-    let max_wires = rng.random_range(set_size..set_size + 2);
-    // let wc = rng.random_bool(0.5);
-    let wc = true;
-    let (selected_gate_idx, _) = match wc {
-        true => find_convex_gate_ids3(
-            set_size,
-            ct.max_wires_supported,
-            circuit_num_wires,
-            &circuit_gates,
-            rng,
-        ),
-        false => random_convex(set_size, max_wires, circuit_num_wires, &circuit_gates, rng),
-    };
+    let mut new_rng = ChaCha8Rng::from_os_rng();
+    let set_size = rng.random_range(4..=10);
+    let repl_size = rng.random_range(1..4);
+    let (selected_gate_idx, _) =
+        find_convex_gate_ids3(set_size, 5, circuit_num_wires, &circuit_gates, rng);
+
     let selected_gates: Vec<_> = selected_gate_idx
         .iter()
         .map(|&i| circuit_gates[i])
         .collect();
 
-    if let Some(replacement) = ct.compress_with_optimal_relabel(&selected_gates) {
+    if let Some((replacement, _)) = find_replacement_random_sample(
+        &selected_gates,
+        circuit_num_wires,
+        repl_size,
+        1000000,
+        crate::circuit::cf::GateLibrary::NoIdentity,
+        false,
+        &mut new_rng,
+    ) {
+        dbg!(&selected_gates);
+        dbg!(&replacement);
         let repl_len = replacement.len();
         let start = permute_circuit(circuit_num_wires, circuit_gates, &selected_gate_idx);
         circuit_gates.splice(start..start + set_size, replacement);

@@ -1,3 +1,4 @@
+pub mod inflationary;
 pub mod replace_ct;
 
 use crate::circuit::{
@@ -237,10 +238,25 @@ pub fn sample_random_circuit<R: Send + Sync + RngCore + SeedableRng>(
 
 #[cfg(test)]
 mod tests {
-    use rand::SeedableRng;
-    use rand_chacha::ChaCha8Rng;
+    use std::collections::HashMap;
 
-    use crate::circuit::{cf::GateLibrary, circuit::par_check_equiv_probabilistic, Circuit};
+    use rand::{seq::IndexedRandom, SeedableRng};
+    use rand_chacha::ChaCha8Rng;
+    use serde::{Deserialize, Serialize};
+
+    use crate::{
+        circuit::{
+            analysis::num_distinct_wires,
+            cf::GateLibrary,
+            circuit::{check_equiv_probabilistic, par_check_equiv_probabilistic, to_string},
+            Circuit, Gate,
+        },
+        compression::ct::CompressionTable,
+        replacement::{
+            inflationary::find_replacement_inf_common_target, is_weakly_connected,
+            replace_ct::find_replacement_with_ct,
+        },
+    };
 
     use super::find_replacement_random_sample;
 
@@ -272,5 +288,234 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn test_replacement_properties() {
+        // Script config
+        let n_input_circuits = 10;
+        let n_replacement_attempts_per_input = 10;
+        let n_attempts_to_generate_input = 100000;
+
+        let circuit_num_wires = 64;
+        let gate_library = GateLibrary::TwoBit;
+
+        // Input circuit config
+        let input_num_gates = 2;
+        let input_min_wires = 3;
+        let input_max_wires = 6;
+        let input_wires_save = Some(vec![[2, 0, 1], [2, 3, 4]]);
+        let input_wc = false;
+
+        // Output circuit config
+        let output_num_gates = 4;
+        let output_min_wires = 3;
+        let output_max_wires = 5;
+        let enforce_output_wc = false;
+
+        // Replacement strategy config
+        let random_sample_max_circuit_samples = 1000000;
+
+        let ct_sample_max_circuit_samples = 20;
+        let ct_max_gates = 3;
+        let ct_max_wires = 9;
+        let ct_save: Option<String> = Some(String::from("bin/table-twobit.db"));
+        let mut ct = CompressionTable::empty();
+
+        #[derive(PartialEq)]
+        enum ReplacementFn {
+            RandomSample,
+            CTSample,
+        }
+        let replacement_fn = ReplacementFn::RandomSample;
+
+        let mut rng = ChaCha8Rng::from_os_rng();
+
+        let input_samples: Vec<Vec<Gate>>;
+        match input_wires_save {
+            Some(wires_template) => {
+                println!("Generating according to template");
+                input_samples = (0..n_input_circuits)
+                    .map(|_| {
+                        wires_template
+                            .iter()
+                            .map(|&wires| Gate {
+                                wires,
+                                control_func: gate_library.cfs().choose(&mut rng).copied().unwrap(),
+                                generation: 0,
+                            })
+                            .collect::<Vec<Gate>>()
+                    })
+                    .collect();
+            }
+            None => {
+                println!("Generating {} input circuits: gates = {}, {} <= wires <= {}, gate library = {:?}, wc = {}", n_input_circuits, input_num_gates, input_min_wires, input_max_wires, gate_library, input_wc);
+                input_samples = (0..n_input_circuits)
+                    .map(|_| {
+                        for _ in 0..n_attempts_to_generate_input {
+                            let circuit = Circuit::random_with_cf(
+                                input_max_wires,
+                                input_num_gates,
+                                gate_library,
+                                &mut rng,
+                            )
+                            .gates;
+
+                            if num_distinct_wires(&circuit) < input_min_wires {
+                                continue;
+                            }
+
+                            if input_wc && !is_weakly_connected(&circuit) {
+                                continue;
+                            }
+
+                            return circuit;
+                        }
+
+                        panic!(
+                            "Failed to sample input in time. n_attempts allowed: {}",
+                            n_attempts_to_generate_input
+                        );
+                    })
+                    .collect();
+            }
+        }
+
+        if replacement_fn == ReplacementFn::CTSample {
+            if let Some(path) = ct_save {
+                ct = CompressionTable::from_file(&path);
+                assert_eq!(ct.max_gates_supported, ct_max_gates);
+                assert_eq!(ct.max_wires_supported, ct_max_wires);
+                assert_eq!(ct.gate_library, gate_library);
+            } else {
+                ct = CompressionTable::new(ct_max_gates, ct_max_wires, gate_library);
+            }
+        }
+
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+        enum ReplacementError {
+            ReturnFail,
+            NotFuncEquiv,
+            TooFewWires,
+            TooManyWires,
+            FailedWeakConnectedCheck,
+        }
+
+        #[derive(Serialize, Deserialize)]
+        struct ResultType {
+            input: Vec<Gate>,
+            outputs: Vec<Result<Vec<Gate>, ReplacementError>>,
+        }
+
+        println!("Replacement:");
+        let _results: Vec<ResultType> = (0..n_input_circuits)
+            .map(|i| {
+                let mut results = vec![];
+                for _ in 0..n_replacement_attempts_per_input {
+                    let res = match replacement_fn {
+                        ReplacementFn::CTSample => find_replacement_with_ct(
+                            &input_samples[i],
+                            circuit_num_wires,
+                            output_num_gates,
+                            ct_sample_max_circuit_samples,
+                            &ct,
+                            enforce_output_wc,
+                            false,
+                            &mut rng,
+                        ),
+                        ReplacementFn::RandomSample => find_replacement_inf_common_target(
+                            &input_samples[i],
+                            output_num_gates,
+                            random_sample_max_circuit_samples,
+                            gate_library,
+                            &mut rng,
+                        ),
+                    };
+
+                    let output = match res {
+                        Some((out, _)) => out,
+                        None => {
+                            results.push(Err(ReplacementError::ReturnFail));
+                            continue;
+                        }
+                    };
+
+                    if check_equiv_probabilistic(circuit_num_wires, &input_samples[i], &output, 1000, &mut rng).is_err() {
+                        results.push(Err(ReplacementError::NotFuncEquiv));
+                        continue;
+                    }
+
+                    let wires = num_distinct_wires(&output);
+                    if wires < output_min_wires {
+                        results.push(Err(ReplacementError::TooFewWires));
+                        continue;
+                    } else if wires > output_max_wires {
+                        results.push(Err(ReplacementError::TooManyWires));
+                        continue;
+                    } else if enforce_output_wc && !is_weakly_connected(&output) {
+                        results.push(Err(ReplacementError::FailedWeakConnectedCheck));
+                        continue;
+                    }
+
+                    results.push(Ok(output));
+                }
+
+                let mut num_success = 0;
+                let mut num_success_wc = 0;
+                let mut mean_num_output_wires = 0.0;
+                let mut error_freq: HashMap<ReplacementError, i32> = HashMap::new();
+                results.iter().for_each(|status| {
+                    match status {
+                        Ok(output) => {
+                            num_success += 1;
+                            if is_weakly_connected(&output) {
+                                num_success_wc += 1;
+                            }
+                            mean_num_output_wires += num_distinct_wires(&output) as f64;
+                        }
+                        Err(e) => {
+                            error_freq
+                                .entry(*e)
+                                .and_modify(|freq| *freq += 1)
+                                .or_insert(1);
+                        }
+                    };
+                });
+
+                mean_num_output_wires /= num_success as f64;
+
+                println!("Iteration {} summary:", i);
+                println!(
+                    "Input has {} gates, {} wires, is_wc = {}",
+                    input_num_gates,
+                    num_distinct_wires(&input_samples[i]),
+                    input_wc
+                );
+                println!("input = \n{}", to_string(&input_samples[i]));
+                println!(
+                    "Replacements: {} failed, {} succeeded. Mean number of output wires = {}. {} successes are wc.",
+                    n_replacement_attempts_per_input - num_success,
+                    num_success,
+                    mean_num_output_wires,
+                    num_success_wc,
+                );
+                println!("Errors: {:?}", error_freq);
+                let mut unique_outputs = std::collections::HashSet::new();
+                for status in &results {
+                    if let Ok(output) = status {
+                        unique_outputs.insert(to_string(output));
+                    }
+                }
+                println!("All unique successful outputs:");
+                for output_str in &unique_outputs {
+                    println!("{}\n", output_str);
+                }
+
+                ResultType {
+                    input: input_samples[i].clone(),
+                    outputs: results,
+                }
+            })
+            .collect();
     }
 }

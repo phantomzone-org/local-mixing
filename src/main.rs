@@ -2,7 +2,7 @@ use local_mixing::{
     circuit::{
         analysis::num_distinct_wires,
         cf::{GateControlFunc, GateLibrary},
-        circuit::{par_check_equiv_probabilistic, Circuit},
+        circuit::{check_equiv_probabilistic, par_check_equiv_probabilistic, Circuit},
         Gate,
     },
     compression::{
@@ -10,21 +10,22 @@ use local_mixing::{
         IncompressibleCircuitsTable,
     },
     local_mixing::{
-        classify_replacements::{classify_fail, classify_success, SuccessCase},
+        classify_replacements::{classify_fail, classify_success},
+        search::{find_convex_gate_ids_max_spread_overall, permute_circuit},
         test_search::test_local_mixing_search,
         tracer::{ReplacementStatus, Tracer},
         LocalMixingJob,
     },
-    replacement::is_weakly_connected,
+    replacement::{find_replacement_random_sample, is_weakly_connected},
 };
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde_json::json;
+use std::collections::HashSet;
 use std::env::args;
 use std::fs::File;
 use std::io::Write;
-use std::{collections::HashSet, time::Instant};
+use std::time::Instant;
 
 fn main() {
     run();
@@ -72,6 +73,62 @@ fn run() {
             }
             None => random_inflated_block("".to_string()),
         },
+        "mix-identity" => {
+            let job_dir = args.next().expect("Missing job directory");
+            let input = Circuit::load_from_json(format!("{}/input.json", job_dir.clone()));
+            let mut circuit = input.clone();
+            let mut rng = ChaCha8Rng::from_os_rng();
+
+            for i in 0..100 {
+                println!("{}, {} gates", i, circuit.gates.len());
+                let splice_index = rng.random_range(0..circuit.gates.len());
+                let mut new_gates = circuit.gates[splice_index..].to_vec();
+                new_gates.extend(&circuit.gates[..splice_index]);
+                circuit.gates = new_gates;
+
+                for _ in 0..100 {
+                    let (selected_gate_idx, _) = find_convex_gate_ids_max_spread_overall(
+                        10,
+                        2,
+                        100,
+                        circuit.num_wires,
+                        &circuit.gates,
+                        &mut rng,
+                    );
+                    let repl_in: Vec<_> = selected_gate_idx
+                        .iter()
+                        .map(|&i| circuit.gates[i])
+                        .collect();
+                    if let Some((repl, _)) = find_replacement_random_sample(
+                        &repl_in,
+                        circuit.num_wires,
+                        4,
+                        1000000,
+                        GateLibrary::TwoBit,
+                        false,
+                        &mut rng,
+                    ) {
+                        let c_out_start = permute_circuit(
+                            circuit.num_wires,
+                            &mut circuit.gates,
+                            &selected_gate_idx,
+                        );
+                        circuit.gates.splice(c_out_start..c_out_start + 2, repl);
+                    }
+                }
+            }
+
+            assert!(check_equiv_probabilistic(
+                input.num_wires,
+                &input.gates,
+                &circuit.gates,
+                10000,
+                &mut rng
+            )
+            .is_ok());
+
+            circuit.save_as_json("output.json");
+        }
         "local-mixing" => {
             let job_dir = args.next().expect("Missing job directory");
             let mut job = LocalMixingJob::load(&job_dir).expect("Failed to load job");
@@ -304,6 +361,23 @@ fn run_stats(circuit_path: String) {
         let proportion = count as f32 / total_gates;
         println!("{}: {:.2}%", i, proportion * 100.0);
     }
+
+    println!("Bitline influence:");
+    let mut num_gates_touching_wires = vec![0; circuit.num_wires];
+    let mut num_targets_touching_wires = vec![0; circuit.num_wires];
+    let mut num_controls_touching_wires = vec![0; circuit.num_wires];
+    for g in circuit.gates {
+        num_gates_touching_wires[g.wires[0]] += 1;
+        num_targets_touching_wires[g.wires[0]] += 1;
+
+        num_gates_touching_wires[g.wires[1]] += 1;
+        num_controls_touching_wires[g.wires[1]] += 1;
+        num_gates_touching_wires[g.wires[2]] += 1;
+        num_controls_touching_wires[g.wires[2]] += 1;
+    }
+    dbg!(num_gates_touching_wires);
+    dbg!(num_targets_touching_wires);
+    dbg!(num_controls_touching_wires);
 }
 
 fn run_distinguisher(
@@ -325,60 +399,36 @@ fn run_distinguisher(
     let circuit_two_len = circuit_two.gates.len();
 
     let mut rng = rand::rng();
-    let inputs: Vec<Vec<bool>> = (0..num_inputs)
-        .map(|_| {
-            (0..circuit_one.num_wires)
-                .map(|_| rng.random_bool(0.5))
-                .collect()
-        })
-        .collect();
+    let num_wires = circuit_one.num_wires;
 
     let s = Instant::now();
-    let all_results: Vec<Vec<[f64; 3]>> = (0..num_inputs)
-        .into_par_iter()
-        .map(|i| {
-            println!("{}/{}", i, num_inputs);
-            let input = inputs[i].clone();
-
-            let evolution_one = circuit_one.evaluate_evolution(&input);
-            let evolution_two = circuit_two.evaluate_evolution(&input);
-
-            let iter_result: Vec<[f64; 3]> = (0..circuit_one_len + 1)
-                .map(|i1| {
-                    (0..circuit_two_len + 1)
-                        .map(|i2| {
-                            let hamming_dist = evolution_one[i1]
-                                .iter()
-                                .zip(evolution_two[i2].iter())
-                                .filter(|(&b1, &b2)| b1 != b2)
-                                .count();
-                            let overlap =
-                                (2 * hamming_dist) as f64 / circuit_one.num_wires as f64 - 1.0;
-                            let abs_overlap = overlap.abs();
-                            [i1 as f64, i2 as f64, abs_overlap]
-                        })
-                        .collect::<Vec<_>>()
-                })
-                .flatten()
-                .collect();
-            iter_result
-        })
-        .collect();
-
-    println!("average");
     let mut average =
         vec![[0 as f64, 0 as f64, 0.0]; (circuit_one_len + 1) * (circuit_two_len + 1)];
-    for i1 in 0..circuit_one_len + 1 {
-        for i2 in 0..circuit_two_len + 1 {
-            let index = i1 * (circuit_two_len + 1) + i2;
-            for i in 0..num_inputs {
-                average[index][2] += all_results[i][index][2];
+
+    for i in 0..num_inputs {
+        println!("{}/{}", i, num_inputs);
+        let input: Vec<bool> = (0..num_wires).map(|_| rng.random_bool(0.5)).collect();
+
+        let evolution_one = circuit_one.evaluate_evolution(&input);
+        let evolution_two = circuit_two.evaluate_evolution(&input);
+
+        for i1 in 0..=circuit_one_len {
+            for i2 in 0..=circuit_two_len {
+                let hamming_dist = evolution_one[i1]
+                    .iter()
+                    .zip(evolution_two[i2].iter())
+                    .filter(|(&b1, &b2)| b1 != b2)
+                    .count();
+                let overlap = (2 * hamming_dist) as f64 / num_wires as f64 - 1.0;
+                let abs_overlap = overlap.abs();
+                let index = i1 * (circuit_two_len + 1) + i2;
+                average[index][0] = i1 as f64;
+                average[index][1] = i2 as f64;
+                average[index][2] += abs_overlap / num_inputs as f64;
             }
-            average[index][0] = i1 as f64;
-            average[index][1] = i2 as f64;
-            average[index][2] /= num_inputs as f64;
         }
     }
+
     let d = Instant::now() - s;
     println!("time: {:?}", d);
 
@@ -396,6 +446,7 @@ fn analyze_replacements(repl_sample_path: String) {
     let trace_data: Tracer =
         serde_json::from_slice(&std::fs::read(repl_sample_path).unwrap()).unwrap();
 
+    // Kneading stage: separate and sort
     let mut success_cases = vec![];
     let mut fail_cases = vec![];
     trace_data
@@ -413,36 +464,94 @@ fn analyze_replacements(repl_sample_path: String) {
     success_cases.sort_by_key(|sample| sample.0);
     fail_cases.sort_by_key(|sample| sample.0);
 
-    for (i, inf_stage_replacement) in trace_data.inflationary_stage.iter().enumerate() {
-        match &inf_stage_replacement.replacement_fields.data {
+    // Inflationary stage: separate and sort
+    let mut inf_success_cases = vec![];
+    let mut inf_fail_cases = vec![];
+    trace_data
+        .inflationary_stage
+        .iter()
+        .for_each(|step| match &step.replacement_fields.data {
             ReplacementStatus::Success(input, output) => {
-                let input = Circuit {
-                    num_wires: 64,
-                    gates: input.iter().map(|&g| Gate::from(g)).collect(),
-                };
-                let output = Circuit {
-                    num_wires: 64,
-                    gates: output.iter().map(|&g| Gate::from(g)).collect(),
-                };
-
-                println!("Inflationary sample {}:", i);
-                println!(
-                    "input # distinct wires: {}",
-                    num_distinct_wires(&input.gates)
-                );
-                println!(
-                    "output # distinct wires: {}",
-                    num_distinct_wires(&output.gates)
-                );
-                println!("input:");
-                println!("{}\n", input.to_string());
-                println!("output:");
-                println!("{}\n", output.to_string());
+                inf_success_cases.push((step.current_step, input.clone(), output.clone()));
             }
-            ReplacementStatus::Fail(_) => todo!(),
-        }
+            ReplacementStatus::Fail(circuit) => {
+                inf_fail_cases.push((step.current_step, circuit.clone()));
+            }
+        });
+
+    inf_success_cases.sort_by_key(|sample| sample.0);
+    inf_fail_cases.sort_by_key(|sample| sample.0);
+
+    // Print inflationary successes
+    for (i, inf_stage_replacement) in inf_success_cases.iter().enumerate() {
+        let input = Circuit {
+            num_wires: 64,
+            gates: inf_stage_replacement
+                .1
+                .iter()
+                .map(|&g| Gate::from(g))
+                .collect(),
+        };
+        let output = Circuit {
+            num_wires: 64,
+            gates: inf_stage_replacement
+                .2
+                .iter()
+                .map(|&g| Gate::from(g))
+                .collect(),
+        };
+
+        // Get # distinct targets
+        let mut target_wires = HashSet::new();
+        input.gates.iter().for_each(|g| {
+            target_wires.insert(g.wires[0]);
+        });
+
+        let input_wc = is_weakly_connected(&input.gates);
+        let output_wc = is_weakly_connected(&output.gates);
+
+        println!("Inflationary sample {}:", i);
+        println!("# target wires: {}", target_wires.len());
+        println!("input weakly-connected: {}", input_wc);
+        println!("output weakly-connected: {}", output_wc);
+        println!(
+            "input # distinct wires: {}",
+            num_distinct_wires(&input.gates)
+        );
+        println!(
+            "output # distinct wires: {}",
+            num_distinct_wires(&output.gates)
+        );
+        println!("input:");
+        println!("{}\n", input.to_string());
+        println!("output:");
+        println!("{}\n", output.to_string());
     }
 
+    // Print inflationary fails
+    for (i, inf_stage_fails) in inf_fail_cases.iter().enumerate() {
+        let circuit = &inf_stage_fails.1;
+        let input = Circuit {
+            num_wires: 64,
+            gates: circuit.iter().map(|&g| Gate::from(g)).collect(),
+        };
+
+        // Get # distinct targets
+        let mut target_wires = HashSet::new();
+        input.gates.iter().for_each(|g| {
+            target_wires.insert(g.wires[0]);
+        });
+
+        let input_wc = is_weakly_connected(&input.gates);
+
+        println!("Failed inflationary sample {}:", i);
+        println!("# target wires: {}", target_wires.len());
+        println!("input weakly-connected: {}", input_wc);
+        println!("input:");
+        println!("{}\n", input.to_string());
+    }
+
+    // Print kneading successes
     for (i, knd_stage_replacement) in success_cases.iter().enumerate() {
         let input = &knd_stage_replacement.1;
         let output = &knd_stage_replacement.2;
@@ -477,6 +586,7 @@ fn analyze_replacements(repl_sample_path: String) {
         println!("{}\n", output.to_string());
     }
 
+    // Print kneading fails
     for (i, knd_stage_fails) in fail_cases.iter().enumerate() {
         let circuit = &knd_stage_fails.1;
         let classification = classify_fail(circuit);
@@ -499,28 +609,5 @@ fn analyze_replacements(repl_sample_path: String) {
         println!("type: {:?}", classification);
         println!("input:");
         println!("{}\n", input.to_string());
-    }
-
-    println!("Success type frequencies over time:");
-    let mut success_freq = vec![0; SuccessCase::COUNT];
-    for (i, knd_stage_replacement) in success_cases.iter().enumerate() {
-        let input = &knd_stage_replacement.1;
-        let output = &knd_stage_replacement.2;
-        let classification = classify_success(input, output);
-
-        if classification.contains(&SuccessCase::IdentitySubcircuits) {
-            success_freq[0] += 1;
-        }
-        if classification.contains(&SuccessCase::NegatedCFs) {
-            success_freq[1] += 1;
-        }
-        if classification.contains(&SuccessCase::Other) {
-            success_freq[2] += 1;
-        }
-
-        println!(
-            "sample/snapshot {}: IdentitySubcircuits: {}, NegatedCFs: {}, Other: {}",
-            i, success_freq[0], success_freq[1], success_freq[2]
-        );
     }
 }

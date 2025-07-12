@@ -74,6 +74,11 @@ pub fn circuit_min_generation(gate_slice: &[Gate]) -> usize {
 }
 
 #[inline]
+pub fn circuit_max_generation(gate_slice: &[Gate]) -> usize {
+    gate_slice.iter().map(|g| g.generation).max().unwrap_or(0)
+}
+
+#[inline]
 pub fn correct_controls(circuit: &mut [Gate]) {
     circuit
         .iter_mut()
@@ -126,6 +131,112 @@ impl Circuit {
         Self { num_wires, gates }
     }
 
+    pub fn get_level_data(&self) -> Vec<usize> {
+        let mut levels = vec![0];
+        for i in 1..self.gates.len() {
+            let mut found_collision = false;
+            let mut max_level_colliding = 0;
+            for j in 0..i {
+                if self.gates[j].collides_with(&self.gates[i]) && levels[j] >= max_level_colliding {
+                    found_collision = true;
+                    max_level_colliding = levels[j];
+                }
+            }
+
+            if found_collision {
+                levels.push(max_level_colliding + 1);
+            } else {
+                levels.push(0);
+            }
+        }
+
+        levels
+    }
+
+    pub fn random_reordering<R: Rng>(&self, rng: &mut R) -> Self {
+        let mut in_degrees = vec![];
+        for i in 0..self.gates.len() {
+            in_degrees.push(0);
+
+            for j in 0..i {
+                if self.gates[j].collides_with(&self.gates[i]) {
+                    in_degrees[i] += 1;
+                }
+            }
+        }
+
+        let mut placed = vec![false; self.gates.len()];
+
+        let mut ordered = vec![];
+        while ordered.len() < self.gates.len() {
+            let available: Vec<_> = (0..self.gates.len())
+                .filter(|&i| in_degrees[i] == 0 && !placed[i])
+                .collect();
+            let next = available.choose(rng).copied().unwrap();
+            ordered.push(self.gates[next]);
+            placed[next] = true;
+            for i in next + 1..self.gates.len() {
+                if self.gates[next].collides_with(&self.gates[i]) {
+                    in_degrees[i] -= 1;
+                }
+            }
+        }
+
+        Circuit {
+            num_wires: self.num_wires,
+            gates: ordered,
+        }
+    }
+
+    pub fn canonicalized_ordering(&self) -> Self {
+        let mut in_degrees = vec![];
+        for i in 0..self.gates.len() {
+            in_degrees.push(0);
+
+            for j in 0..i {
+                if self.gates[j].collides_with(&self.gates[i]) {
+                    in_degrees[i] += 1;
+                }
+            }
+        }
+
+        let mut placed = vec![false; self.gates.len()];
+
+        let mut ordered = vec![];
+        while ordered.len() < self.gates.len() {
+            let available: Vec<_> = (0..self.gates.len())
+                .filter(|&i| in_degrees[i] == 0 && !placed[i])
+                .collect();
+
+            let mut min_in_available = 0;
+            for i in 1..available.len() {
+                let a_gate = &self.gates[available[i]];
+                let min_gate = &self.gates[available[min_in_available]];
+                if a_gate.wires < min_gate.wires
+                    || (a_gate.wires == min_gate.wires
+                        && a_gate.control_func < min_gate.control_func)
+                {
+                    min_in_available = i;
+                }
+            }
+
+            let next = available[min_in_available];
+
+            ordered.push(self.gates[next]);
+            placed[next] = true;
+            for i in next + 1..self.gates.len() {
+                if self.gates[next].collides_with(&self.gates[i]) {
+                    in_degrees[i] -= 1;
+                }
+            }
+        }
+
+        Circuit {
+            num_wires: self.num_wires,
+            gates: ordered,
+        }
+    }
+
     pub fn load_from_json(path: impl AsRef<Path>) -> Self {
         let data: CircuitData = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
         Self::from(data)
@@ -134,6 +245,10 @@ impl Circuit {
     pub fn save_as_json(&self, path: impl AsRef<Path>) {
         let data: CircuitData = CircuitData::from(self.clone());
         std::fs::write(path, serde_json::to_vec_pretty(&data).unwrap()).unwrap();
+    }
+
+    pub fn save_as_json_original_fmt(&self, path: impl AsRef<Path>) {
+        std::fs::write(path, serde_json::to_vec_pretty(&self).unwrap()).unwrap();
     }
 
     pub fn reset_generations(&mut self) {

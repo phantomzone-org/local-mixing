@@ -1,4 +1,8 @@
-use std::collections::HashMap;
+pub mod compress;
+pub mod ct;
+pub mod cxity_table;
+
+use std::{collections::HashMap, time::Instant};
 
 use ct::CompressionTable;
 use rand::{
@@ -11,14 +15,11 @@ use crate::{
     circuit::{
         analysis::{inverse_truth_table, truth_table},
         cf::GateLibrary,
-        circuit::{evaluate_usize, GateData},
+        circuit::{check_equiv_probabilistic, evaluate_usize, to_string, GateData},
         Gate,
     },
     local_mixing::search::is_convex,
 };
-
-pub mod compress;
-pub mod ct;
 
 fn compress_truth_table(tt: &Vec<usize>) -> Vec<u8> {
     bincode::serialize(tt).unwrap()
@@ -32,6 +33,140 @@ fn compress_circuit(ckt: &Vec<Gate>) -> Vec<u8> {
 fn uncompress_circuit(ckt_bytes: &Vec<u8>) -> Vec<Gate> {
     let data: Vec<GateData> = bincode::deserialize(&ckt_bytes).unwrap();
     data.iter().map(|&g| Gate::from(g)).collect()
+}
+
+pub fn script() {
+    let num_bitlines = 5;
+    let num_gates = 3;
+    let gate_library = GateLibrary::TwoBit;
+    let tt_size = 1 << num_bitlines;
+
+    let mut result: HashMap<Vec<usize>, Vec<Vec<Gate>>> = HashMap::new();
+
+    let mut circuit_set: Vec<(Vec<Gate>, Vec<usize>)> = vec![(vec![], (0..tt_size).collect())];
+
+    for curr_gate_size in 1..=num_gates {
+        println!("Processing ckts of size {}", curr_gate_size);
+        let mut new_circuit_set: Vec<(Vec<Gate>, Vec<usize>)> = vec![];
+
+        for (ckt, curr_tt) in &circuit_set {
+            for t in 0..num_bitlines {
+                for c1 in 0..num_bitlines {
+                    if t != c1 {
+                        for c2 in c1 + 1..num_bitlines {
+                            if t != c2 {
+                                for cf in gate_library.cfs() {
+                                    let next_gate = Gate {
+                                        wires: [t, c1, c2],
+                                        control_func: cf,
+                                        generation: 0,
+                                    };
+                                    let next_tt: Vec<usize> = curr_tt
+                                        .iter()
+                                        .map(|&x| next_gate.evaluate_usize(x))
+                                        .collect();
+                                    let mut new_ckt = ckt.clone();
+                                    new_ckt.push(next_gate);
+                                    new_circuit_set.push((new_ckt, next_tt));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        circuit_set = new_circuit_set;
+        println!("{} ckts of size {}", circuit_set.len(), curr_gate_size);
+    }
+
+    for (ckt, tt) in circuit_set {
+        result.entry(tt).or_insert_with(Vec::new).push(ckt);
+    }
+
+    let save_path = "tmp-result-table.db";
+    println!("Done. Saving to {}", save_path);
+    let data = bincode::serialize(&result).expect("Failed to serialize result table");
+    std::fs::write(save_path, data).expect("Failed to write result table");
+}
+
+pub fn check_script() {
+    let save_path = "tmp-result-table.db";
+    let data = std::fs::read(save_path).expect("Failed to read result table");
+    let result: HashMap<Vec<usize>, Vec<Vec<Gate>>> =
+        bincode::deserialize(&data).expect("Failed to deserialize result table");
+    println!("loaded result");
+
+    let num_bitlines = 5;
+    let tt_size = 1 << num_bitlines;
+    let gate_library = GateLibrary::TwoBit;
+    let valid_bitlines = {
+        let mut bitlines = vec![];
+        for t in 0..num_bitlines {
+            for c1 in 0..num_bitlines {
+                if t != c1 {
+                    for c2 in c1 + 1..num_bitlines {
+                        if t != c2 {
+                            bitlines.push([t, c1, c2]);
+                        }
+                    }
+                }
+            }
+        }
+        bitlines
+    };
+    let mut rng = rand::rng();
+
+    let input = [
+        Gate {
+            wires: [0, 1, 2],
+            control_func: gate_library.cfs().choose(&mut rng).copied().unwrap(),
+            generation: 0,
+        },
+        Gate {
+            wires: [1, 2, 3],
+            control_func: gate_library.cfs().choose(&mut rng).copied().unwrap(),
+            generation: 0,
+        },
+    ];
+
+    let mut num_samples = 0;
+    let s = Instant::now();
+    let output = loop {
+        num_samples += 1;
+        let mut lhs = vec![];
+        for _ in 0..5 {
+            lhs.push(Gate {
+                wires: valid_bitlines.choose(&mut rng).copied().unwrap(),
+                control_func: gate_library.cfs().choose(&mut rng).copied().unwrap(),
+                generation: 0,
+            });
+        }
+
+        let mut tt: Vec<usize> = (0..tt_size).collect();
+        tt.iter_mut().for_each(|x| {
+            *x = evaluate_usize(&lhs, *x);
+            *x = evaluate_usize(&input, *x);
+        });
+        if let Some(rhs_candidates) = result.get(&tt) {
+            let rhs = rhs_candidates.choose(&mut rng).cloned().unwrap();
+            lhs.reverse();
+            lhs.extend(rhs);
+            break lhs;
+        }
+    };
+    let d = Instant::now() - s;
+
+    println!("input:\n{}", to_string(&input));
+    println!("output:\n{}", to_string(&output));
+    println!("num samples: {}", num_samples);
+    println!("time: {:?}", d);
+
+    assert!(
+        check_equiv_probabilistic(num_bitlines, &input.to_vec(), &output, 10000, &mut rng).is_ok()
+    );
+
+    println!("functionally equiv");
 }
 
 #[derive(Serialize, Deserialize, PartialEq)]

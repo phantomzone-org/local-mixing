@@ -36,154 +36,6 @@ impl PathConnectedWires {
     }
 }
 
-pub fn random_convex<R: RngCore>(
-    set_size: usize,
-    max_wires: usize,
-    circuit_num_wires: usize,
-    circuit_gates: &[Gate],
-    rng: &mut R,
-) -> (Vec<usize>, usize) {
-    let mut search_attempts = 0;
-    loop {
-        search_attempts += 1;
-        let mut selected_gate_idx = Vec::with_capacity(set_size);
-
-        // First gate
-        let first_gate_idx = rng.random_range(0..circuit_gates.len());
-        let mut selected_distinct = PathConnectedWires::new(circuit_num_wires);
-        circuit_gates[first_gate_idx]
-            .wires
-            .iter()
-            .for_each(|&w| selected_distinct.add_wire(w));
-
-        selected_gate_idx.push(first_gate_idx);
-
-        loop {
-            if selected_gate_idx.len() == set_size {
-                return (selected_gate_idx, search_attempts);
-            }
-
-            let mut candidates = vec![];
-            let mut needs_both_passes = vec![];
-
-            // To the right of selected_gate_idx
-            let mut selected_targets = PathConnectedWires::new(circuit_num_wires);
-            let mut selected_controls = PathConnectedWires::new(circuit_num_wires);
-            let mut path_targets = PathConnectedWires::new(circuit_num_wires);
-            let mut path_controls = PathConnectedWires::new(circuit_num_wires);
-            let mut selected_gates_seen = 0;
-
-            for i in selected_gate_idx[0]..circuit_gates.len() {
-                if path_targets.all_wires_hit() || path_controls.all_wires_hit() {
-                    break;
-                }
-
-                let [t, c1, c2] = circuit_gates[i].wires;
-                if selected_gates_seen < selected_gate_idx.len()
-                    && i == selected_gate_idx[selected_gates_seen]
-                {
-                    selected_gates_seen += 1;
-                    selected_targets.add_wire(t);
-                    selected_controls.add_wire(c1);
-                    selected_controls.add_wire(c2);
-                } else {
-                    let collides = selected_controls.wire_hit(t)
-                        || selected_targets.wire_hit(c1)
-                        || selected_targets.wire_hit(c2);
-                    let indirect_path_connected = path_controls.wire_hit(t)
-                        || path_targets.wire_hit(c1)
-                        || path_targets.wire_hit(c2);
-                    if collides || indirect_path_connected {
-                        path_targets.add_wire(t);
-                        path_controls.add_wire(c1);
-                        path_controls.add_wire(c2);
-                    }
-
-                    let enough_wires_left = circuit_gates[i]
-                        .wires
-                        .iter()
-                        .filter(|&w| !selected_distinct.wire_hit(*w))
-                        .count()
-                        + selected_distinct.count()
-                        <= max_wires;
-
-                    if !indirect_path_connected && enough_wires_left {
-                        if i < selected_gate_idx[selected_gate_idx.len() - 1] {
-                            needs_both_passes.push(i);
-                        } else {
-                            candidates.push(i);
-                        }
-                    }
-                }
-            }
-
-            // To the left of selected_gate_idx
-            let mut selected_targets = PathConnectedWires::new(circuit_num_wires);
-            let mut selected_controls = PathConnectedWires::new(circuit_num_wires);
-            let mut path_targets = PathConnectedWires::new(circuit_num_wires);
-            let mut path_controls = PathConnectedWires::new(circuit_num_wires);
-            let mut selected_gates_seen = 0;
-
-            for i in (0..selected_gate_idx[selected_gate_idx.len() - 1] + 1).rev() {
-                if path_targets.all_wires_hit() || path_controls.all_wires_hit() {
-                    break;
-                }
-
-                let [t, c1, c2] = circuit_gates[i].wires;
-                if selected_gates_seen < selected_gate_idx.len()
-                    && i == selected_gate_idx[selected_gate_idx.len() - 1 - selected_gates_seen]
-                {
-                    selected_gates_seen += 1;
-                    selected_targets.add_wire(t);
-                    selected_controls.add_wire(c1);
-                    selected_controls.add_wire(c2);
-                } else {
-                    let collides = selected_controls.wire_hit(t)
-                        || selected_targets.wire_hit(c1)
-                        || selected_targets.wire_hit(c2);
-                    let indirect_path_connected = path_controls.wire_hit(t)
-                        || path_targets.wire_hit(c1)
-                        || path_targets.wire_hit(c2);
-                    if collides || indirect_path_connected {
-                        path_targets.add_wire(t);
-                        path_controls.add_wire(c1);
-                        path_controls.add_wire(c2);
-                    }
-
-                    let enough_wires_left = circuit_gates[i]
-                        .wires
-                        .iter()
-                        .filter(|&w| !selected_distinct.wire_hit(*w))
-                        .count()
-                        + selected_distinct.count()
-                        <= max_wires;
-
-                    if !indirect_path_connected && enough_wires_left {
-                        if i < selected_gate_idx[0] || needs_both_passes.binary_search(&i).is_ok() {
-                            candidates.push(i);
-                        }
-                    }
-                }
-            }
-
-            if candidates.len() == 0 {
-                break;
-            }
-
-            let next_candidate = candidates.choose(rng).copied().unwrap();
-            circuit_gates[next_candidate]
-                .wires
-                .iter()
-                .for_each(|&w| selected_distinct.add_wire(w));
-
-            match selected_gate_idx.binary_search(&next_candidate) {
-                Ok(_) => panic!(),
-                Err(p) => selected_gate_idx.insert(p, next_candidate),
-            };
-        }
-    }
-}
-
 pub fn find_convex_gate_ids_max_spread_overall<R: RngCore>(
     n_iterations: usize,
     set_size: usize,
@@ -192,6 +44,13 @@ pub fn find_convex_gate_ids_max_spread_overall<R: RngCore>(
     circuit_gates: &[Gate],
     rng: &mut R,
 ) -> (Vec<usize>, usize) {
+    let min_generation = circuit_gates
+        .iter()
+        .fold(usize::MAX, |min_gen, g| usize::min(min_gen, g.generation));
+    let min_candidates = (0..circuit_gates.len())
+        .filter(|&i| circuit_gates[i].generation == min_generation)
+        .collect();
+
     let candidates: Vec<_> = (0..n_iterations)
         .map(|_| {
             find_convex_gate_ids_max_spread(
@@ -200,6 +59,7 @@ pub fn find_convex_gate_ids_max_spread_overall<R: RngCore>(
                 circuit_num_wires,
                 circuit_gates,
                 rng,
+                &min_candidates,
             )
         })
         .collect();
@@ -225,6 +85,7 @@ pub fn find_convex_gate_ids_max_spread<R: RngCore>(
     circuit_num_wires: usize,
     circuit_gates: &[Gate],
     rng: &mut R,
+    min_candidates: &Vec<usize>,
 ) -> (Vec<usize>, usize) {
     let num_gates = circuit_gates.len();
     let num_wires = circuit_num_wires;
@@ -233,7 +94,8 @@ pub fn find_convex_gate_ids_max_spread<R: RngCore>(
         search_attempts += 1;
 
         let mut selected_gate_idx = vec![0; set_size];
-        selected_gate_idx[0] = rng.random_range(0..num_gates);
+        // selected_gate_idx[0] = rng.random_range(0..num_gates);
+        selected_gate_idx[0] = min_candidates.choose(rng).copied().unwrap();
         let mut selected_gate_ctr = 1;
         let mut curr_wires = HashSet::new();
         curr_wires.extend(circuit_gates[selected_gate_idx[0]].wires);
@@ -377,12 +239,184 @@ pub fn find_convex_gate_ids_max_spread<R: RngCore>(
             curr_wires.extend(circuit_gates[next_candidate].wires);
         }
 
+        if selected_gate_ctr != set_size {
+            continue;
+        }
+
         #[cfg(feature = "correctness")]
         assert!(is_convex(
             circuit_num_wires,
             circuit_gates,
             &selected_gate_idx
         ));
+
+        return (selected_gate_idx, search_attempts);
+    }
+}
+
+pub fn search_common_target<R: RngCore>(
+    set_size: usize,
+    circuit_num_wires: usize,
+    circuit_gates: &[Gate],
+    rng: &mut R,
+) -> (Vec<usize>, usize) {
+    assert!(set_size == 2);
+
+    let num_gates = circuit_gates.len();
+    let mut search_attempts = 0;
+    loop {
+        search_attempts += 1;
+
+        let mut selected_gate_idx = vec![0; set_size];
+
+        selected_gate_idx[0] = rng.random_range(0..num_gates);
+        // let min_generation = circuit_gates.iter().map(|g| g.generation).min().unwrap();
+        // let idx_with_min_generation: Vec<_> = (0..circuit_gates.len())
+        //     .filter(|&i| circuit_gates[i].generation == min_generation)
+        //     .collect();
+        // selected_gate_idx[0] = idx_with_min_generation.choose(rng).copied().unwrap();
+
+        let mut selected_gate_ctr = 1;
+
+        let first_gate = circuit_gates[selected_gate_idx[0]];
+
+        let mut candidates: Vec<usize> = vec![];
+
+        // Left-most gate, go right
+        let mut path_connected_target_wires = PathConnectedWires::new(circuit_num_wires);
+        let mut path_connected_control_wires = PathConnectedWires::new(circuit_num_wires);
+        let mut selected_gates_seen = 1;
+        if selected_gate_idx[0] != num_gates - 1 {
+            for curr_idx in selected_gate_idx[0] + 1..num_gates {
+                if path_connected_target_wires.all_wires_hit()
+                    || path_connected_control_wires.all_wires_hit()
+                {
+                    break;
+                }
+                if curr_idx == selected_gate_idx[selected_gates_seen] {
+                    // Next candidate
+                    selected_gates_seen += 1;
+                } else {
+                    // Not a selected gate
+                    let curr_gate = circuit_gates[curr_idx];
+                    let mut collides_with_prev_selected = false;
+                    for i in 0..selected_gates_seen {
+                        if curr_gate.collides_with(&circuit_gates[selected_gate_idx[i]]) {
+                            collides_with_prev_selected = true;
+                            break;
+                        }
+                    }
+                    let [t, c1, c2] = curr_gate.wires;
+                    let indirect_path_connected = path_connected_control_wires.wire_hit(t)
+                        || path_connected_target_wires.wire_hit(c1)
+                        || path_connected_target_wires.wire_hit(c2);
+
+                    if collides_with_prev_selected || indirect_path_connected {
+                        path_connected_target_wires.add_wire(t);
+                        path_connected_control_wires.add_wire(c1);
+                        path_connected_control_wires.add_wire(c2);
+                    }
+
+                    if !indirect_path_connected
+                        && first_gate.wires[0] == curr_gate.wires[0]
+                        && curr_gate.wires[1] != first_gate.wires[1]
+                        && curr_gate.wires[1] != first_gate.wires[2]
+                        && curr_gate.wires[2] != first_gate.wires[1]
+                        && curr_gate.wires[2] != first_gate.wires[2]
+                    {
+                        candidates.push(curr_idx);
+                    }
+                }
+            }
+        }
+
+        // Right-most gate, go left
+        let mut path_connected_target_wires = PathConnectedWires::new(circuit_num_wires);
+        let mut path_connected_control_wires = PathConnectedWires::new(circuit_num_wires);
+        let mut selected_gates_seen = 1;
+        if selected_gate_idx[selected_gate_ctr - 1] != 0 {
+            for curr_idx in (0..=selected_gate_idx[selected_gate_ctr - 1] - 1).rev() {
+                if path_connected_target_wires.all_wires_hit()
+                    || path_connected_control_wires.all_wires_hit()
+                {
+                    break;
+                }
+                if selected_gates_seen < selected_gate_ctr
+                    && curr_idx == selected_gate_idx[selected_gate_ctr - 1 - selected_gates_seen]
+                {
+                    // Next candidate
+                    selected_gates_seen += 1;
+                } else {
+                    // Not a selected gate
+                    let curr_gate = circuit_gates[curr_idx];
+                    let mut collides_with_prev_selected = false;
+                    for i in 0..selected_gates_seen {
+                        if curr_gate.collides_with(
+                            &circuit_gates[selected_gate_idx[selected_gate_ctr - 1 - i]],
+                        ) {
+                            collides_with_prev_selected = true;
+                            break;
+                        }
+                    }
+                    let [t, c1, c2] = curr_gate.wires;
+                    let indirect_path_connected = path_connected_control_wires.wire_hit(t)
+                        || path_connected_target_wires.wire_hit(c1)
+                        || path_connected_target_wires.wire_hit(c2);
+
+                    if collides_with_prev_selected || indirect_path_connected {
+                        path_connected_target_wires.add_wire(t);
+                        path_connected_control_wires.add_wire(c1);
+                        path_connected_control_wires.add_wire(c2);
+                    }
+
+                    if !indirect_path_connected
+                        && first_gate.wires[0] == curr_gate.wires[0]
+                        && curr_gate.wires[1] != first_gate.wires[1]
+                        && curr_gate.wires[1] != first_gate.wires[2]
+                        && curr_gate.wires[2] != first_gate.wires[1]
+                        && curr_gate.wires[2] != first_gate.wires[2]
+                    {
+                        candidates.push(curr_idx);
+                    }
+                }
+            }
+        }
+
+        // Break and choose new range if no candidates left to add
+        if candidates.len() == 0 {
+            continue;
+        }
+
+        // let next_candidate = candidates.choose(rng).copied().unwrap();
+        let next_candidate = candidates
+            .iter()
+            .max_by_key(|&&i| selected_gate_idx[0].abs_diff(i))
+            .copied()
+            .unwrap();
+
+        // Insert next_candidate into selected_gate_idx in order
+        let mut insert_pos = selected_gate_ctr;
+        while insert_pos > 0 && selected_gate_idx[insert_pos - 1] > next_candidate {
+            selected_gate_idx[insert_pos] = selected_gate_idx[insert_pos - 1];
+            insert_pos -= 1;
+        }
+        selected_gate_idx[insert_pos] = next_candidate;
+        selected_gate_ctr += 1;
+
+        if selected_gate_ctr != set_size {
+            continue;
+        }
+
+        #[cfg(feature = "correctness")]
+        assert!(is_convex(
+            circuit_num_wires,
+            circuit_gates,
+            &selected_gate_idx
+        ));
+
+        if !is_convex(circuit_num_wires, circuit_gates, &selected_gate_idx) {
+            continue;
+        }
 
         return (selected_gate_idx, search_attempts);
     }
@@ -428,9 +462,16 @@ pub fn find_convex_gate_ids3<R: RngCore>(
                         // Not a selected gate
                         let curr_gate = circuit_gates[curr_idx];
                         let mut collides_with_prev_selected = false;
+                        let mut repeat_wires = false;
                         for i in 0..selected_gates_seen {
                             if curr_gate.collides_with(&circuit_gates[selected_gate_idx[i]]) {
                                 collides_with_prev_selected = true;
+                                break;
+                            }
+                        }
+                        for i in 0..selected_gate_ctr {
+                            if curr_gate.wires == circuit_gates[selected_gate_idx[i]].wires {
+                                repeat_wires = true;
                                 break;
                             }
                         }
@@ -451,6 +492,7 @@ pub fn find_convex_gate_ids3<R: RngCore>(
                                 .count();
 
                             if !indirect_path_connected
+                                && !repeat_wires
                                 && curr_wires.len() + num_new_wires <= max_wires
                             {
                                 candidates.push(curr_idx);
@@ -481,11 +523,18 @@ pub fn find_convex_gate_ids3<R: RngCore>(
                         // Not a selected gate
                         let curr_gate = circuit_gates[curr_idx];
                         let mut collides_with_prev_selected = false;
+                        let mut repeat_wires = false;
                         for i in 0..selected_gates_seen {
                             if curr_gate.collides_with(
                                 &circuit_gates[selected_gate_idx[selected_gate_ctr - 1 - i]],
                             ) {
                                 collides_with_prev_selected = true;
+                                break;
+                            }
+                        }
+                        for i in 0..selected_gate_ctr {
+                            if curr_gate.wires == circuit_gates[selected_gate_idx[i]].wires {
+                                repeat_wires = true;
                                 break;
                             }
                         }
@@ -506,6 +555,7 @@ pub fn find_convex_gate_ids3<R: RngCore>(
                                 .count();
 
                             if !indirect_path_connected
+                                && !repeat_wires
                                 && curr_wires.len() + num_new_wires <= max_wires
                             {
                                 candidates.push(curr_idx);
@@ -535,12 +585,20 @@ pub fn find_convex_gate_ids3<R: RngCore>(
             curr_wires.extend(circuit_gates[next_candidate].wires);
         }
 
-        #[cfg(feature = "correctness")]
-        assert!(is_convex(
-            circuit_num_wires,
-            circuit_gates,
-            &selected_gate_idx
-        ));
+        if selected_gate_ctr != set_size {
+            continue;
+        }
+
+        // #[cfg(feature = "correctness")]
+        // assert!(is_convex(
+        //     circuit_num_wires,
+        //     circuit_gates,
+        //     &selected_gate_idx
+        // ));
+
+        if !is_convex(circuit_num_wires, circuit_gates, &selected_gate_idx) {
+            continue;
+        }
 
         return (selected_gate_idx, search_attempts);
     }
@@ -647,34 +705,4 @@ pub fn is_convex(
     }
 
     is_convex
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::{
-        circuit::{cf::GateLibrary, Circuit},
-        local_mixing::search::{is_convex, random_convex},
-    };
-
-    #[test]
-    fn test_find_convex() {
-        let num_wires = 64;
-        let num_gates = 1000;
-        let mut rng = rand::rng();
-        for i in 0..100000 {
-            let circuit = Circuit::random_with_cf(num_wires, num_gates, GateLibrary::All, &mut rng);
-            let (convex_gate_ids, _) =
-                random_convex(4, 6, circuit.num_wires, &circuit.gates, &mut rng);
-            let gates: Vec<_> = convex_gate_ids.iter().map(|&i| circuit.gates[i]).collect();
-            dbg!(&gates);
-            if !is_convex(circuit.num_wires, &circuit.gates, &convex_gate_ids) {
-                dbg!(&circuit.gates);
-                dbg!(&convex_gate_ids);
-            }
-            assert!(
-                is_convex(circuit.num_wires, &circuit.gates, &convex_gate_ids),
-                "failed at iteration {i}"
-            );
-        }
-    }
 }

@@ -9,7 +9,7 @@ use rayon::{
 use serde::{Deserialize, Serialize};
 use super::{
     consts::{N_OUT_INF, N_OUT_KND},
-    search::{find_convex_gate_ids3, find_convex_gate_ids_max_spread, find_convex_gate_ids_max_spread_overall, permute_circuit},
+    search::{find_convex_gate_ids_max_spread_overall, permute_circuit},
 };
 use crate::{
     circuit::{
@@ -17,8 +17,7 @@ use crate::{
     },
     compression::ct::CompressionTable,
     local_mixing::{
-        consts::{EPOCH_SIZE, N_IN_INF, N_IN_KND},
-        tracer::Tracer,
+        consts::{EPOCH_SIZE, N_IN_INF, N_IN_KND}, tracer::Tracer
     }, replacement::{find_replacement_random_sample, replace_ct::find_replacement_with_ct},
 };
 
@@ -80,6 +79,7 @@ pub struct LocalMixingJob {
     /// Compression Table
     #[serde(default, skip_serializing)]
     ct: CompressionTable,
+    /// Path to directory of experiment
     #[serde(default, skip_serializing)]
     dir_path: String,
 }
@@ -166,10 +166,10 @@ impl LocalMixingJob {
         let mut tracer = Tracer::new(self.inflationary_stage_steps, self.kneading_stage_steps);
 
         println!("-- Inflationary stage");
-        let mut inf_steps = 0;
+        let mut inf_steps = 1;
         #[cfg(feature = "trace")]
         let mut inf_fails = 0;
-        while inf_steps < self.inflationary_stage_steps {
+        while inf_steps <= self.inflationary_stage_steps {
             let success = run_step::<N_OUT_INF, N_IN_INF, _, _>(
                 self.circuit.num_wires,
                 &mut self.circuit.gates,
@@ -182,6 +182,9 @@ impl LocalMixingJob {
             );
             if success {
                 inf_steps += 1;
+                if inf_steps % EPOCH_SIZE == 0 {
+                    self.circuit.save_as_json(format!("{}/save-{}-inflationary.json", self.dir_path, inf_steps));
+                }
             } else {
                 #[cfg(feature = "trace")]
                 {
@@ -261,10 +264,10 @@ impl LocalMixingJob {
         let mut inf_tracer = Tracer::new(self.inflationary_stage_steps, 0);
 
         println!("-- Inflationary stage");
-        let mut inf_steps = 0;
+        let mut inf_steps = 1;
         #[cfg(feature = "trace")]
         let mut inf_fails = 0;
-        while inf_steps < self.inflationary_stage_steps {
+        while inf_steps <= self.inflationary_stage_steps {
             let success = run_step::<N_OUT_INF, N_IN_INF, _, _>(
                 self.circuit.num_wires,
                 &mut self.circuit.gates,
@@ -281,6 +284,9 @@ impl LocalMixingJob {
                 #[cfg(feature = "trace")]
                 {
                     inf_fails += 1;
+                    if inf_fails % EPOCH_SIZE == 0 {
+                        self.circuit.save_as_json(format!("{}/save-{}-inflationary.json", self.dir_path, inf_steps));
+                    }
                 }
             }
         }
@@ -376,6 +382,8 @@ impl LocalMixingJob {
 
                 self.circuit
                     .save_as_json(format!("{}/save-{}-kneading.json", self.dir_path, knd_steps));
+                                self.circuit
+                    .save_as_json_original_fmt(format!("{}/save-{}-kneading-with-gen.json", self.dir_path, knd_steps));
 
                 #[cfg(feature = "trace")]
                 {
@@ -412,27 +420,6 @@ impl LocalMixingJob {
             log::info!(target: "trace", "Finished.");
             log::info!(target: "trace", "Inflationary stage fails: {}", inf_fails);
             log::info!(target: "trace", "Kneading stage fails: {}", knd_fails);
-        }
-    }
-
-    pub fn results(self) -> (Circuit, CompressionTable) {
-        (self.circuit, self.ct)
-    }
-
-    pub fn experiment_config(dir_path: &str, circuit: Circuit, ct: CompressionTable) -> Self {
-        Self { 
-            inflationary_stage_steps: 0, 
-            kneading_stage_steps: 500000,
-            gate_library: GateLibrary::TwoBit, 
-            search_threads: 1,
-            max_circuit_samples: 10,
-            save_inflationary: false,
-            compression_table_path: "bin/table-twobit.db".to_string(), 
-            num_wires: 16, 
-            original_num_gates: 1, 
-            circuit, 
-            ct, 
-            dir_path: dir_path.to_string() 
         }
     }
 }
@@ -502,14 +489,10 @@ fn run_step<const N_OUT: usize, const N_IN: usize, G: Growable + ?Sized, R: Send
     #[cfg(feature = "trace")]
     let start_time = Instant::now();
 
-    // let (selected_gate_idx, _n_search_attempts) =
-    //     find_convex_gate_ids3(N_OUT, 16, circuit_num_wires, circuit_gates.as_slice_ref(), rng);
-
-    // let (selected_gate_idx, _n_search_attempts) =
-    //     find_convex_gate_ids_max_spread(N_OUT, 16, circuit_num_wires, circuit_gates.as_slice_ref(), rng);
-
-    let (selected_gate_idx, _n_search_attempts) =
-        find_convex_gate_ids_max_spread_overall(10, N_OUT, 16, circuit_num_wires, circuit_gates.as_slice_ref(), rng);
+    let (selected_gate_idx, _n_search_attempts) = match stage {
+        LocalMixingStage::Inflationary => find_convex_gate_ids_max_spread_overall(10, 2, 5, circuit_num_wires, circuit_gates.as_slice_ref(), rng),
+        LocalMixingStage::Kneading => find_convex_gate_ids_max_spread_overall(10, N_OUT, 6, circuit_num_wires, circuit_gates.as_slice_ref(), rng),
+    };
 
     let c_out = selected_gate_idx
         .iter()
@@ -520,8 +503,8 @@ fn run_step<const N_OUT: usize, const N_IN: usize, G: Growable + ?Sized, R: Send
     let repl_start = Instant::now();
     
     let replacement_res = match stage {
-        LocalMixingStage::Inflationary => find_replacement_random_sample(&c_out, circuit_num_wires, N_IN, 1_000_000_000, ct.gate_library, true, rng),
-        LocalMixingStage::Kneading => find_replacement_with_ct(&c_out, circuit_num_wires, N_IN, max_circuit_samples, &ct, false, rng),
+        LocalMixingStage::Inflationary => find_replacement_random_sample(&c_out, circuit_num_wires, N_IN, 10000000, ct.gate_library, false, rng),
+        LocalMixingStage::Kneading => find_replacement_with_ct(&c_out, circuit_num_wires, N_IN, max_circuit_samples, &ct, false, false, rng),
     };
 
     #[cfg(feature = "trace")]

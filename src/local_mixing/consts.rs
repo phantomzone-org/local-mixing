@@ -24,8 +24,8 @@ pub const CONTROL_FUNC_TABLE: [bool; 64] = {
 };
 
 /// Number of steps between every save
-pub const EPOCH_SIZE: usize = 10000;
+pub const EPOCH_SIZE: usize = 1000;
 
 #[cfg(feature = "correctness")]
 /// Correctness check iternations
-pub const CORRECTNESS_CHECK_ITER: usize = 1000;
+pub const CORRECTNESS_CHECK_ITER: usize = 10000;
