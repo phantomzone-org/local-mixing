@@ -1,126 +1,200 @@
-use crate::circuit::analysis::projection_circuit;
+use crate::circuit::analysis::{num_distinct_wires, projection_circuit, truth_table};
+use crate::circuit::cf::GateLibrary;
+use crate::circuit::circuit::{circuit_min_generation, correct_controls, evaluate_usize};
 use crate::circuit::Gate;
 use crate::compression::ct::CompressionTable;
-use crate::local_mixing::tracer::ReplacementTraceFields;
-use rand::seq::{IndexedRandom, SliceRandom};
+use crate::local_mixing::classify_replacements::is_identity_subcircuits_replacement;
+use rand::seq::IndexedRandom;
 use rand::Rng;
 
-pub fn find_replacement<R: Rng>(
-    circuit: &Vec<Gate>,
+use super::is_weakly_connected;
+
+pub fn find_replacement_with_ct<R: Rng>(
+    circuit: &[Gate],
     num_wires: usize,
     replacement_size: usize,
-    cf_choice: &Vec<u8>,
-    ct: &mut CompressionTable,
+    max_circuit_samples: usize,
+    ct: &CompressionTable,
+    output_connected: bool,
+    strictly_more_wires: bool,
     rng: &mut R,
-) -> Option<(Vec<Gate>, ReplacementTraceFields)> {
+) -> Option<(Vec<Gate>, usize)> {
     let (proj_circuit, proj_map) = projection_circuit(circuit);
-    let circuit_num_wires = proj_map.len();
-    if circuit_num_wires > 9 {
-        dbg!("circuit_num_wires > 9");
+    if proj_map.len() > ct.max_wires_supported {
         return None;
     }
 
-    let mut lhs_circuit = proj_circuit.clone();
-    let mut replacement_circuit = vec![Gate::default(); replacement_size];
+    let proj_tt = truth_table(ct.max_wires_supported, &proj_circuit);
+    let mut replacement_circuit = Vec::with_capacity(replacement_size);
+    let mut num_samples = 0;
 
-    let mut replacement_idx = 0;
-    if replacement_size > 4 {
-        // TODO: initial sample to get to regular samples
-        dbg!("replacement_size > 4");
-        return None;
-    }
+    let initial_gate_sample_size = if replacement_size > ct.max_gates_supported + 1 {
+        replacement_size - ct.max_gates_supported
+    } else {
+        0
+    };
 
-    let mut num_samples = vec![];
-
-    while replacement_idx < replacement_size {
-        num_samples.push(0);
-        loop {
-            if num_samples[replacement_idx] >= 100000 {
-                println!(
-                    "exited early, proj_circuit = {:?}, replacement_circuit = {:?}",
-                    proj_circuit, replacement_circuit
-                );
-                return None;
-            }
-            let g = sample_gate(9, cf_choice, rng);
-            num_samples[replacement_idx] += 1;
-            let mut new_lhs = lhs_circuit.clone();
-            new_lhs.push(g);
-            if let Some(res) = ct.lookup_cxity(&new_lhs) {
-                if res <= replacement_size - replacement_idx - 1 {
-                    lhs_circuit = new_lhs;
-                    replacement_circuit[replacement_size - replacement_idx - 1] = g;
-                    replacement_idx += 1;
-                    break;
-                }
-            }
+    'sample_circuit: loop {
+        num_samples += 1;
+        if num_samples > max_circuit_samples {
+            return None;
         }
-    }
+        let mut curr_num_wires_used = proj_map.len();
+        let mut lhs_tt = proj_tt.clone();
+        let mut remaining_gates = replacement_size;
+        replacement_circuit.clear();
 
-    // map back to original num_wires
-    let mut output_circuit = replacement_circuit.clone();
-    let mut proj_map_new_wires = vec![];
-    output_circuit.iter_mut().for_each(|g| {
-        g.wires.iter_mut().for_each(|w| {
-            let w_usize = *w;
-            if w_usize < proj_map.len() {
-                *w = proj_map[w_usize];
-            } else if let Some((_, orig_w)) = proj_map_new_wires.iter().find(|(ww, _)| w == ww) {
-                *w = *orig_w;
-            } else {
-                loop {
-                    let orig_w = rng.random_range(0..num_wires);
-                    if !proj_map.contains(&orig_w)
-                        && !proj_map_new_wires.iter().any(|(_, ww)| *ww == orig_w)
-                    {
-                        proj_map_new_wires.push((w.clone(), orig_w));
-                        *w = orig_w;
+        if initial_gate_sample_size > 0 {
+            loop {
+                let mut new_curr_num_wires_used = curr_num_wires_used;
+                let mut initial_gates = Vec::with_capacity(initial_gate_sample_size);
+                for _ in 0..initial_gate_sample_size {
+                    let (gate, num_wires) = sample_next_projection_gate(
+                        new_curr_num_wires_used,
+                        ct.max_wires_supported,
+                        ct.gate_library,
+                        rng,
+                    );
+                    new_curr_num_wires_used = num_wires;
+                    initial_gates.push(gate);
+                }
+                let new_lhs_tt: Vec<_> = lhs_tt
+                    .iter()
+                    .map(|&x| evaluate_usize(&initial_gates, x))
+                    .collect();
+                if let Some(rhs_cxity) = ct.lookup_truth_table(&new_lhs_tt) {
+                    if rhs_cxity < remaining_gates {
+                        lhs_tt = new_lhs_tt;
+                        curr_num_wires_used = new_curr_num_wires_used;
+                        replacement_circuit.extend(initial_gates);
+                        remaining_gates -= initial_gate_sample_size;
                         break;
                     }
                 }
             }
-        });
-    });
+        }
 
-    // update gate generation
-    let min_generation = circuit.iter().map(|g| g.generation).min().unwrap_or(0);
-    let new_generation = min_generation + 1;
-    output_circuit
-        .iter_mut()
-        .for_each(|g| g.generation = new_generation);
-
-    // output distinct wires
-    let mut output_distinct = vec![];
-    output_circuit.iter().for_each(|g| {
-        g.wires.iter().for_each(|w| {
-            if !output_distinct.contains(w) {
-                output_distinct.push(*w);
+        while remaining_gates > 0 {
+            let (g, new_curr_num_wires_used) = sample_next_projection_gate(
+                curr_num_wires_used,
+                ct.max_wires_supported,
+                ct.gate_library,
+                rng,
+            );
+            let new_lhs_tt = lhs_tt.iter().map(|&x| g.evaluate_usize(x)).collect();
+            if let Some(rhs_cxity) = ct.lookup_truth_table(&new_lhs_tt) {
+                if rhs_cxity < remaining_gates {
+                    if remaining_gates == 2 && rhs_cxity == 0 {
+                        // 1 gate left to sample but rhs_cxity = 0
+                        continue 'sample_circuit;
+                    }
+                    lhs_tt = new_lhs_tt;
+                    curr_num_wires_used = new_curr_num_wires_used;
+                    replacement_circuit.push(g);
+                    remaining_gates -= 1;
+                }
             }
-        });
-    });
+        }
+        replacement_circuit.reverse();
 
-    Some((
-        output_circuit.clone(),
-        ReplacementTraceFields {
-            input_circuit: circuit.clone(),
-            output_circuit: output_circuit,
-            num_input_wires: 0,
-            num_output_wires: 0,
-            num_active_wires: 0,
-            min_generation: 0,
-            num_circuits_sampled: 0,
-        },
-    ))
+        // map back to original num_wires
+        let mut output_circuit = replacement_circuit.clone();
+        let mut proj_map_new_wires = vec![];
+        output_circuit.iter_mut().for_each(|g| {
+            g.wires.iter_mut().for_each(|w| {
+                let w_usize = *w;
+                if w_usize < proj_map.len() {
+                    *w = proj_map[w_usize];
+                } else if let Some((_, orig_w)) = proj_map_new_wires.iter().find(|(ww, _)| w == ww)
+                {
+                    *w = *orig_w;
+                } else {
+                    loop {
+                        let orig_w = rng.random_range(0..num_wires);
+                        if !proj_map.contains(&orig_w)
+                            && !proj_map_new_wires.iter().any(|(_, ww)| *ww == orig_w)
+                        {
+                            proj_map_new_wires.push((w.clone(), orig_w));
+                            *w = orig_w;
+                            break;
+                        }
+                    }
+                }
+            });
+        });
+
+        correct_controls(&mut output_circuit);
+
+        if output_connected && !is_weakly_connected(&output_circuit) {
+            continue 'sample_circuit;
+        }
+
+        if strictly_more_wires
+            && num_distinct_wires(&output_circuit) <= num_distinct_wires(&circuit)
+        {
+            continue 'sample_circuit;
+        }
+
+        if output_circuit.len() == circuit.len()
+            && output_circuit.iter().all(|gate| {
+                circuit
+                    .iter()
+                    .any(|g| g.wires == gate.wires && g.control_func == gate.control_func)
+            })
+        {
+            continue 'sample_circuit;
+        }
+
+        if is_identity_subcircuits_replacement(&circuit, &output_circuit) {
+            continue 'sample_circuit;
+        }
+
+        // update gate generation
+        let min_generation = circuit_min_generation(circuit);
+        let new_generation = min_generation + 1;
+        output_circuit
+            .iter_mut()
+            .for_each(|g| g.generation = new_generation);
+
+        return Some((output_circuit, num_samples));
+    }
 }
 
-fn sample_gate<R: Rng>(num_wires: usize, cf_choice: &Vec<u8>, rng: &mut R) -> Gate {
-    let mut wires: Vec<usize> = (0..num_wires).collect();
-    wires.shuffle(rng);
+#[inline]
+fn sample_next_projection_gate<R: Rng>(
+    curr_num_wires_used: usize,
+    max_num_wires_supported: usize,
+    gate_library: GateLibrary,
+    rng: &mut R,
+) -> (Gate, usize) {
+    loop {
+        let mut target = rng.random_range(0..max_num_wires_supported);
+        let mut control_one = rng.random_range(0..max_num_wires_supported);
+        let mut control_two = rng.random_range(0..max_num_wires_supported);
+        let mut new_num_wires_used = curr_num_wires_used;
 
-    Gate {
-        wires: [wires[0], wires[1], wires[2]],
-        control_func: cf_choice.choose(rng).copied().unwrap(),
-        generation: 0,
+        if target != control_one && target != control_two && control_one != control_two {
+            if target >= curr_num_wires_used {
+                target = new_num_wires_used;
+                new_num_wires_used += 1;
+            }
+            if control_one >= curr_num_wires_used {
+                control_one = new_num_wires_used;
+                new_num_wires_used += 1;
+            }
+            if control_two >= curr_num_wires_used {
+                control_two = new_num_wires_used;
+                new_num_wires_used += 1;
+            }
+            return (
+                Gate {
+                    wires: [target, control_one, control_two],
+                    control_func: gate_library.cfs().choose(rng).copied().unwrap(),
+                    generation: 0,
+                },
+                new_num_wires_used,
+            );
+        }
     }
 }
 
@@ -131,44 +205,47 @@ mod test {
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 
-    use crate::{circuit::Gate, compression::ct::CompressionTable};
+    use crate::{
+        circuit::{cf::GateLibrary, circuit::check_equiv_probabilistic, Circuit},
+        compression::ct::CompressionTable,
+    };
 
-    use super::find_replacement;
+    use super::{find_replacement_with_ct, sample_next_projection_gate};
 
     #[test]
-    fn test_replacement_with_ct() {
-        println!("loading ct");
-        let mut ct = CompressionTable::from_file("bin/table.db");
-        println!("done loading ct");
+    fn test_replacement_ct() {
+        let ct = CompressionTable::from_file("bin/table-twobit.db");
+        let wires = 10;
+        let gates = 5;
         let mut rng = ChaCha8Rng::from_os_rng();
-        let circuit = vec![
-            Gate {
-                wires: [10, 1, 2],
-                control_func: 2,
-                generation: 0,
-            },
-            Gate {
-                wires: [1, 3, 4],
-                control_func: 9,
-                generation: 0,
-            },
-            Gate {
-                wires: [4, 5, 6],
-                control_func: 6,
-                generation: 0,
-            },
-            Gate {
-                wires: [5, 8, 7],
-                control_func: 11,
-                generation: 0,
-            },
-        ];
-        let cf_choice = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
-        let replacement_size = 4;
 
-        let s = Instant::now();
-        let res = find_replacement(&circuit, 9, replacement_size, &cf_choice, &mut ct, &mut rng);
-        let d = Instant::now() - s;
-        dbg!(res, d);
+        for i in 1..=1 {
+            let ckt_one =
+                Circuit::random_with_cf(wires, gates, GateLibrary::TwoBit, &mut rng).gates;
+            let s = Instant::now();
+            match find_replacement_with_ct(&ckt_one, wires, gates, 100, &ct, false, false, &mut rng)
+            {
+                Some((r, samples)) => {
+                    let d = Instant::now() - s;
+                    println!("Iteration {}: SUCCESS. Time = {:?}", i, d);
+                    println!("Input: {:?}", &ckt_one);
+                    println!("Output: {:?}", &r);
+                    println!("Samples: {}", samples);
+                    assert!(check_equiv_probabilistic(wires, &ckt_one, &r, 1000, &mut rng).is_ok());
+                }
+                None => {
+                    let d = Instant::now() - s;
+                    println!("Iteration {}: FAIL. Time = {:?}", i, d);
+                    println!("Input: {:?}", &ckt_one);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_sample_next_projection_gate() {
+        let mut rng = rand::rng();
+        let g = sample_next_projection_gate(5, 9, GateLibrary::TwoBit, &mut rng);
+        dbg!(g);
     }
 }

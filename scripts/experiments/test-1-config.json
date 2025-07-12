@@ -1,0 +1,11 @@
+{
+    "num_wires": 64,
+    "original_num_gates": 256,
+    "inflationary_stage_steps": 1000,
+    "kneading_stage_steps": 100000,
+    "gate_library": "TwoBit",
+    "search_threads": 2,
+    "max_circuit_samples": 10,
+    "save_inflationary": true,
+    "compression_table_path": "bin/table-twobit.db"
+}

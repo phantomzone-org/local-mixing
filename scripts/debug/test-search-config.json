@@ -1,0 +1,8 @@
+{
+    "num_wires": 64,
+    "num_gates": 100000,
+    "cf": "TwoBit",
+    "run_parallel": true,
+    "permute": false,
+    "iterations": 100000
+}

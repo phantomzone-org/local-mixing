@@ -1,14 +1,11 @@
 use super::Gate;
 
-type Circuit = Vec<Gate>;
-type ProjMap = Vec<usize>;
-type TruthTable = Vec<usize>;
-type ActiveWires = Vec<usize>;
-
-pub fn projection_circuit(circuit: &Circuit) -> (Circuit, ProjMap) {
+/*
+ * Relabels the wires of circuit to 0..
+ */
+pub fn projection_circuit(circuit: &[Gate]) -> (Vec<Gate>, Vec<usize>) {
     let mut proj_circuit = vec![Gate::default(); circuit.len()];
     let mut proj_map = vec![];
-    let mut proj_ctr = 0;
 
     for i in 0..circuit.len() {
         for w in 0..3 {
@@ -16,9 +13,8 @@ pub fn projection_circuit(circuit: &Circuit) -> (Circuit, ProjMap) {
             if let Some(pos) = proj_map.iter().position(|&x| x == wire) {
                 proj_circuit[i].wires[w] = pos;
             } else {
+                proj_circuit[i].wires[w] = proj_map.len();
                 proj_map.push(wire);
-                proj_circuit[i].wires[w] = proj_ctr;
-                proj_ctr += 1;
             }
         }
         proj_circuit[i].control_func = circuit[i].control_func;
@@ -28,39 +24,33 @@ pub fn projection_circuit(circuit: &Circuit) -> (Circuit, ProjMap) {
 }
 
 /*
- * Assumes that max # wires is 32,
- * TT_SIZE == 1 << PROJ_WIRES,
- * Otherwise correctness is not guaranteed.
+ * Computes the truth table over {0, 1}^num_wires.
+ * Assumes that proj_circuit has wires labeled 0.. and num_wires < 32
  */
-pub fn truth_table(num_wires: usize, proj_circuit: &Circuit) -> TruthTable {
+pub fn truth_table(num_wires: usize, proj_circuit: &Vec<Gate>) -> Vec<usize> {
     let mut tt = vec![];
     for i in 0..1 << num_wires {
         let mut input = i;
-        proj_circuit.iter().for_each(|g| {
-            let a = (input & (1 << g.wires[1])) != 0;
-            let b = (input & (1 << g.wires[2])) != 0;
-            let x = g.evaluate_cf(a, b);
-            input ^= (x as usize) << g.wires[0];
-        });
+        proj_circuit
+            .iter()
+            .for_each(|g| input = g.evaluate_usize(input));
         tt.push(input);
     }
     tt
 }
 
-pub fn truth_table_sized<const TT_SIZE: usize>(proj_circuit: &Circuit) -> [usize; TT_SIZE] {
-    std::array::from_fn(|i| {
-        let mut input = i;
-        proj_circuit.iter().for_each(|g| {
-            let a = (input & (1 << g.wires[1])) != 0;
-            let b = (input & (1 << g.wires[2])) != 0;
-            let x = g.evaluate_cf(a, b);
-            input ^= (x as usize) << g.wires[0];
-        });
-        input
-    })
+pub fn inverse_truth_table(tt: &Vec<usize>) -> Vec<usize> {
+    let mut inv = vec![0; tt.len()];
+    for i in 0..tt.len() {
+        inv[tt[i]] = i;
+    }
+    inv
 }
 
-pub fn compute_active_wires(num_wires: usize, tt: &TruthTable) -> (ActiveWires, ActiveWires) {
+/*
+ * Computes the 'active' wires: which bitlines are significant in input/output.
+ */
+pub fn compute_active_wires(num_wires: usize, tt: &Vec<usize>) -> (Vec<usize>, Vec<usize>) {
     let mut active_wires = vec![[false; 2]; num_wires];
     for i in 0..tt.len() {
         let eval_i = tt[i];
@@ -95,7 +85,25 @@ pub fn compute_active_wires(num_wires: usize, tt: &TruthTable) -> (ActiveWires, 
     (active_target, active_control)
 }
 
-pub fn optimal_projection_circuit(circuit: &Circuit) -> (Circuit, ProjMap, TruthTable, usize) {
+pub fn num_active_wires(num_wires: usize, active_wires_vec: (Vec<usize>, Vec<usize>)) -> usize {
+    let mut active_wires = vec![false; num_wires];
+    let mut num_active_wires = 0;
+    for w in active_wires_vec.0 {
+        if !active_wires[w] {
+            active_wires[w] = true;
+            num_active_wires += 1;
+        }
+    }
+    for w in active_wires_vec.1 {
+        if !active_wires[w] {
+            active_wires[w] = true;
+            num_active_wires += 1;
+        }
+    }
+    num_active_wires
+}
+
+pub fn optimal_projection_circuit(circuit: &[Gate]) -> (Vec<Gate>, Vec<usize>, usize) {
     let (proj_circuit, proj_map) = projection_circuit(&circuit);
     let num_wires = proj_map.len();
     let tt = truth_table(num_wires, &proj_circuit);
@@ -113,8 +121,7 @@ pub fn optimal_projection_circuit(circuit: &Circuit) -> (Circuit, ProjMap, Truth
             let proj_wire = proj_circuit[i].wires[w];
             if let Some(pos) = updated_proj_map.iter().position(|&x| x == wire) {
                 updated_proj_circuit[i].wires[w] = pos;
-            } else if active_wires.0.contains(&(proj_wire))
-                || active_wires.1.contains(&(proj_wire))
+            } else if active_wires.0.contains(&(proj_wire)) || active_wires.1.contains(&(proj_wire))
             {
                 updated_proj_circuit[i].wires[w] = proj_ctr;
                 updated_proj_map.push(wire);
@@ -138,7 +145,19 @@ pub fn optimal_projection_circuit(circuit: &Circuit) -> (Circuit, ProjMap, Truth
         }
     });
 
-    (updated_proj_circuit, updated_proj_map, tt, num_active_wires)
+    (updated_proj_circuit, updated_proj_map, num_active_wires)
+}
+
+pub fn num_distinct_wires(circuit: &[Gate]) -> usize {
+    let mut distinct_wires = vec![];
+    for gate in circuit {
+        for wire in gate.wires {
+            if !distinct_wires.contains(&wire) {
+                distinct_wires.push(wire);
+            }
+        }
+    }
+    distinct_wires.len()
 }
 
 #[cfg(test)]

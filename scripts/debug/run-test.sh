@@ -2,9 +2,6 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Config
-WIRES=$(jq -r '.wires' "$SCRIPT_DIR/template-config.json")
-
 # Step 1: Create the "test_outputs" directory if it doesn't exist
 mkdir -p .test_outputs
 
@@ -19,7 +16,7 @@ for i in {1..5}; do
     echo "Iteration $i:"
     CURR_DIR="$BASE_DIR/$i"
     mkdir -p $CURR_DIR
-    cp $SCRIPT_DIR/template-config.json "$CURR_DIR/config.json"
+    cp $SCRIPT_DIR/test-local-mixing-config.json "$CURR_DIR/config.json"
     cargo run --release --features="correctness,trace" local-mixing $CURR_DIR
     echo "Completed iteration $i."
 done

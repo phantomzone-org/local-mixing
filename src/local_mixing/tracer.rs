@@ -1,168 +1,93 @@
+use super::job::LocalMixingStage;
+use crate::circuit::circuit::GateData;
 use serde::{Deserialize, Serialize};
-use std::{error::Error, fs::File, time::Duration};
+use std::{error::Error, fs::File, path::Path, time::Duration};
 
-use crate::circuit::Gate;
+#[derive(Clone, Serialize, Deserialize)]
+pub enum ReplacementStatus {
+    Success(Vec<GateData>, Vec<GateData>),
+    Fail(Vec<GateData>),
+}
 
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ReplacementTraceFields {
-    pub input_circuit: Vec<Gate>,
-    pub output_circuit: Vec<Gate>,
-    pub num_input_wires: usize,
-    pub num_output_wires: usize,
-    pub num_active_wires: usize,
+    pub data: ReplacementStatus,
+    pub replacement_time: Duration,
+    pub n_circuits_sampled: usize,
     pub min_generation: usize,
-    pub num_circuits_sampled: usize,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct SearchTraceFields {
-    n_gates: usize,
-    max_candidate_dist: usize,
-    time: Duration,
-    replacement_fields: ReplacementTraceFields,
+    pub gate_indices: Vec<usize>,
+    pub n_search_attempts: usize,
 }
 
-pub enum Stage {
-    Inflationary,
-    Kneading,
+#[derive(Clone, Serialize, Deserialize)]
+pub struct LocalMixingStepFields {
+    pub current_step: usize,
+    pub search_fields: SearchTraceFields,
+    pub replacement_fields: ReplacementTraceFields,
+    pub elapsed: Duration,
 }
 
-impl std::fmt::Display for Stage {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let s = match self {
-            Stage::Inflationary => "Inflationary",
-            Stage::Kneading => "Kneading",
-        };
-        write!(f, "{}", s)
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
-pub struct ReplacementTimes {
-    inflationary_stage: Vec<Duration>,
-    kneading_stage: Vec<Duration>,
-}
-
-impl ReplacementTimes {
-    fn new(inf_steps: usize, kneading_steps: usize) -> Self {
-        Self {
-            inflationary_stage: Vec::with_capacity(inf_steps),
-            kneading_stage: Vec::with_capacity(kneading_steps),
-        }
-    }
-
-    fn add_entry(&mut self, stage: &Stage, duration: Duration) {
-        match stage {
-            Stage::Inflationary => self.inflationary_stage.push(duration),
-            Stage::Kneading => self.kneading_stage.push(duration),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
-pub struct ReplacementInfo {
-    inflationary_stage: Vec<ReplacementTraceFields>,
-    kneading_stage: Vec<ReplacementTraceFields>,
-}
-
-impl ReplacementInfo {
-    fn new(inf_steps: usize, kneading_steps: usize) -> Self {
-        Self {
-            inflationary_stage: Vec::with_capacity(inf_steps),
-            kneading_stage: Vec::with_capacity(kneading_steps),
-        }
-    }
-
-    fn add_entry(&mut self, stage: &Stage, replacement_fields: ReplacementTraceFields) {
-        match stage {
-            Stage::Inflationary => self.inflationary_stage.push(replacement_fields),
-            Stage::Kneading => self.kneading_stage.push(replacement_fields),
-        }
-    }
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug, Default)]
-pub struct TracerStash {
-    search: Option<SearchTraceFields>,
-    replacement: Option<Duration>,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug, Default)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Tracer {
-    dir_path: String,
-    pub replacement_times: ReplacementTimes,
-    pub replacement_info: ReplacementInfo,
-    pub stash: TracerStash,
+    pub inflationary_stage: Vec<LocalMixingStepFields>,
+    pub kneading_stage: Vec<LocalMixingStepFields>,
 }
 
 impl Tracer {
-    pub fn new(
-        dir_path: &String,
-        inf_steps: usize,
-        kneading_steps: usize,
-    ) -> Result<Self, Box<dyn Error>> {
-        init_logs(dir_path)?;
-
-        Ok(Self {
-            dir_path: dir_path.clone(),
-            replacement_times: ReplacementTimes::new(inf_steps, kneading_steps),
-            replacement_info: ReplacementInfo::new(inf_steps, kneading_steps),
-            stash: TracerStash::default(),
-        })
+    pub fn new(inf_capacity: usize, knd_capacity: usize) -> Self {
+        Self {
+            inflationary_stage: Vec::with_capacity(inf_capacity),
+            kneading_stage: Vec::with_capacity(knd_capacity),
+        }
     }
 
-    pub fn add_search_entry(
+    pub fn add_entry(
         &mut self,
-        n_gates: usize,
-        max_candidate_dist: usize,
-        time: Duration,
+        stage: LocalMixingStage,
+        current_step: usize,
+        search_fields: SearchTraceFields,
         replacement_fields: ReplacementTraceFields,
+        elapsed: Duration,
     ) {
-        assert!(self.stash.search.is_none());
-        self.stash.search = Some(SearchTraceFields {
-            n_gates,
-            max_candidate_dist,
-            time,
+        let entry = LocalMixingStepFields {
+            current_step,
+            search_fields,
             replacement_fields,
-        });
+            elapsed,
+        };
+        match stage {
+            LocalMixingStage::Inflationary => self.inflationary_stage.push(entry),
+            LocalMixingStage::Kneading => self.kneading_stage.push(entry),
+        };
     }
 
-    pub fn add_replacement_time(&mut self, time: Duration) {
-        assert!(self.stash.replacement.is_none());
-        self.stash.replacement = Some(time);
-    }
-
-    pub fn flush_stash(&mut self, stage: Stage, step: usize) {
-        if let Some(search) = &self.stash.search {
-            log::info!(target: "trace", "{}", format!("{} step={}, SUCCESS: n_gates = {}, n_circuits_sampled = {}, max_candidate_dist = {}, time = {:?}, c_in = {:?}, c_out = {:?}", 
-            stage, step, search.n_gates, search.replacement_fields.num_circuits_sampled, search.max_candidate_dist, search.time, search.replacement_fields.input_circuit, search.replacement_fields.output_circuit));
-
-            self.replacement_info
-                .add_entry(&stage, search.replacement_fields.clone());
-        }
-
-        if let Some(duration) = self.stash.replacement {
-            self.replacement_times.add_entry(&stage, duration);
-        }
-
-        self.stash = TracerStash::default();
-    }
-
-    pub fn empty_stash(&mut self) {
-        self.stash = TracerStash::default();
-    }
-
-    pub fn save_replacement_data(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let file = File::create(format!("{}/logs/replacement_times.json", self.dir_path)).unwrap();
-        serde_json::to_writer_pretty(file, &self.replacement_times)?;
-
-        let file = File::create(format!("{}/logs/replacement_fields.json", self.dir_path)).unwrap();
-        serde_json::to_writer_pretty(file, &self.replacement_info)?;
+    pub fn save_to_file(&self, path: impl AsRef<Path>) -> Result<(), Box<dyn Error>> {
+        let file = File::create(path)?;
+        serde_json::to_writer(file, &self)?;
         Ok(())
+    }
+
+    pub fn collect(tracers: impl Iterator<Item = Tracer>) -> Self {
+        let (inf, knd) = tracers.fold(
+            (Vec::new(), Vec::new()),
+            |(mut inf_acc, mut knd_acc), tracer| {
+                inf_acc.extend(tracer.inflationary_stage);
+                knd_acc.extend(tracer.kneading_stage);
+                (inf_acc, knd_acc)
+            },
+        );
+        Self {
+            inflationary_stage: inf,
+            kneading_stage: knd,
+        }
     }
 }
 
-fn init_logs(dir_path: &String) -> Result<(), Box<dyn std::error::Error>> {
+pub fn init_logs(dir_path: &str) -> Result<(), Box<dyn std::error::Error>> {
     let trace_file_appender = log4rs::append::file::FileAppender::builder()
         .encoder(Box::new(log4rs::encode::pattern::PatternEncoder::new(
             "{d} - {l} - {m}{n}",

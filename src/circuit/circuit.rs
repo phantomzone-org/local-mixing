@@ -1,8 +1,11 @@
-use crate::circuit::cf::Base2GateControlFunc;
+use crate::local_mixing::consts::CONTROL_FUNC_TABLE;
 use rand::{seq::IndexedRandom, Rng};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::fmt::Write;
+use std::{collections::HashSet, path::Path};
+
+use super::cf::{GateControlFunc, GateLibrary};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Gate {
@@ -28,13 +31,62 @@ impl Gate {
     }
 
     #[inline]
-    pub fn evaluate_cf(&self, a: bool, b: bool) -> bool {
-        Base2GateControlFunc::from_u8(self.control_func).evaluate(a, b)
+    pub fn evaluate(&self, input: &mut Vec<bool>) {
+        let idx = ((self.control_func as usize) << 2)
+            ^ ((input[self.wires[1]] as usize) << 1)
+            ^ (input[self.wires[2]] as usize);
+        input[self.wires[0]] ^= CONTROL_FUNC_TABLE[idx];
     }
 
-    pub fn evaluate(&self, x: &mut Vec<bool>) {
-        x[self.wires[0]] ^= self.evaluate_cf(x[self.wires[1]], x[self.wires[2]]);
+    #[inline]
+    pub fn evaluate_usize(&self, input: usize) -> usize {
+        let idx = ((self.control_func as usize) << 2)
+            ^ (((input >> self.wires[1]) & 1) << 1)
+            ^ ((input >> self.wires[2]) & 1);
+        let x = CONTROL_FUNC_TABLE[idx];
+        input ^ ((x as usize) << self.wires[0])
     }
+
+    pub fn equal_to(&self, other: &Self) -> bool {
+        self.wires == other.wires && self.control_func == other.control_func
+    }
+}
+
+#[inline]
+pub fn evaluate(gate_slice: &[Gate], input: &Vec<bool>) -> Vec<bool> {
+    let mut bitlines = input.to_vec();
+    gate_slice.iter().for_each(|g| g.evaluate(&mut bitlines));
+    bitlines
+}
+
+#[inline]
+pub fn evaluate_usize(gate_slice: &[Gate], input: usize) -> usize {
+    let mut result = input;
+    gate_slice
+        .iter()
+        .for_each(|g| result = g.evaluate_usize(result));
+    result
+}
+
+#[inline]
+pub fn circuit_min_generation(gate_slice: &[Gate]) -> usize {
+    gate_slice.iter().map(|g| g.generation).min().unwrap_or(0)
+}
+
+#[inline]
+pub fn circuit_max_generation(gate_slice: &[Gate]) -> usize {
+    gate_slice.iter().map(|g| g.generation).max().unwrap_or(0)
+}
+
+#[inline]
+pub fn correct_controls(circuit: &mut [Gate]) {
+    circuit
+        .iter_mut()
+        .filter(|g| g.wires[2] < g.wires[1])
+        .for_each(|g| {
+            g.wires = [g.wires[0], g.wires[2], g.wires[1]];
+            g.control_func = GateControlFunc::opposite_on_controls(g.control_func);
+        });
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
@@ -44,7 +96,12 @@ pub struct Circuit {
 }
 
 impl Circuit {
-    pub fn random<R: Rng>(num_wires: usize, num_gates: usize, rng: &mut R) -> Self {
+    pub fn random_with_cf<R: Rng>(
+        num_wires: usize,
+        num_gates: usize,
+        gate_library: GateLibrary,
+        rng: &mut R,
+    ) -> Self {
         let mut gates = vec![];
         for _ in 0..num_gates {
             loop {
@@ -53,11 +110,19 @@ impl Circuit {
                 let control_two = rng.random_range(0..num_wires);
 
                 if target != control_one && target != control_two && control_one != control_two {
-                    gates.push(Gate {
-                        wires: [target, control_one, control_two],
-                        control_func: rng.random_range(1..Base2GateControlFunc::COUNT),
-                        generation: 0,
-                    });
+                    if control_one < control_two {
+                        gates.push(Gate {
+                            wires: [target, control_one, control_two],
+                            control_func: gate_library.cfs().choose(rng).copied().unwrap(),
+                            generation: 0,
+                        });
+                    } else {
+                        gates.push(Gate {
+                            wires: [target, control_two, control_one],
+                            control_func: gate_library.cfs().choose(rng).copied().unwrap(),
+                            generation: 0,
+                        });
+                    }
                     break;
                 }
             }
@@ -66,30 +131,110 @@ impl Circuit {
         Self { num_wires, gates }
     }
 
-    pub fn random_with_cf<R: Rng>(num_wires: usize, num_gates: usize, cf_choice: &Vec<u8>, rng: &mut R) -> Self {
-        let mut gates = vec![];
-        for _ in 0..num_gates {
-            loop {
-                let target = rng.random_range(0..num_wires);
-                let control_one = rng.random_range(0..num_wires);
-                let control_two = rng.random_range(0..num_wires);
+    pub fn get_level_data(&self) -> Vec<usize> {
+        let mut levels = vec![0];
+        for i in 1..self.gates.len() {
+            let mut found_collision = false;
+            let mut max_level_colliding = 0;
+            for j in 0..i {
+                if self.gates[j].collides_with(&self.gates[i]) && levels[j] >= max_level_colliding {
+                    found_collision = true;
+                    max_level_colliding = levels[j];
+                }
+            }
 
-                if target != control_one && target != control_two && control_one != control_two {
-                    gates.push(Gate {
-                        wires: [target, control_one, control_two],
-                        control_func: *cf_choice.choose(rng).unwrap(),
-                        generation: 0,
-                    });
-                    break;
+            if found_collision {
+                levels.push(max_level_colliding + 1);
+            } else {
+                levels.push(0);
+            }
+        }
+
+        levels
+    }
+
+    pub fn random_reordering<R: Rng>(&self, rng: &mut R) -> Self {
+        let mut in_degrees = vec![];
+        for i in 0..self.gates.len() {
+            in_degrees.push(0);
+
+            for j in 0..i {
+                if self.gates[j].collides_with(&self.gates[i]) {
+                    in_degrees[i] += 1;
                 }
             }
         }
 
-        Self { num_wires, gates }
+        let mut placed = vec![false; self.gates.len()];
+
+        let mut ordered = vec![];
+        while ordered.len() < self.gates.len() {
+            let available: Vec<_> = (0..self.gates.len())
+                .filter(|&i| in_degrees[i] == 0 && !placed[i])
+                .collect();
+            let next = available.choose(rng).copied().unwrap();
+            ordered.push(self.gates[next]);
+            placed[next] = true;
+            for i in next + 1..self.gates.len() {
+                if self.gates[next].collides_with(&self.gates[i]) {
+                    in_degrees[i] -= 1;
+                }
+            }
+        }
+
+        Circuit {
+            num_wires: self.num_wires,
+            gates: ordered,
+        }
     }
 
-    pub fn subcircuit<const SIZE: usize>(&self, index: usize) -> [Gate; SIZE] {
-        std::array::from_fn(|i| self.gates[index + i])
+    pub fn canonicalized_ordering(&self) -> Self {
+        let mut in_degrees = vec![];
+        for i in 0..self.gates.len() {
+            in_degrees.push(0);
+
+            for j in 0..i {
+                if self.gates[j].collides_with(&self.gates[i]) {
+                    in_degrees[i] += 1;
+                }
+            }
+        }
+
+        let mut placed = vec![false; self.gates.len()];
+
+        let mut ordered = vec![];
+        while ordered.len() < self.gates.len() {
+            let available: Vec<_> = (0..self.gates.len())
+                .filter(|&i| in_degrees[i] == 0 && !placed[i])
+                .collect();
+
+            let mut min_in_available = 0;
+            for i in 1..available.len() {
+                let a_gate = &self.gates[available[i]];
+                let min_gate = &self.gates[available[min_in_available]];
+                if a_gate.wires < min_gate.wires
+                    || (a_gate.wires == min_gate.wires
+                        && a_gate.control_func < min_gate.control_func)
+                {
+                    min_in_available = i;
+                }
+            }
+
+            let next = available[min_in_available];
+
+            ordered.push(self.gates[next]);
+            placed[next] = true;
+            for i in next + 1..self.gates.len() {
+                if self.gates[next].collides_with(&self.gates[i]) {
+                    in_degrees[i] -= 1;
+                }
+            }
+        }
+
+        Circuit {
+            num_wires: self.num_wires,
+            gates: ordered,
+        }
     }
 
     pub fn load_from_json(path: impl AsRef<Path>) -> Self {
@@ -102,10 +247,18 @@ impl Circuit {
         std::fs::write(path, serde_json::to_vec_pretty(&data).unwrap()).unwrap();
     }
 
-    pub fn evaluate(&self, input: &Vec<bool>) -> Vec<bool> {
-        let mut data = input.clone();
-        self.gates.iter().for_each(|g| g.evaluate(&mut data));
-        data
+    pub fn save_as_json_original_fmt(&self, path: impl AsRef<Path>) {
+        std::fs::write(path, serde_json::to_vec_pretty(&self).unwrap()).unwrap();
+    }
+
+    pub fn reset_generations(&mut self) {
+        self.gates.iter_mut().for_each(|g| g.generation = 0);
+    }
+
+    pub fn save_generation_data(&self, path: impl AsRef<Path>) {
+        let data = serde_json::to_vec(&self.gates.iter().map(|g| g.generation).collect::<Vec<_>>())
+            .unwrap();
+        std::fs::write(path, data).unwrap();
     }
 
     pub fn evaluate_evolution(&self, input: &Vec<bool>) -> Vec<Vec<bool>> {
@@ -119,6 +272,87 @@ impl Circuit {
 
         evolution
     }
+
+    pub fn to_string(&self) -> String {
+        to_string(&self.gates)
+    }
+
+    pub fn to_string_vertical(&self) -> String {
+        to_string_vertical(&self.gates)
+    }
+}
+
+pub fn to_string(circuit_gates: &[Gate]) -> String {
+    let mut wires: HashSet<usize> = HashSet::new();
+    for gate in circuit_gates {
+        wires.extend(gate.wires.iter());
+    }
+    let mut wire_list: Vec<usize> = wires.into_iter().collect();
+    wire_list.sort();
+
+    let mut result = String::new();
+    for (i, wire) in wire_list.iter().enumerate() {
+        result.push_str(&format!("{:<2} ", wire));
+        for gate in circuit_gates {
+            if gate.wires[0] == *wire {
+                result.push('X');
+            } else if gate.wires[1] == *wire {
+                result.push('a');
+            } else if gate.wires[2] == *wire {
+                result.push('b');
+            } else {
+                result.push('-');
+            }
+            result.push_str(" - ");
+        }
+        if i != wire_list.len() - 1 {
+            result.push_str("\n");
+        }
+    }
+
+    let control_fn_strings: Vec<String> = circuit_gates
+        .iter()
+        .map(|gate| GateControlFunc::from_u8(gate.control_func).to_string())
+        .collect();
+    result.push_str("\ncfs: ");
+    result.push_str(&control_fn_strings.join(", "));
+    result
+}
+
+pub fn to_string_vertical(circuit_gates: &[Gate]) -> String {
+    let mut wires: HashSet<usize> = HashSet::new();
+    for gate in circuit_gates {
+        wires.extend(gate.wires.iter());
+    }
+    let mut wire_list: Vec<usize> = wires.into_iter().collect();
+    wire_list.sort();
+
+    let mut result = String::new();
+    result.push_str("   ");
+    for wire in &wire_list {
+        write!(result, "{:<2} ", wire).unwrap();
+    }
+    result.push('\n');
+
+    for (gate_idx, gate) in circuit_gates.iter().enumerate() {
+        write!(result, "{:<2} ", gate_idx).unwrap();
+        for wire in &wire_list {
+            let ch = if gate.wires[0] == *wire {
+                'X'
+            } else if gate.wires[1] == *wire {
+                'a'
+            } else if gate.wires[2] == *wire {
+                'b'
+            } else {
+                '-'
+            };
+            write!(result, "{}  ", ch).unwrap();
+        }
+        let cf_str = GateControlFunc::from_u8(gate.control_func).to_string();
+        write!(result, "| {}", cf_str).unwrap();
+        result.push('\n');
+    }
+    result
 }
 
 pub fn check_equiv_probabilistic<R: Rng>(
@@ -154,8 +388,59 @@ pub fn check_equiv_probabilistic<R: Rng>(
         gates: ckt_two.clone(),
     };
 
+    random_inputs.iter().try_for_each(|random_input| {
+        if evaluate(&c1.gates, random_input) != evaluate(&c2.gates, random_input) {
+            return Err("Circuits produce different outputs".to_string());
+        }
+        Ok(())
+    })
+}
+
+pub fn check_ckt_equiv_inout_map(inout_map: &[(Vec<bool>, Vec<bool>)], ckt: &[Gate]) -> bool {
+    for (input, ex_output) in inout_map.iter() {
+        let output = evaluate(ckt, input);
+        if output != ex_output.as_slice() {
+            return false;
+        }
+    }
+    return true;
+}
+
+pub fn par_check_equiv_probabilistic<R: Rng>(
+    num_wires: usize,
+    ckt_one: &Vec<Gate>,
+    ckt_two: &Vec<Gate>,
+    num_inputs: usize,
+    rng: &mut R,
+) -> Result<(), String> {
+    if ckt_one
+        .iter()
+        .any(|gate| gate.wires.iter().any(|&wire| wire >= num_wires))
+    {
+        return Err("Wire labels in ckt_one exceed the number of wires".to_string());
+    }
+    if ckt_two
+        .iter()
+        .any(|gate| gate.wires.iter().any(|&wire| wire >= num_wires))
+    {
+        return Err("Wire labels in ckt_two exceed the number of wires".to_string());
+    }
+
+    let random_inputs: Vec<Vec<bool>> = (0..num_inputs)
+        .map(|_| (0..num_wires).map(|_| rng.random_bool(0.5)).collect())
+        .collect();
+
+    let c1 = Circuit {
+        num_wires,
+        gates: ckt_one.clone(),
+    };
+    let c2 = Circuit {
+        num_wires,
+        gates: ckt_two.clone(),
+    };
+
     random_inputs.par_iter().try_for_each(|random_input| {
-        if c1.evaluate(random_input) != c2.evaluate(random_input) {
+        if evaluate(&c1.gates, random_input) != evaluate(&c2.gates, random_input) {
             return Err("Circuits produce different outputs".to_string());
         }
         Ok(())
@@ -164,8 +449,22 @@ pub fn check_equiv_probabilistic<R: Rng>(
 
 /// Structs for saving to file
 
-#[derive(Clone, Copy, Serialize, Deserialize)]
-pub struct GateData(usize, usize, usize, u8);
+#[derive(Clone, Copy, Serialize, Deserialize, Debug, PartialEq)]
+pub struct GateData(pub usize, pub usize, pub usize, pub u8);
+
+impl GateData {
+    pub fn wires(&self) -> [usize; 3] {
+        [self.2, self.0, self.1]
+    }
+
+    pub fn target(&self) -> usize {
+        self.2
+    }
+
+    pub fn cf(&self) -> u8 {
+        self.3
+    }
+}
 
 impl From<Gate> for GateData {
     fn from(value: Gate) -> Self {
@@ -219,7 +518,7 @@ mod tests {
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 
-    use crate::circuit::circuit::check_equiv_probabilistic;
+    use crate::circuit::{cf::GateLibrary, circuit::par_check_equiv_probabilistic};
 
     use super::{Circuit, Gate};
 
@@ -293,10 +592,19 @@ mod tests {
             ],
         };
         assert!(
-            check_equiv_probabilistic(64, &ckt.gates, &equiv_ckt.gates, 1000, &mut rng) == Ok(())
+            par_check_equiv_probabilistic(64, &ckt.gates, &equiv_ckt.gates, 1000, &mut rng)
+                == Ok(())
         );
         assert!(
-            check_equiv_probabilistic(64, &ckt.gates, &nequiv_ckt.gates, 1000, &mut rng) != Ok(())
+            par_check_equiv_probabilistic(64, &ckt.gates, &nequiv_ckt.gates, 1000, &mut rng)
+                != Ok(())
         );
+    }
+
+    #[test]
+    fn test_to_string() {
+        let circuit = Circuit::random_with_cf(10, 3, GateLibrary::All, &mut rand::rng());
+        let s = circuit.to_string();
+        println!("{}", s);
     }
 }
