@@ -1,10 +1,7 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use local_mixing::{
-    circuit::Gate,
-    replacement::{
-        find_replacement_circuit,
-        strategy::{ControlFnChoice, ReplacementStrategy},
-    },
+    circuit::{cf::GateLibrary, Gate},
+    replacement::find_replacement_random_sample,
 };
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -26,12 +23,13 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
     c.bench_function("replacement", |b| {
         b.iter(|| {
-            black_box(find_replacement_circuit::<2, 4, 9, { 1 << 9 }, _>(
+            black_box(find_replacement_random_sample(
                 &circuit,
-                20,
+                9,
+                4,
                 1_000_000_000,
-                ReplacementStrategy::SampleActive0,
-                ControlFnChoice::OnlyUnique,
+                GateLibrary::OnlyUnique,
+                true,
                 &mut rng,
             ))
         });
