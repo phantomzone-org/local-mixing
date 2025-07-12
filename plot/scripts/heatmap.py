@@ -15,15 +15,13 @@ def plot_heatmap(data, save_path):
     if std == 0:
         std = 1
 
-    z_scores = (values - mean) / std
-
     x_unique = np.unique(x)
     y_unique = np.unique(y)
     x_indices = {val: idx for idx, val in enumerate(x_unique)}
     y_indices = {val: idx for idx, val in enumerate(y_unique)}
 
     heatmap = np.full((len(y_unique), len(x_unique)), np.nan)
-    for xi, yi, z in zip(x, y, z_scores):
+    for xi, yi, z in zip(x, y, values):
         heatmap[y_indices[yi], x_indices[xi]] = z
 
     plt.imshow(
